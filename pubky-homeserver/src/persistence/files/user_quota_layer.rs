@@ -38,21 +38,29 @@ fn check_quota_not_exceeded(
     Ok(())
 }
 
-/// The user quota layer is a layer that wraps the operator and updates the user quota when a file is written or deleted.
+/// The user quota layer wraps the operator and updates the user quota when a file is written or deleted.
 /// It is used to limit the amount of data that a user can store in the homeserver.
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
 ///
 /// The per-user storage quota is read from the `quota_storage_mb` column on
-/// the user row in the database. `None` means unlimited storage. The deprecated
-/// `user_storage_quota_mb` config field is only used during migration backfill.
+/// the user row in the database. `Default` resolves to `default_storage_quota_mb`
+/// (from config), `Unlimited` means no limit, and `Value(n)` means n MB.
 #[derive(Clone)]
 pub struct UserQuotaLayer {
     pub(crate) db: SqlDb,
+    /// System-wide default storage quota (MB) from config
+    pub(crate) default_storage_quota_mb: Option<u64>,
 }
 
 impl UserQuotaLayer {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
+    /// Create a new quota layer.
+    ///
+    /// `default_storage_quota_mb`: the global default from config (`None` = unlimited).
+    pub fn new(db: SqlDb, default_storage_quota_mb: Option<u64>) -> Self {
+        Self {
+            db,
+            default_storage_quota_mb,
+        }
     }
 }
 
@@ -63,6 +71,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
         UserQuotaAccessor {
             inner: Arc::new(inner),
             db: self.db.clone(),
+            default_storage_quota_mb: self.default_storage_quota_mb,
         }
     }
 }
@@ -71,6 +80,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
 pub struct UserQuotaAccessor<A: Access> {
     inner: Arc<A>,
     db: SqlDb,
+    default_storage_quota_mb: Option<u64>,
 }
 
 impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
@@ -105,6 +115,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
                 bytes_count: 0,
                 entry_path,
                 inner_accessor: self.inner.clone(),
+                default_storage_quota_mb: self.default_storage_quota_mb,
             },
         ))
     }
@@ -155,6 +166,7 @@ pub struct WriterWrapper<R, A: Access> {
     bytes_count: u64,
     entry_path: EntryPath,
     inner_accessor: Arc<A>,
+    default_storage_quota_mb: Option<u64>,
 }
 
 impl<R, A: Access> WriterWrapper<R, A> {
@@ -216,7 +228,9 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
         check_quota_not_exceeded(
             user.used_bytes,
             bytes_delta,
-            user.resource_quota().storage_quota_mb,
+            user.quota()
+                .storage_quota_mb
+                .resolve_with_default(self.default_storage_quota_mb),
         )?;
 
         let metadata = self.inner.close().await?;
@@ -379,7 +393,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_directory::user_resource_quota::UserResourceQuota;
+    use crate::data_directory::user_quota::UserQuota;
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
@@ -398,7 +412,7 @@ mod tests {
     async fn test_ensure_valid_path() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let layer = UserQuotaLayer::new(db.clone());
+            let layer = UserQuotaLayer::new(db.clone(), None);
             let operator = operator.layer(layer);
 
             operator
@@ -440,7 +454,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_quota_updated_write_delete() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone());
+        let layer = UserQuotaLayer::new(db.clone(), None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
@@ -508,7 +522,7 @@ mod tests {
 
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
-        let user_quota_layer = UserQuotaLayer::new(db.clone());
+        let user_quota_layer = UserQuotaLayer::new(db.clone(), None);
         let entry_layer = EntryLayer::new(db.clone());
         let events_layer = EventsLayer::new(db.clone(), events_service);
         let operator = get_memory_operator()
@@ -599,7 +613,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_per_user_storage_quota_enforced() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone());
+        let layer = UserQuotaLayer::new(db.clone(), None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
@@ -623,30 +637,97 @@ mod tests {
             .expect_err("Should fail: exceeds per-user limit of 1 MB");
     }
 
-    /// Verify that `quota_storage_mb = None` means unlimited storage.
+    /// Verify that `quota_storage_mb = Default` with no system default means unlimited storage.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_none_storage_quota_means_unlimited() {
+    async fn test_default_quota_no_system_default_means_unlimited() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone());
+        let layer = UserQuotaLayer::new(db.clone(), None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
         let user_raw = user_pubkey.z32();
 
-        // Create user without custom limits (all NULL = unlimited)
+        // Create user without custom limits (all NULL = Default)
         UserRepository::create(&user_pubkey, &mut db.pool().into())
             .await
             .unwrap();
 
-        // Even a large write should succeed (unlimited)
+        // Even a large write should succeed (Default resolves to None = unlimited)
         operator
             .write(
                 format!("{user_raw}/big.txt").as_str(),
                 vec![0; 2 * 1024 * 1024],
             )
             .await
-            .expect("Should succeed: unlimited storage");
+            .expect("Should succeed: Default with no system default = unlimited");
+    }
+
+    /// Verify that `quota_storage_mb = Default` with a system default enforces the config limit.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_default_quota_resolves_to_system_default() {
+        let db = SqlDb::test().await;
+        // System default: 1 MB
+        let layer = UserQuotaLayer::new(db.clone(), Some(1));
+        let operator = get_memory_operator().layer(layer);
+
+        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
+        let user_raw = user_pubkey.z32();
+
+        // Create user without custom limits — quota_storage_mb = Default
+        UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Small write should succeed (within the 1 MB system default)
+        operator
+            .write(format!("{user_raw}/small.txt").as_str(), vec![0; 31])
+            .await
+            .expect("Should succeed: within 1 MB system default");
+
+        // Write > 1 MB should fail (Default resolves to system default of 1 MB)
+        operator
+            .write(format!("{user_raw}/huge.txt").as_str(), vec![0; 1_048_576])
+            .await
+            .expect_err("Should fail: exceeds system default of 1 MB");
+    }
+
+    /// Verify that `quota_storage_mb = Unlimited` bypasses the system default.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_unlimited_quota_bypasses_system_default() {
+        use crate::data_directory::user_quota::QuotaOverride;
+
+        let db = SqlDb::test().await;
+        // System default: 1 MB — but user is explicitly Unlimited
+        let layer = UserQuotaLayer::new(db.clone(), Some(1));
+        let operator = get_memory_operator().layer(layer);
+
+        let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
+        let user_raw = user_pubkey.z32();
+
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Set storage to Unlimited
+        let config = UserQuota {
+            storage_quota_mb: QuotaOverride::Unlimited,
+            ..Default::default()
+        };
+        UserRepository::set_quota(user.id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Large write should succeed despite 1 MB system default
+        operator
+            .write(
+                format!("{user_raw}/big.txt").as_str(),
+                vec![0; 2 * 1024 * 1024],
+            )
+            .await
+            .expect("Should succeed: Unlimited bypasses system default");
     }
 
     /// Verify that `storage_quota_mb = Some(0)` means zero quota (no storage), not unlimited.
@@ -654,7 +735,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_per_user_storage_quota_zero_means_no_storage() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone());
+        let layer = UserQuotaLayer::new(db.clone(), None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
@@ -675,7 +756,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_storage_quota_change_takes_effect() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone());
+        let layer = UserQuotaLayer::new(db.clone(), None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
@@ -691,11 +772,11 @@ mod tests {
             .expect_err("Should fail: zero quota");
 
         // Admin raises quota to 1 MB
-        let config = UserResourceQuota {
-            storage_quota_mb: Some(1),
+        let config = UserQuota {
+            storage_quota_mb: crate::data_directory::user_quota::QuotaOverride::Value(1),
             ..Default::default()
         };
-        UserRepository::set_resource_quota(user.id, &config, &mut db.pool().into())
+        UserRepository::set_quota(user.id, &config, &mut db.pool().into())
             .await
             .unwrap();
 

@@ -13,7 +13,7 @@ signup_mode = "token_required"
 # Applied as the default for new users during signup and as
 # the backfill value for existing users when the migration runs.
 # After that, per-user quotas are managed via the admin API:
-#   PUT /users/{pubkey}/resource-quotas
+#   PATCH /users/{pubkey}/quota
 # Set to 0 for unlimited.
 user_storage_quota_mb = 0
 

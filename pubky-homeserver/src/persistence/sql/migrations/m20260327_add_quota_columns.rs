@@ -18,14 +18,14 @@ use crate::persistence::sql::migration::MigrationTrait;
 /// `default_storage_quota_mb`:
 /// - `None` → config says unlimited → NULL (no limit)
 /// - `Some(n)` → store n as the value
-pub struct M20260327AddResourceQuotaColumnsMigration {
+pub struct M20260327AddQuotaColumnsMigration {
     /// The storage default from `[general].user_storage_quota_mb`.
     /// `None` means unlimited (0 in config → unlimited → NULL in DB).
     pub default_storage_quota_mb: Option<i64>,
 }
 
 /// Add the four limit columns to the given table.
-async fn add_resource_quota_columns(
+async fn add_quota_columns(
     tx: &mut Transaction<'static, sqlx::Postgres>,
     table: &str,
 ) -> anyhow::Result<()> {
@@ -58,11 +58,11 @@ async fn backfill_storage_quota(
 }
 
 #[async_trait]
-impl MigrationTrait for M20260327AddResourceQuotaColumnsMigration {
+impl MigrationTrait for M20260327AddQuotaColumnsMigration {
     async fn up(&self, tx: &mut Transaction<'static, sqlx::Postgres>) -> anyhow::Result<()> {
         // 1. Add limit columns to both tables.
-        add_resource_quota_columns(tx, "users").await?;
-        add_resource_quota_columns(tx, "signup_codes").await?;
+        add_quota_columns(tx, "users").await?;
+        add_quota_columns(tx, "signup_codes").await?;
 
         // 2. Backfill existing users with only storage_quota_mb.
         // Other columns stay NULL (= no limit).
@@ -92,7 +92,7 @@ impl MigrationTrait for M20260327AddResourceQuotaColumnsMigration {
     }
 
     fn name(&self) -> &str {
-        "m20260327_add_resource_quota_columns"
+        "m20260327_add_quota_columns"
     }
 }
 
@@ -126,7 +126,7 @@ mod tests {
             Box::new(M20251014EventsTableIndexAndContentHashMigration),
         ];
         if let Some(default_storage) = storage_default {
-            migrations.push(Box::new(M20260327AddResourceQuotaColumnsMigration {
+            migrations.push(Box::new(M20260327AddQuotaColumnsMigration {
                 default_storage_quota_mb: default_storage,
             }));
         }
@@ -216,7 +216,7 @@ mod tests {
         // Run migration with storage default = 500 MB
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
+            .run_migrations(vec![Box::new(M20260327AddQuotaColumnsMigration {
                 default_storage_quota_mb: Some(500),
             })])
             .await
@@ -258,7 +258,7 @@ mod tests {
         // Run migration with storage default = None (unlimited → NULL)
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
+            .run_migrations(vec![Box::new(M20260327AddQuotaColumnsMigration {
                 default_storage_quota_mb: None,
             })])
             .await
@@ -300,7 +300,7 @@ mod tests {
 
         let migrator = Migrator::new(&db);
         migrator
-            .run_migrations(vec![Box::new(M20260327AddResourceQuotaColumnsMigration {
+            .run_migrations(vec![Box::new(M20260327AddQuotaColumnsMigration {
                 default_storage_quota_mb: Some(500),
             })])
             .await

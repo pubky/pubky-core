@@ -8,7 +8,7 @@ use crate::persistence::sql::{
         M20250806CreateUserMigration, M20250812CreateSignupCodeMigration,
         M20250813CreateSessionMigration, M20250814CreateEventMigration,
         M20250815CreateEntryMigration, M20251014EventsTableIndexAndContentHashMigration,
-        M20260327AddResourceQuotaColumnsMigration,
+        M20260327AddQuotaColumnsMigration,
     },
     sql_db::SqlDb,
 };
@@ -33,7 +33,7 @@ pub fn all_migrations(default_storage_quota_mb: Option<i64>) -> Vec<Box<dyn Migr
         Box::new(M20250814CreateEventMigration),
         Box::new(M20250815CreateEntryMigration),
         Box::new(M20251014EventsTableIndexAndContentHashMigration),
-        Box::new(M20260327AddResourceQuotaColumnsMigration {
+        Box::new(M20260327AddQuotaColumnsMigration {
             default_storage_quota_mb,
         }),
     ]

@@ -119,11 +119,8 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            default_storage_quota_mb: match context.config_toml.general.user_storage_quota_mb {
-                0 => None,
-                n => Some(n),
-            },
-            user_resource_quota_cache: context.user_resource_quota_cache.clone(),
+            default_storage_quota_mb: context.config_toml.general.default_storage_quota_mb(),
+            user_quota_cache: context.user_quota_cache.clone(),
         };
         super::create_app(state.clone(), context)
     }
@@ -230,7 +227,7 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(CorsLayer::very_permissive())
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
-            context.user_resource_quota_cache.clone(),
+            context.user_quota_cache.clone(),
             context.sql_db.clone(),
         ))
         .layer(PubkyHostLayer)

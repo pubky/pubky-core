@@ -3,7 +3,7 @@ use dav_server_opendalfs::OpendalFs;
 
 use std::sync::Arc;
 
-use crate::data_directory::user_resource_quota::UserResourceQuotaCache;
+use crate::data_directory::user_quota::UserQuotaCache;
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::ConfigToml;
 
@@ -25,7 +25,7 @@ pub(crate) struct AppState {
     /// Deploy-time default storage quota (MB). `None` = no limit.
     pub(crate) default_storage_quota_mb: Option<u64>,
     /// Shared cache for resolved user limits
-    pub(crate) user_resource_quota_cache: UserResourceQuotaCache,
+    pub(crate) user_quota_cache: UserQuotaCache,
 }
 
 impl AppState {
@@ -44,12 +44,12 @@ impl AppState {
             inner_dav_handler,
             metadata: AdminMetadata::default(),
             default_storage_quota_mb: None,
-            user_resource_quota_cache: Arc::new(dashmap::DashMap::new()),
+            user_quota_cache: Arc::new(dashmap::DashMap::new()),
         }
     }
 
-    pub fn with_user_resource_quota_cache(mut self, cache: UserResourceQuotaCache) -> Self {
-        self.user_resource_quota_cache = cache;
+    pub fn with_user_quota_cache(mut self, cache: UserQuotaCache) -> Self {
+        self.user_quota_cache = cache;
         self
     }
 
@@ -60,10 +60,7 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
-        self.default_storage_quota_mb = match config.general.user_storage_quota_mb {
-            0 => None,
-            n => Some(n),
-        };
+        self.default_storage_quota_mb = config.general.default_storage_quota_mb();
         self
     }
 }

@@ -46,8 +46,9 @@ pub async fn put(
     // Check if the size hint exceeds the per-user quota so we can fail early.
     // None = no limit; Some(mb) = enforce limit.
     let user_quota_bytes = user
-        .resource_quota()
+        .quota()
         .storage_quota_mb
+        .resolve_with_default(state.default_storage_quota_mb)
         .map(|mb| mb.saturating_mul(1024 * 1024));
     let content_size_hint = body.size_hint().exact();
     fail_if_size_hint_bigger_than_user_quota(

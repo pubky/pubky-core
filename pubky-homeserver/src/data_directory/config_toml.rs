@@ -85,10 +85,19 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
-    /// Deprecated: use `[quotas] storage_quota_mb` instead. Kept for backward compatibility.
-    #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
+}
+
+impl GeneralToml {
+    /// Return the default storage quota as `Option<u64>`: `0` → `None` (unlimited), `n` → `Some(n)`.
+    pub fn default_storage_quota_mb(&self) -> Option<u64> {
+        if self.user_storage_quota_mb == 0 {
+            None
+        } else {
+            Some(self.user_storage_quota_mb)
+        }
+    }
 }
 
 /// A config for Homeserver tracing subscriber configuration
@@ -117,7 +126,7 @@ pub struct MetricsToml {
 /// The overall application configuration, composed of several subsections.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ConfigToml {
-    /// General application settings (signup mode, database URL).
+    /// General application settings (signup mode, quotas, backups).
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
@@ -353,15 +362,5 @@ mod tests {
             module_levels: vec![],
         });
         assert_eq!(merged.logging, expected_logging);
-    }
-
-    #[test]
-    fn test_storage_quota_from_general_section() {
-        let s = r#"
-[general]
-user_storage_quota_mb = 256
-"#;
-        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
-        assert_eq!(parsed.general.user_storage_quota_mb, 256);
     }
 }

@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root, user_resource_quotas,
+    generate_signup_token, info, root, user_quota,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -32,9 +32,8 @@ fn create_protected_router(password: &str) -> Router<AppState> {
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
         .route(
-            "/users/{pubkey}/resource-quotas",
-            get(user_resource_quotas::get_user_resource_quota)
-                .patch(user_resource_quotas::patch_user_resource_quota),
+            "/users/{pubkey}/quota",
+            get(user_quota::get_user_quota).patch(user_quota::patch_user_quota),
         )
         .layer(AdminAuthLayer::new(password.to_string()))
 }
@@ -118,7 +117,7 @@ impl AdminServer {
             context.file_service.clone(),
             &password,
         )
-        .with_user_resource_quota_cache(context.user_resource_quota_cache.clone())
+        .with_user_quota_cache(context.user_quota_cache.clone())
         .with_config(
             context.keypair.public_key().z32(),
             &context.config_toml,
@@ -561,7 +560,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_generate_signup_token_with_limits() {
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
         use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
 
         let context = AppContext::test().await;
@@ -588,7 +587,7 @@ mod tests {
         let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
             .await
             .unwrap();
-        let limits = code.resource_quota();
+        let limits = code.quota();
         assert_eq!(limits.storage_quota_mb, Some(1024));
         assert_eq!(limits.max_sessions, Some(5));
         assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));

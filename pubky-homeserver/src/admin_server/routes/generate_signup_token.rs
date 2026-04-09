@@ -1,7 +1,7 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
 use crate::{
-    data_directory::user_resource_quota::UserResourceQuota,
+    data_directory::user_quota::UserQuota,
     persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository},
     shared::{HttpError, HttpResult},
 };
@@ -9,10 +9,7 @@ use crate::{
 use super::super::app_state::AppState;
 
 /// Shared helper: create a signup code with the given limits.
-async fn create_signup_code(
-    state: &AppState,
-    limits: &UserResourceQuota,
-) -> HttpResult<impl IntoResponse> {
+async fn create_signup_code(state: &AppState, limits: &UserQuota) -> HttpResult<impl IntoResponse> {
     let code = SignupCodeRepository::create(
         &SignupCodeId::random(),
         limits,
@@ -22,26 +19,22 @@ async fn create_signup_code(
     Ok((StatusCode::OK, code.id.0))
 }
 
-/// GET /generate_signup_token — create a token with the server's deploy-time defaults.
+/// GET /generate_signup_token — create a token with all-Default limits.
 ///
-/// The token carries `storage_quota_mb` from config, all other fields `Default`.
+/// All fields start as `Default` — resolved at enforcement time from system config.
 pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
-    let default_quota = UserResourceQuota {
-        storage_quota_mb: state.default_storage_quota_mb,
-        ..Default::default()
-    };
-    create_signup_code(&state, &default_quota).await
+    create_signup_code(&state, &UserQuota::default()).await
 }
 
 /// POST /generate_signup_token — create a token with explicit custom limits.
 ///
 /// Accepts a partial JSON body:
 /// - Absent fields → `Default` (use system default)
-/// - `null` fields → `Unlimited` (explicitly no limit)
+/// - `null` fields → `Default` (use system default)
 /// - Value fields → `Value(T)` (explicit limit)
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
-    Json(config): Json<UserResourceQuota>,
+    Json(config): Json<UserQuota>,
 ) -> HttpResult<impl IntoResponse> {
     // Validate rate strings before touching the DB — return 422 for bad values.
     config

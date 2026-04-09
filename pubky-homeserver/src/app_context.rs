@@ -5,7 +5,7 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
-use crate::data_directory::user_resource_quota::UserResourceQuotaCache;
+use crate::data_directory::user_quota::UserQuotaCache;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
@@ -82,7 +82,7 @@ pub struct AppContext {
     /// Kept alive for the background task, not for direct access.
     _pg_event_listener: Arc<PgEventListener>,
     /// Shared cache for resolved per-user limits (used by both admin and client servers).
-    pub(crate) user_resource_quota_cache: UserResourceQuotaCache,
+    pub(crate) user_quota_cache: UserQuotaCache,
 }
 
 impl AppContext {
@@ -109,13 +109,7 @@ impl AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
-        // Compute storage default from config: 0 → None (unlimited), n → Some(n)
-        let storage_mb = conf.general.user_storage_quota_mb;
-        let default_storage_quota_mb = if storage_mb == 0 {
-            None
-        } else {
-            Some(storage_mb as i64)
-        };
+        let default_storage_quota_mb = conf.general.default_storage_quota_mb().map(|v| v as i64);
         Migrator::new(&sql_db)
             .run(default_storage_quota_mb)
             .await
@@ -146,7 +140,7 @@ impl AppContext {
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),
-            user_resource_quota_cache: Arc::new(dashmap::DashMap::new()),
+            user_quota_cache: Arc::new(dashmap::DashMap::new()),
         })
     }
 }

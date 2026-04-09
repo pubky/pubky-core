@@ -113,7 +113,7 @@ async fn per_user_quota_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PATCH,
-            &format!("http://{admin_socket}/users/{pubkey_a}/resource-quotas"),
+            &format!("http://{admin_socket}/users/{pubkey_a}/quota"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -208,7 +208,7 @@ async fn per_user_speed_override_throttles_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PATCH,
-            &format!("http://{admin_socket}/users/{pubkey_a_z32}/resource-quotas"),
+            &format!("http://{admin_socket}/users/{pubkey_a_z32}/quota"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -283,7 +283,7 @@ async fn max_sessions_enforced_via_admin_api() {
     let resp = admin_client
         .request(
             Method::PATCH,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/resource-quotas"),
+            &format!("http://{admin_socket}/users/{pubkey_z32}/quota"),
         )
         .header("X-Admin-Password", &admin_password)
         .header("content-type", "application/json")
@@ -335,4 +335,182 @@ async fn max_sessions_enforced_via_admin_api() {
 
     // Clean up: the remaining sessions can still be used
     session2.signout().await.unwrap();
+}
+
+/// Test that `max_sessions = Default` (no override) allows unlimited sessions.
+/// Create many sessions without setting a limit — all should succeed.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn max_sessions_default_allows_unlimited() {
+    let config = ConfigToml::default_test_config();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    // Signup creates session #1 — no max_sessions set (Default)
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    // Create several more sessions — all should succeed
+    for i in 2..=5 {
+        signer.signin().await.unwrap_or_else(|e| {
+            panic!("Session #{i} should succeed with Default max_sessions: {e:?}")
+        });
+    }
+}
+
+/// Test that `max_sessions = "unlimited"` allows unlimited sessions even after
+/// being explicitly set via admin API (distinct from Default).
+#[tokio::test]
+#[pubky_testnet::test]
+async fn max_sessions_unlimited_allows_unlimited() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Signup creates session #1
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_z32 = signer.public_key().z32();
+
+    // Explicitly set max_sessions to "unlimited" via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PATCH,
+            &format!("http://{admin_socket}/users/{pubkey_z32}/quota"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"max_sessions": "unlimited"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Create several sessions — all should succeed
+    for i in 2..=5 {
+        signer.signin().await.unwrap_or_else(|e| {
+            panic!("Session #{i} should succeed with Unlimited max_sessions: {e:?}")
+        });
+    }
+}
+
+/// Test that per-user read speed override set via admin API throttles downloads.
+///
+/// We configure a base GET /pub/** speed limit of 1mb/s (user-keyed), then
+/// override a specific user to 1kb/s via admin API. A 3 KB download at 1kb/s
+/// should take >2s, while a user without override downloads quickly.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn per_user_read_speed_override_throttles_via_admin_api() {
+    use pubky_testnet::pubky_homeserver::quota_config::{GlobPattern, LimitKeyType, PathLimit};
+    use std::time::{Duration, Instant};
+
+    let mut config = ConfigToml::default_test_config();
+    // Base user-keyed speed limit for GET /pub/** — required for per-user overrides.
+    config.drive.rate_limits.push(PathLimit::new(
+        GlobPattern::new("/pub/**"),
+        Method::GET,
+        "1mb/s".parse().unwrap(),
+        LimitKeyType::User,
+        None,
+    ));
+    // Also need a generous PUT limit so uploads are fast
+    config.drive.rate_limits.push(PathLimit::new(
+        GlobPattern::new("/pub/**"),
+        Method::PUT,
+        "1mb/s".parse().unwrap(),
+        LimitKeyType::User,
+        None,
+    ));
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create two users
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_a_z32 = signer_a.public_key().z32();
+
+    let signer_b = pubky.signer(Keypair::random());
+    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+
+    // Both users upload a 3 KB file (fast, using default 1mb/s)
+    let body = vec![0u8; 3 * 1024];
+    session_a
+        .storage()
+        .put("/pub/read_test.txt", body.clone())
+        .await
+        .unwrap();
+    session_b
+        .storage()
+        .put("/pub/read_test.txt", body)
+        .await
+        .unwrap();
+
+    // Override user A to 1kb/s read speed via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PATCH,
+            &format!("http://{admin_socket}/users/{pubkey_a_z32}/quota"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"rate_read": "1kb/s"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // User A (1kb/s read override): 3 KB download should take >2s
+    let start = Instant::now();
+    let resp = session_a.storage().get("/pub/read_test.txt").await.unwrap();
+    let _ = resp.bytes().await.unwrap(); // consume body to apply throttle
+    let elapsed_a = start.elapsed();
+    assert!(
+        elapsed_a > Duration::from_secs(2),
+        "User A download should be throttled to ~1kb/s (elapsed {:?})",
+        elapsed_a
+    );
+
+    // User B (no override, uses default 1mb/s): same download should be fast (<2s)
+    let start = Instant::now();
+    let resp = session_b.storage().get("/pub/read_test.txt").await.unwrap();
+    let _ = resp.bytes().await.unwrap();
+    let elapsed_b = start.elapsed();
+    assert!(
+        elapsed_b < Duration::from_secs(2),
+        "User B download should use default speed, not be throttled (elapsed {:?})",
+        elapsed_b
+    );
 }

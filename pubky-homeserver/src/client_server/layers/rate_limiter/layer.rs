@@ -33,9 +33,8 @@ use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::quota_config::BandwidthRate;
-use crate::data_directory::user_resource_quota::{
-    CachedUserResourceQuota, QuotaOverride, UserResourceQuota, UserResourceQuotaCache,
-    MAX_CACHED_USER_RESOURCE_QUOTAS,
+use crate::data_directory::user_quota::{
+    CachedUserQuota, QuotaOverride, UserQuota, UserQuotaCache, MAX_CACHED_USER_QUOTAS,
 };
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
@@ -55,7 +54,7 @@ const CLEANUP_INTERVAL_SECS: u64 = 60;
 /// A Tower Layer to handle general rate limiting.
 ///
 /// Supports rate limiting by request count and by upload/download speed.
-/// For user-keyed speed limits, per-user overrides from `UserResourceQuota`
+/// For user-keyed speed limits, per-user overrides from `UserQuota`
 /// are resolved from cache/DB and used instead of the default path limit.
 ///
 /// Requires a `PubkyHostLayer` to be applied first.
@@ -66,14 +65,14 @@ const CLEANUP_INTERVAL_SECS: u64 = 60;
 #[derive(Debug, Clone)]
 pub struct RateLimiterLayer {
     limits: Vec<PathLimit>,
-    cache: UserResourceQuotaCache,
+    cache: UserQuotaCache,
     sql_db: SqlDb,
 }
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with the given path limits and per-user
     /// quota resolution dependencies.
-    pub fn new(limits: Vec<PathLimit>, cache: UserResourceQuotaCache, sql_db: SqlDb) -> Self {
+    pub fn new(limits: Vec<PathLimit>, cache: UserQuotaCache, sql_db: SqlDb) -> Self {
         if limits.is_empty() {
             tracing::info!("Rate limiting is disabled.");
         } else {
@@ -84,7 +83,7 @@ impl RateLimiterLayer {
             tracing::info!("Rate limits configured: {}", limits_str.join(", "));
         }
 
-        // Spawn a periodic cleanup task for the user resource quota cache.
+        // Spawn a periodic cleanup task for the user quota cache.
         let cache_weak = Arc::downgrade(&cache);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
@@ -230,15 +229,15 @@ fn get_or_create_limiter(
 ///
 /// ## Cache capacity behaviour
 ///
-/// The cache is bounded by [`MAX_CACHED_USER_RESOURCE_QUOTAS`]. When a miss
+/// The cache is bounded by [`MAX_CACHED_USER_QUOTAS`]. When a miss
 /// occurs at capacity, expired entries are evicted first. If the cache is
 /// still full after eviction, 10% of entries are evicted (arbitrary order)
 /// to make room in bulk and avoid per-request churn.
 async fn resolve_limits(
     pubkey: &PublicKey,
-    cache: &UserResourceQuotaCache,
+    cache: &UserQuotaCache,
     sql_db: &SqlDb,
-) -> Result<Option<UserResourceQuota>, sqlx::Error> {
+) -> Result<Option<UserQuota>, sqlx::Error> {
     // Check cache: use entry if present and not expired.
     let cached = cache
         .get(pubkey)
@@ -254,11 +253,11 @@ async fn resolve_limits(
 
     // Make room if at capacity: evict expired entries first, then ~10%
     // in bulk if still full to avoid per-request churn.
-    if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
+    if cache.len() >= MAX_CACHED_USER_QUOTAS {
         cache.retain(|_, entry| !entry.is_expired());
 
-        if cache.len() >= MAX_CACHED_USER_RESOURCE_QUOTAS {
-            let to_evict = MAX_CACHED_USER_RESOURCE_QUOTAS / 10;
+        if cache.len() >= MAX_CACHED_USER_QUOTAS {
+            let to_evict = MAX_CACHED_USER_QUOTAS / 10;
             let keys: Vec<_> = cache
                 .iter()
                 .take(to_evict.max(1))
@@ -272,17 +271,14 @@ async fn resolve_limits(
 
     match UserRepository::get(pubkey, &mut sql_db.pool().into()).await {
         Ok(user) => {
-            let resolved = user.resource_quota();
-            cache.insert(
-                pubkey.clone(),
-                CachedUserResourceQuota::new(resolved.clone()),
-            );
+            let resolved = user.quota();
+            cache.insert(pubkey.clone(), CachedUserQuota::new(resolved.clone()));
             Ok(Some(resolved))
         }
         // Cache a negative entry with a short TTL to prevent repeated DB queries
         // for non-existent users, while allowing subsequent signup to take effect.
         Err(sqlx::Error::RowNotFound) => {
-            cache.insert(pubkey.clone(), CachedUserResourceQuota::not_found());
+            cache.insert(pubkey.clone(), CachedUserQuota::not_found());
             Ok(None)
         }
         Err(e) => Err(e),
@@ -293,7 +289,7 @@ async fn resolve_limits(
 pub struct RateLimiterMiddleware<S> {
     inner: S,
     limits: Vec<LimitTuple>,
-    cache: UserResourceQuotaCache,
+    cache: UserQuotaCache,
     sql_db: SqlDb,
     /// Shared pool of per-user read speed limiters. Users with the same effective rate share an instance.
     user_read_limiters: Arc<DashMap<BandwidthRate, Arc<KeyedRateLimiter>>>,
@@ -634,7 +630,7 @@ mod tests {
     // Start a server with the given config, cache, and DB on a random port.
     async fn start_server_with_db(
         config: Vec<PathLimit>,
-        cache: UserResourceQuotaCache,
+        cache: UserQuotaCache,
         db: SqlDb,
     ) -> SocketAddr {
         let app = Router::new()
@@ -824,11 +820,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_direction_detection() {
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
 
         let write_rate: BandwidthRate = "5mb/s".parse().unwrap();
         let read_rate: BandwidthRate = "10mb/s".parse().unwrap();
-        let quota = UserResourceQuota {
+        let quota = UserQuota {
             rate_write: QuotaOverride::Value(write_rate.clone()),
             rate_read: QuotaOverride::Value(read_rate.clone()),
             ..Default::default()
@@ -840,16 +836,16 @@ mod tests {
         assert_eq!(quota.rate_read.as_value(), Some(&read_rate));
 
         // Default quota has no overrides
-        let default_quota = UserResourceQuota::default();
+        let default_quota = UserQuota::default();
         assert!(default_quota.rate_write.is_default());
         assert!(default_quota.rate_read.is_default());
     }
 
     #[tokio::test]
     async fn test_user_rate_override_unlimited_bypass() {
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
 
-        let quota = UserResourceQuota {
+        let quota = UserQuota {
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
@@ -862,7 +858,7 @@ mod tests {
     async fn test_user_without_override_uses_default() {
         // User with no rate overrides (all Default) — phase 3 falls back to
         // the global user-keyed speed PathLimit (if one matched).
-        let quota = UserResourceQuota::default();
+        let quota = UserQuota::default();
         assert!(quota.rate_write.is_default());
         assert!(quota.rate_read.is_default());
     }
@@ -890,10 +886,10 @@ mod tests {
         // Verify that per-user speed limits work without any global PathLimit.
         // Phase 3 should apply the user's rate_write/rate_read even when
         // limits_owned is empty.
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
 
         let rate: BandwidthRate = "1mb/s".parse().unwrap();
-        let quota = UserResourceQuota {
+        let quota = UserQuota {
             rate_write: QuotaOverride::Value(rate.clone()),
             ..Default::default()
         };
@@ -904,14 +900,14 @@ mod tests {
         assert_eq!(pool.len(), 1);
 
         // With Unlimited, phase 3 skips throttling entirely
-        let unlimited_quota = UserResourceQuota {
+        let unlimited_quota = UserQuota {
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
         assert!(unlimited_quota.rate_write.is_unlimited());
 
         // With Default and no global PathLimit, no throttling
-        let default_quota = UserResourceQuota::default();
+        let default_quota = UserQuota::default();
         assert!(default_quota.rate_write.is_default());
 
         // Limiter is usable

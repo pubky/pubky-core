@@ -1,4 +1,4 @@
-use crate::data_directory::user_resource_quota::UserResourceQuotaCache;
+use crate::data_directory::user_quota::UserQuotaCache;
 use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
@@ -19,5 +19,5 @@ pub(crate) struct AppState {
     /// `None` = no limit.
     pub(crate) default_storage_quota_mb: Option<u64>,
     /// Shared cache for resolved per-user limits (used by rate limiter).
-    pub(crate) user_resource_quota_cache: UserResourceQuotaCache,
+    pub(crate) user_quota_cache: UserQuotaCache,
 }

@@ -29,8 +29,9 @@ pub fn build_storage_operator(
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
+    default_storage_quota_mb: Option<u64>,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone());
+    let user_quota_layer = UserQuotaLayer::new(db.clone(), default_storage_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
@@ -89,6 +90,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
         context.data_dir.path(),
         &context.sql_db,
         context.events_service.clone(),
+        context.config_toml.general.default_storage_quota_mb(),
     )
 }
 
@@ -111,8 +113,15 @@ impl OpendalService {
         data_directory: &Path,
         db: &SqlDb,
         events_service: EventsService,
+        default_storage_quota_mb: Option<u64>,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(config, data_directory, db, events_service)?;
+        let operator = build_storage_operator(
+            config,
+            data_directory,
+            db,
+            events_service,
+            default_storage_quota_mb,
+        )?;
         Ok(Self { operator })
     }
 

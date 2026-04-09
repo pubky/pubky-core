@@ -7,7 +7,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::data_directory::user_resource_quota::UserResourceQuota;
+use crate::data_directory::user_quota::UserQuota;
 use crate::persistence::sql::UnifiedExecutor;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
@@ -23,7 +23,7 @@ impl SignupCodeRepository {
     /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
         id: &SignupCodeId,
-        limits: &UserResourceQuota,
+        limits: &UserQuota,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
         limits
@@ -231,9 +231,9 @@ pub struct SignupCodeEntity {
 }
 
 impl SignupCodeEntity {
-    /// Extract resource quota from the DB columns.
-    pub fn resource_quota(&self) -> UserResourceQuota {
-        UserResourceQuota::from_nullable_columns(
+    /// Extract quota from the DB columns.
+    pub fn quota(&self) -> UserQuota {
+        UserQuota::from_nullable_columns(
             self.quota_storage_mb,
             self.quota_max_sessions,
             self.quota_rate_read.clone(),
@@ -298,7 +298,7 @@ mod tests {
         // Test create code with default (all-unlimited) limits
         let code = SignupCodeRepository::create(
             &signup_code_id,
-            &UserResourceQuota::default(),
+            &UserQuota::default(),
             &mut db.pool().into(),
         )
         .await
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
         // All-default quota: all fields should be Default
-        assert_eq!(code.resource_quota(), UserResourceQuota::default());
+        assert_eq!(code.quota(), UserQuota::default());
 
         // Test get code
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
@@ -314,22 +314,22 @@ mod tests {
             .unwrap();
         assert_eq!(code.id, signup_code_id);
         assert_eq!(code.used_by, None);
-        assert_eq!(code.resource_quota(), UserResourceQuota::default());
+        assert_eq!(code.quota(), UserQuota::default());
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_create_with_resource_quota() {
+    async fn test_create_with_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
 
-        let config = UserResourceQuota {
-            storage_quota_mb: Some(500),
-            max_sessions: Some(10),
+        let config = UserQuota {
+            storage_quota_mb: QuotaOverride::Value(500),
+            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Default,
         };
@@ -337,13 +337,13 @@ mod tests {
         let code = SignupCodeRepository::create(&signup_code_id, &config, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.resource_quota(), config.clone());
+        assert_eq!(code.quota(), config.clone());
 
         // Verify get also returns the config
         let code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
             .await
             .unwrap();
-        assert_eq!(code.resource_quota(), config);
+        assert_eq!(code.quota(), config);
     }
 
     #[tokio::test]
@@ -353,7 +353,7 @@ mod tests {
         let signup_code_id = SignupCodeId::random();
         let _ = SignupCodeRepository::create(
             &signup_code_id,
-            &UserResourceQuota::default(),
+            &UserQuota::default(),
             &mut db.pool().into(),
         )
         .await
@@ -388,27 +388,15 @@ mod tests {
         let code2 = SignupCodeId::random();
         let code3 = SignupCodeId::random();
 
-        let _ = SignupCodeRepository::create(
-            &code1,
-            &UserResourceQuota::default(),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-        let _ = SignupCodeRepository::create(
-            &code2,
-            &UserResourceQuota::default(),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
-        let _ = SignupCodeRepository::create(
-            &code3,
-            &UserResourceQuota::default(),
-            &mut db.pool().into(),
-        )
-        .await
-        .unwrap();
+        let _ = SignupCodeRepository::create(&code1, &UserQuota::default(), &mut db.pool().into())
+            .await
+            .unwrap();
+        let _ = SignupCodeRepository::create(&code2, &UserQuota::default(), &mut db.pool().into())
+            .await
+            .unwrap();
+        let _ = SignupCodeRepository::create(&code3, &UserQuota::default(), &mut db.pool().into())
+            .await
+            .unwrap();
 
         // After creating 3 codes, all should be unused
         let overview = SignupCodeRepository::get_overview(&mut db.pool().into())
@@ -450,7 +438,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_signup_token_limits_applied_to_user() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::data_directory::user_resource_quota::QuotaOverride;
+        use crate::data_directory::user_quota::QuotaOverride;
         use crate::persistence::sql::user::UserRepository;
         use std::str::FromStr;
 
@@ -461,14 +449,14 @@ mod tests {
         }
 
         // 1) Create a signup code with custom limits
-        let resource_quota = UserResourceQuota {
-            storage_quota_mb: Some(1024),
-            max_sessions: Some(5),
+        let user_quota = UserQuota {
+            storage_quota_mb: QuotaOverride::Value(1024),
+            max_sessions: QuotaOverride::Value(5),
             rate_read: QuotaOverride::Value(bw("200mb/m")),
             rate_write: QuotaOverride::Default,
         };
         let code_id = SignupCodeId::random();
-        let code = SignupCodeRepository::create(&code_id, &resource_quota, &mut db.pool().into())
+        let code = SignupCodeRepository::create(&code_id, &user_quota, &mut db.pool().into())
             .await
             .unwrap();
 
@@ -482,24 +470,21 @@ mod tests {
         SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
             .await
             .unwrap();
-        let token_limits = code.resource_quota();
-        UserRepository::set_resource_quota(user.id, &token_limits, &mut (&mut tx).into())
+        let token_limits = code.quota();
+        UserRepository::set_quota(user.id, &token_limits, &mut (&mut tx).into())
             .await
             .unwrap();
-        user.apply_resource_quota(&token_limits);
+        user.apply_quota(&token_limits);
         tx.commit().await.unwrap();
 
         // 3) Re-read from DB and verify limits were persisted
         let user = UserRepository::get(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
-        let user_resource_quota = user.resource_quota();
-        assert_eq!(user_resource_quota.storage_quota_mb, Some(1024));
-        assert_eq!(user_resource_quota.max_sessions, Some(5));
-        assert_eq!(
-            user_resource_quota.rate_read,
-            QuotaOverride::Value(bw("200mb/m"))
-        );
-        assert_eq!(user_resource_quota.rate_write, QuotaOverride::Default);
+        let user_quota = user.quota();
+        assert_eq!(user_quota.storage_quota_mb, QuotaOverride::Value(1024));
+        assert_eq!(user_quota.max_sessions, QuotaOverride::Value(5));
+        assert_eq!(user_quota.rate_read, QuotaOverride::Value(bw("200mb/m")));
+        assert_eq!(user_quota.rate_write, QuotaOverride::Default);
     }
 }
