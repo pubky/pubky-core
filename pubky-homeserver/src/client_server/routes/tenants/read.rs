@@ -2,9 +2,8 @@ use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error,
-        extractors::{ListQueryParams, PubkyHost},
-        AppState,
+        err_if_user_is_invalid::get_user_or_http_error, middleware::pubky_host::PubkyHost,
+        query_params::ListQueryParams, AppState,
     },
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };

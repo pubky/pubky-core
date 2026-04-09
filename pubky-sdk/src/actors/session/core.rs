@@ -171,7 +171,10 @@ impl PubkySession {
     }
 
     fn session_missing(response: &reqwest::Response) -> bool {
-        response.status() == StatusCode::NOT_FOUND
+        matches!(
+            response.status(),
+            StatusCode::NOT_FOUND | StatusCode::UNAUTHORIZED
+        )
     }
 
     async fn parse_session_info(response: reqwest::Response) -> Result<SessionInfo> {

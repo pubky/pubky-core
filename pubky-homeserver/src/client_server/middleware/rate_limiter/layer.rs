@@ -20,7 +20,7 @@ use std::time::Duration;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 
-use crate::client_server::extractors::PubkyHost;
+use crate::client_server::middleware::pubky_host::PubkyHost;
 use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
 use crate::shared::HttpError;
 use futures_util::StreamExt;
@@ -363,7 +363,7 @@ mod tests {
     use tokio::{task::JoinHandle, time::Instant};
 
     use crate::shared::HttpResult;
-    use crate::{client_server::layers::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
+    use crate::{client_server::middleware::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
 
     use super::*;
 

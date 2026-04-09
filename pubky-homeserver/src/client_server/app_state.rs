@@ -1,13 +1,16 @@
+use axum::extract::FromRef;
+
+use crate::client_server::auth::AuthState;
 use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
 use crate::SignupMode;
-use pubky_common::auth::AuthVerifier;
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppState {
-    pub(crate) verifier: AuthVerifier,
+    /// Auth sub-state (extracted via `FromRef` by auth handlers).
+    pub(crate) auth_state: AuthState,
     /// The SQL database connection.
     pub(crate) sql_db: SqlDb,
     pub(crate) file_service: FileService,
@@ -16,4 +19,10 @@ pub(crate) struct AppState {
     pub(crate) user_quota_bytes: Option<u64>,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
+}
+
+impl FromRef<AppState> for AuthState {
+    fn from_ref(state: &AppState) -> Self {
+        state.auth_state.clone()
+    }
 }

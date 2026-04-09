@@ -1,3 +1,7 @@
+//! Cookie session persistence — entity and repository.
+//!
+//! Manages the deprecated `sessions` table used by cookie-based authentication.
+
 use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::PublicKey;
@@ -13,11 +17,11 @@ use crate::persistence::sql::{
 
 pub const SESSION_TABLE: &str = "sessions";
 
-/// Repository that handles all the queries regarding the UserEntity.
+/// Repository for deprecated cookie-based sessions.
 pub struct SessionRepository;
 
 impl SessionRepository {
-    /// Create a new user.
+    /// Create a new session.
     /// The executor can either be db.pool() or a transaction.
     pub async fn create<'a>(
         user_id: i32,
@@ -49,7 +53,7 @@ impl SessionRepository {
         SessionSecret::new(session_secret).map_err(|e| sqlx::Error::Decode(e.into()))
     }
 
-    /// Get a user by their public key.
+    /// Get a session by its secret.
     /// The executor can either be db.pool() or a transaction.
     pub async fn get_by_secret<'a>(
         secret: &SessionSecret,
@@ -78,7 +82,7 @@ impl SessionRepository {
         Ok(user)
     }
 
-    /// Delete a user by their public key.
+    /// Delete a session by its secret.
     /// The executor can either be db.pool() or a transaction.
     pub async fn delete<'a>(
         secret: &SessionSecret,

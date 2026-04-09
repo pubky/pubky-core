@@ -8,7 +8,8 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState,
+        auth::WriteAccess, err_if_user_is_invalid::get_user_or_http_error,
+        middleware::pubky_host::PubkyHost, AppState,
     },
     persistence::{
         files::WriteStreamError,
@@ -22,6 +23,7 @@ use crate::{
 
 pub async fn delete(
     State(state): State<AppState>,
+    _write: WriteAccess,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
@@ -35,6 +37,7 @@ pub async fn delete(
 
 pub async fn put(
     State(state): State<AppState>,
+    _write: WriteAccess,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
     body: Body,
