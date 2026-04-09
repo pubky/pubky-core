@@ -1,6 +1,6 @@
 use pubky_testnet::pubky::{Keypair, Method, PubkyHttpClient, StatusCode};
 use pubky_testnet::{
-    pubky_homeserver::{ConfigToml, Domain, MockSetupSource},
+    pubky_homeserver::{ConfigToml, Domain, MockDataDir},
     Testnet,
 };
 use serde::Deserialize;
@@ -46,11 +46,11 @@ async fn admin_info_includes_metadata() {
     );
     let admin_password = config.admin.admin_password.clone();
 
-    let mock_setup_source = MockSetupSource::new(config, Some(Keypair::random())).unwrap();
+    let mock_data_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
 
     let mut testnet = Testnet::new().await.unwrap();
     let homeserver = testnet
-        .create_homeserver_app_with_mock(mock_setup_source)
+        .create_homeserver_app_with_mock(mock_data_dir)
         .await
         .unwrap();
 

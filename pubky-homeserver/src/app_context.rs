@@ -2,29 +2,29 @@
 //! The application context shared between all components.
 //! Think of it as a simple Dependency Injection container.
 //!
-//! Create with a `SetupSource` instance: `AppContext::read_from(setup_source)`
+//! Create with a `DataDir` instance: `AppContext::read_from(data_dir)`
 //!
 
 #[cfg(any(test, feature = "testing"))]
-use crate::MockSetupSource;
+use crate::MockDataDir;
 use crate::{
     metrics_server::routes::metrics::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
         sql::{Migrator, PgEventListener, SqlDb},
     },
-    ConfigToml, SetupSource,
+    ConfigToml, DataDir,
 };
 use pubky_common::crypto::Keypair;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Errors that can occur when converting a `SetupSource` to an `AppContext`.
+/// Errors that can occur when converting a `DataDir` to an `AppContext`.
 #[derive(Debug, thiserror::Error)]
 pub enum AppContextConversionError {
     /// Failed to ensure data directory exists and is writable.
     #[error("Failed to ensure data directory exists and is writable: {0}")]
-    SetupSource(anyhow::Error),
+    DataDir(anyhow::Error),
     /// Failed to read or create config file.
     #[error("Failed to read or create config file: {0}")]
     Config(anyhow::Error),
@@ -54,7 +54,7 @@ pub enum AppContextConversionError {
 /// The application context shared between all components.
 /// Think of it as a simple Dependency Injection container.
 ///
-/// Create with a `SetupSource` instance: `AppContext::read_from(setup_source)`
+/// Create with a `DataDir` instance: `AppContext::read_from(data_dir)`
 #[derive(Clone)]
 pub struct AppContext {
     /// The SQL database connection.
@@ -62,8 +62,8 @@ pub struct AppContext {
     /// The storage operator to store files.
     pub(crate) file_service: FileService,
     pub(crate) config_toml: ConfigToml,
-    /// Keep setup source alive. The mock dir will cleanup on drop.
-    pub(crate) setup_source: Arc<dyn SetupSource>,
+    /// Keep data_dir alive. The mock dir will cleanup on drop.
+    pub(crate) data_dir: Arc<dyn DataDir>,
     pub(crate) keypair: Keypair,
     /// Main pkarr instance. This will automatically turn into a DHT server after 15 minutes after startup.
     /// We need to keep this alive.
@@ -85,23 +85,23 @@ impl AppContext {
     /// Create a new AppContext for testing.
     #[cfg(any(test, feature = "testing"))]
     pub async fn test() -> Self {
-        let setup_source = MockSetupSource::test();
-        Self::read_from(setup_source)
+        let data_dir = MockDataDir::test();
+        Self::read_from(data_dir)
             .await
-            .expect("failed to build AppContext from MockSetupSource")
+            .expect("failed to build AppContext from DataDirMock")
     }
 
-    /// Create a new AppContext from a setup source.
-    pub async fn read_from<S: SetupSource + 'static>(
-        setup_source: S,
+    /// Create a new AppContext from a data dir.
+    pub async fn read_from<D: DataDir + 'static>(
+        dir: D,
     ) -> Result<Self, AppContextConversionError> {
-        setup_source
+        dir
             .ensure_data_dir_exists_and_is_writable()
-            .map_err(AppContextConversionError::SetupSource)?;
-        let conf = setup_source
+            .map_err(AppContextConversionError::DataDir)?;
+        let conf = dir
             .read_or_create_config_file()
             .map_err(AppContextConversionError::Config)?;
-        let keypair = setup_source
+        let keypair = dir
             .read_or_create_keypair()
             .map_err(AppContextConversionError::Keypair)?;
 
@@ -119,7 +119,7 @@ impl AppContext {
 
         let file_service = FileService::new_from_config(
             &conf,
-            setup_source.data_dir_path(),
+            dir.path(),
             sql_db.clone(),
             events_service.clone(),
         )
@@ -136,7 +136,7 @@ impl AppContext {
             pkarr_builder,
             config_toml: conf,
             keypair,
-            setup_source: Arc::new(setup_source),
+            data_dir: Arc::new(dir),
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),

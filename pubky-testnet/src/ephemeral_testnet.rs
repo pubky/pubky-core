@@ -2,7 +2,7 @@ use crate::Testnet;
 use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, ConnectionString, HomeserverApp, MockSetupSource,
+    storage_config::StorageConfigToml, ConfigToml, ConnectionString, HomeserverApp, MockDataDir,
 };
 
 #[cfg(feature = "embedded-postgres")]
@@ -207,14 +207,14 @@ impl EphemeralTestnetBuilder {
         let keypair = self
             .homeserver_keypair
             .unwrap_or_else(|| Keypair::from_secret(&[0; 32]));
-        let mock_setup_source = if let Some(data_dir) = self.data_dir {
+        let mock_dir = if let Some(data_dir) = self.data_dir {
             config.storage = StorageConfigToml::FileSystem;
-            MockSetupSource::new_persistent_data_dir(data_dir, config, Some(keypair))?
+            MockDataDir::new_persistent_data_dir(data_dir, config, Some(keypair))?
         } else {
-            MockSetupSource::new(config, Some(keypair))?
+            MockDataDir::new(config, Some(keypair))?
         };
         testnet
-            .create_homeserver_app_with_mock(mock_setup_source)
+            .create_homeserver_app_with_mock(mock_dir)
             .await?;
 
         Ok(EphemeralTestnet {
@@ -344,9 +344,9 @@ impl EphemeralTestnet {
             config.general.database_url = connection_string.clone();
         }
 
-        let mock_setup_source = MockSetupSource::new(config, Some(Keypair::random()))?;
+        let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
         self.testnet
-            .create_homeserver_app_with_mock(mock_setup_source)
+            .create_homeserver_app_with_mock(mock_dir)
             .await
     }
 

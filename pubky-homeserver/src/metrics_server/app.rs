@@ -26,7 +26,7 @@ pub enum MetricsServerBuildError {
 
     /// Failed to bootstrap from the setup source.
     #[error("Failed to bootstrap from the setup source: {0}")]
-    SetupSource(AppContextConversionError),
+    DataDir(AppContextConversionError),
 }
 
 /// Metrics server

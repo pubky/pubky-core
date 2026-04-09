@@ -13,8 +13,8 @@ use crate::republishers::{
 };
 use crate::tracing::init_from_config_if_set;
 #[cfg(any(test, feature = "testing"))]
-use crate::MockSetupSource;
-use crate::{app_context::AppContext, homeserver_config::HomeserverPaths};
+use crate::MockDataDir;
+use crate::{app_context::AppContext, data_directory::PersistentDataDir};
 use anyhow::Result;
 use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
@@ -64,20 +64,20 @@ pub struct HomeserverApp {
 impl HomeserverApp {
     /// Run the homeserver with configurations from a homeserver setup data path.
     pub async fn start_from_setup_path(path: PathBuf) -> Result<Self> {
-        let paths = HomeserverPaths::new(path);
+        let paths = PersistentDataDir::new(path);
         let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with resolved homeserver paths.
-    pub async fn start_from_homeserver_paths(paths: HomeserverPaths) -> Result<Self> {
+    pub async fn start_with_persistent_data_dir(paths: PersistentDataDir) -> Result<Self> {
         let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn start_with_mock_setup_source(dir: MockSetupSource) -> Result<Self> {
+    pub async fn start_with_mock_data_dir(dir: MockDataDir) -> Result<Self> {
         let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
@@ -89,7 +89,7 @@ impl HomeserverApp {
 
         tracing::debug!(
             "Homeserver data dir: {}",
-            context.setup_source.data_dir_path().display()
+            context.data_dir.path().display()
         );
 
         let user_keys_republisher =

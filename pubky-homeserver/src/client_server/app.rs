@@ -1,11 +1,11 @@
 use super::AppState;
 
 #[cfg(any(test, feature = "testing"))]
-use crate::MockSetupSource;
+use crate::MockDataDir;
 
 use crate::{
     app_context::{AppContext, AppContextConversionError},
-    HomeserverPaths,
+    PersistentDataDir,
 };
 use anyhow::Result;
 use futures_util::TryFutureExt;
@@ -66,14 +66,14 @@ pub struct ClientServer {
 impl ClientServer {
     /// Run the homeserver with configurations from a data directory.
     pub async fn start_from_setup_path(path: PathBuf) -> Result<Self, ClientServerBuildError> {
-        let paths = HomeserverPaths::new(path);
+        let paths = PersistentDataDir::new(path);
         let context = AppContext::read_from(paths).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
-    pub async fn start_from_homeserver_paths(
-        paths: HomeserverPaths,
+    pub async fn start_with_persistent_data_dir(
+        paths: PersistentDataDir,
     ) -> Result<Self, ClientServerBuildError> {
         let context = AppContext::read_from(paths).await?;
         Self::start(context).await
@@ -81,8 +81,8 @@ impl ClientServer {
 
     /// Run the homeserver with configurations from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn start_with_mock_setup_source(
-        setup_source: MockSetupSource,
+    pub async fn start_with_mock_data_dir(
+        setup_source: MockDataDir,
     ) -> Result<Self, ClientServerBuildError> {
         let context = AppContext::read_from(setup_source).await?;
         Self::start(context).await

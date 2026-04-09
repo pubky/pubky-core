@@ -11,8 +11,8 @@ use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
 use crate::AppContext;
 #[cfg(any(test, feature = "testing"))]
-use crate::MockSetupSource;
-use crate::{AppContextConversionError, HomeserverPaths};
+use crate::MockDataDir;
+use crate::{AppContextConversionError, PersistentDataDir};
 use axum::routing::{any, delete, post};
 use axum::{routing::get, Router};
 use axum_server::Handle;
@@ -62,7 +62,7 @@ pub enum AdminServerBuildError {
 
     /// Failed to bootstrap from the setup source.
     #[error("Failed to bootstrap from the setup source: {0}")]
-    SetupSource(AppContextConversionError),
+    DataDir(AppContextConversionError),
 }
 
 /// Admin server
@@ -79,29 +79,29 @@ pub struct AdminServer {
 
 impl AdminServer {
     /// Create a new admin server from homeserver paths.
-    pub async fn from_homeserver_paths(
-        paths: HomeserverPaths,
+    pub async fn from_data_dir(
+        paths: PersistentDataDir,
     ) -> Result<Self, AdminServerBuildError> {
         let context = AppContext::read_from(paths)
             .await
-            .map_err(AdminServerBuildError::SetupSource)?;
+            .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
     /// Create a new admin server from a setup path.
-    pub async fn from_setup_path(setup_path: PathBuf) -> Result<Self, AdminServerBuildError> {
-        let paths = HomeserverPaths::new(setup_path);
-        Self::from_homeserver_paths(paths).await
+    pub async fn from_data_dir_path(setup_path: PathBuf) -> Result<Self, AdminServerBuildError> {
+        let paths = PersistentDataDir::new(setup_path);
+        Self::from_data_dir(paths).await
     }
 
     /// Create a new admin server from a mock setup source.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn from_mock_setup_source(
-        setup_source: MockSetupSource,
+    pub async fn from_mock_dir(
+        setup_source: MockDataDir,
     ) -> Result<Self, AdminServerBuildError> {
         let context = AppContext::read_from(setup_source)
             .await
-            .map_err(AdminServerBuildError::SetupSource)?;
+            .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 

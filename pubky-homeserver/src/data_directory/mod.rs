@@ -8,12 +8,12 @@
 mod config_toml;
 mod domain;
 mod domain_port;
-mod homeserver_paths;
+mod persistent_data_dir;
 #[cfg(any(test, feature = "testing"))]
-mod mock_setup_source;
+mod mock_data_dir;
 /// Quota configuration for the TomlConfig.
 pub mod quota_config;
-mod setup_source;
+mod data_dir;
 mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
@@ -22,8 +22,8 @@ mod log_level;
 pub use config_toml::{AdminToml, ConfigReadError, ConfigToml, LoggingToml, MetricsToml};
 pub use domain::Domain;
 pub use domain_port::DomainPort;
-pub use homeserver_paths::HomeserverPaths;
+pub use persistent_data_dir::PersistentDataDir;
 #[cfg(any(test, feature = "testing"))]
-pub use mock_setup_source::MockSetupSource;
-pub use setup_source::SetupSource;
+pub use mock_data_dir::MockDataDir;
+pub use data_dir::DataDir;
 pub use signup_mode::SignupMode;

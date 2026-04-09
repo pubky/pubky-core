@@ -91,7 +91,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
     };
     build_storage_operator(
         &context.config_toml.storage,
-        context.setup_source.data_dir_path(),
+        context.data_dir.path(),
         &context.sql_db,
         quota_bytes,
         context.events_service.clone(),

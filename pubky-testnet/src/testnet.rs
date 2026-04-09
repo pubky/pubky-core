@@ -9,7 +9,7 @@ use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{
     storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverApp,
-    MockSetupSource,
+    MockDataDir,
 };
 use std::{str::FromStr, time::Duration};
 use url::Url;
@@ -101,8 +101,8 @@ impl Testnet {
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
-        let mock_setup_source = MockSetupSource::new(config, Some(Keypair::from_secret(&[0; 32])))?;
-        self.create_homeserver_app_with_mock(mock_setup_source)
+        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret(&[0; 32])))?;
+        self.create_homeserver_app_with_mock(mock_dir)
             .await
     }
 
@@ -115,8 +115,8 @@ impl Testnet {
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
-        let mock_setup_source = MockSetupSource::new(config, Some(Keypair::random()))?;
-        self.create_homeserver_app_with_mock(mock_setup_source)
+        let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
+        self.create_homeserver_app_with_mock(mock_dir)
             .await
     }
 
@@ -125,21 +125,21 @@ impl Testnet {
     /// Automatically uses the configured bootstrap nodes and relays in this Testnet.
     pub async fn create_homeserver_app_with_mock(
         &mut self,
-        mut mock_setup_source: MockSetupSource,
+        mut mock_dir: MockDataDir,
     ) -> Result<&HomeserverApp> {
-        mock_setup_source.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
+        mock_dir.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
-            mock_setup_source.config_toml.pkdns.dht_relay_nodes =
+            mock_dir.config_toml.pkdns.dht_relay_nodes =
                 Some(self.dht_relay_urls().to_vec());
         }
-        if mock_setup_source.is_temp() {
+        if mock_dir.is_temp() {
             // For temporary data dirs, we want to use in-memory storage to speed up the tests.
-            mock_setup_source.config_toml.storage = StorageConfigToml::InMemory;
+            mock_dir.config_toml.storage = StorageConfigToml::InMemory;
         } else {
             // For persistent data dirs, we want to use file system storage to actually persist the data.
-            mock_setup_source.config_toml.storage = StorageConfigToml::FileSystem;
+            mock_dir.config_toml.storage = StorageConfigToml::FileSystem;
         }
-        let homeserver = HomeserverApp::start_with_mock_setup_source(mock_setup_source).await?;
+        let homeserver = HomeserverApp::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self
             .homeservers

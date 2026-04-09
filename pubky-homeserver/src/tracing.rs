@@ -8,16 +8,16 @@
 //! This way, we don't miss any logs, for example config file loading errors.
 //!
 
-use crate::{ConfigToml, HomeserverPaths, SetupSource};
+use crate::{ConfigToml, DataDir, PersistentDataDir};
 use tracing_subscriber::EnvFilter;
 
-/// Initialize tracing from a [`HomeserverPaths`].
+/// Initialize tracing from a [`PersistentDataDir`].
 ///
-/// Reads (or creates) the config file via the `SetupSource` trait, then
+/// Reads (or creates) the config file via the `DataDir` trait, then
 /// delegates to [`init_from_config`].  Falls back to
 /// `ConfigToml::default()` when the config cannot be read.
-pub fn init_tracing(homeserver_paths: &HomeserverPaths) -> anyhow::Result<()> {
-    let config = match homeserver_paths.read_or_create_config_file() {
+pub fn init_tracing(data_dir: &PersistentDataDir) -> anyhow::Result<()> {
+    let config = match data_dir.read_or_create_config_file() {
         Ok(config) => config,
         Err(e) => {
             println!("Failed to read config from file: {}", e);

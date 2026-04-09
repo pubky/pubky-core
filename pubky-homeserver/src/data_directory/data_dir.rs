@@ -3,13 +3,13 @@ use std::path::Path;
 
 /// The source from which the homeserver bootstraps its configuration and identity.
 ///
-/// `SetupSource` abstracts over how the server's initial state is obtained so
+/// `DataDir` abstracts over how the server's initial state is obtained so
 /// that the same startup code path works for both production (reading real files
-/// from disk via [`crate::HomeserverPaths`]) and testing (supplying pre-built
-/// values in memory via [`crate::MockSetupSource`]).
-pub trait SetupSource: std::fmt::Debug + Send + Sync {
+/// from disk via [`crate::PersistentDataDir`]) and testing (supplying pre-built
+/// values in memory via [`crate::MockDataDir`]).
+pub trait DataDir: std::fmt::Debug + Send + Sync {
     /// Returns the path to the root data directory.
-    fn data_dir_path(&self) -> &Path;
+    fn path(&self) -> &Path;
 
     /// Ensures the data directory exists and is writable.
     ///

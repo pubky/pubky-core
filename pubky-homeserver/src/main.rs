@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use pubky_homeserver::{tracing::init_tracing, HomeserverApp, HomeserverPaths, SetupSource};
+use pubky_homeserver::{tracing::init_tracing, DataDir, HomeserverApp, PersistentDataDir};
 
 fn default_data_dir_path() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".pubky")
@@ -57,14 +57,14 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     let homeserver_paths =
-        HomeserverPaths::new_with_overrides(args.data_dir, args.config, args.secret_key);
+        PersistentDataDir::new_with_overrides(args.data_dir, args.config, args.secret_key);
 
     // Initialize tracing early so that config-loading errors are captured.
     init_tracing(&homeserver_paths)?;
 
     tracing::info!(
         "Using data directory: {}",
-        homeserver_paths.data_dir_path().display()
+        homeserver_paths.path().display()
     );
     tracing::info!(
         "Using config file: {}",
@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
         homeserver_paths.secret_file_path().display()
     );
 
-    let server = HomeserverApp::start_from_homeserver_paths(homeserver_paths).await?;
+    let server = HomeserverApp::start_with_persistent_data_dir(homeserver_paths).await?;
 
     tracing::info!(
         "Homeserver HTTP listening on {}",

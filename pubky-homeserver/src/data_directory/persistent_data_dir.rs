@@ -1,6 +1,6 @@
 //! Paths for the homeserver's important files and directories needed for configuration of the server and its storage backends.
 
-use super::{setup_source::SetupSource, ConfigToml};
+use super::{data_dir::DataDir, ConfigToml};
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -8,7 +8,7 @@ use std::{
 
 /// Paths for the homeserver's important files and directories.
 #[derive(Debug, Clone)]
-pub struct HomeserverPaths {
+pub struct PersistentDataDir {
     /// Root data directory.
     data_dir: PathBuf,
     /// Resolved config file path.
@@ -17,8 +17,8 @@ pub struct HomeserverPaths {
     secret_file_path: PathBuf,
 }
 
-impl HomeserverPaths {
-    /// Creates a new `HomeserverPaths` with all paths derived from `path`.
+impl PersistentDataDir {
+    /// Creates a new `PersistentDataDir` with all paths derived from `path`.
     ///
     /// `path` will be expanded if it starts with `~`.
     /// Config → `{path}/config.toml`, secret → `{path}/secret`.
@@ -34,7 +34,7 @@ impl HomeserverPaths {
         }
     }
 
-    /// Creates a `HomeserverPaths` with independent overrides for the config
+    /// Creates a `PersistentDataDir` with independent overrides for the config
     /// file and secret key file.
     ///
     /// Resolution rules (highest priority first):
@@ -105,9 +105,9 @@ impl HomeserverPaths {
     }
 }
 
-impl SetupSource for HomeserverPaths {
+impl DataDir for PersistentDataDir {
     /// Returns the full path to the data directory.
-    fn data_dir_path(&self) -> &Path {
+    fn path(&self) -> &Path {
         &self.data_dir
     }
 
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     pub fn test_expand_home_dir() {
-        let paths = HomeserverPaths::new(PathBuf::from("~/.pubky"));
+        let paths = PersistentDataDir::new(PathBuf::from("~/.pubky"));
         let homedir = dirs::home_dir().unwrap();
         let expanded_path = homedir.join(".pubky");
         assert_eq!(paths.data_dir, expanded_path);
@@ -175,7 +175,7 @@ mod tests {
     pub fn test_ensure_data_dir_exists_and_is_accessible() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
 
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
         assert!(test_path.exists());
@@ -185,7 +185,7 @@ mod tests {
     pub fn test_get_default_config_file_path_exists() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
         let config_file_path = paths.config_file_path();
         assert!(!config_file_path.exists()); // Should not exist yet
@@ -199,7 +199,7 @@ mod tests {
     pub fn test_read_or_create_config_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
         let _ = paths.read_or_create_config_file().unwrap(); // Should create a default config file
         assert!(paths.config_file_path().exists());
@@ -212,7 +212,7 @@ mod tests {
     pub fn test_read_or_create_config_file_dont_override_existing_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Write a broken config file
@@ -233,7 +233,7 @@ mod tests {
     pub fn test_create_secret_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
 
         let _ = paths.read_or_create_keypair().unwrap();
@@ -244,7 +244,7 @@ mod tests {
     pub fn test_dont_override_existing_secret_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Create a secret file
@@ -262,7 +262,7 @@ mod tests {
     pub fn test_trim_secret_file_content() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().join(".pubky");
-        let paths = HomeserverPaths::new(test_path.clone());
+        let paths = PersistentDataDir::new(test_path.clone());
         paths.ensure_data_dir_exists_and_is_writable().unwrap();
 
         // Create a secret file
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn test_new_with_overrides_none_falls_back_to_default_derivation() {
         let temp_dir = TempDir::new().unwrap();
-        let paths = HomeserverPaths::new_with_overrides(temp_dir.path().to_path_buf(), None, None);
+        let paths = PersistentDataDir::new_with_overrides(temp_dir.path().to_path_buf(), None, None);
         assert_eq!(
             paths.config_file_path(),
             &temp_dir.path().join("config.toml")
@@ -292,7 +292,7 @@ mod tests {
     fn test_new_with_overrides_explicit_config_file_is_used() {
         let temp_dir = TempDir::new().unwrap();
         let custom_config = PathBuf::from("/etc/pubky/config.toml");
-        let paths = HomeserverPaths::new_with_overrides(
+        let paths = PersistentDataDir::new_with_overrides(
             temp_dir.path().to_path_buf(),
             Some(custom_config.clone()),
             None,
@@ -306,7 +306,7 @@ mod tests {
     fn test_new_with_overrides_explicit_secret_file_is_used() {
         let temp_dir = TempDir::new().unwrap();
         let custom_secret = PathBuf::from("/run/secrets/pubky_secret");
-        let paths = HomeserverPaths::new_with_overrides(
+        let paths = PersistentDataDir::new_with_overrides(
             temp_dir.path().to_path_buf(),
             None,
             Some(custom_secret.clone()),
@@ -324,7 +324,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let custom_config = temp_dir.path().join("my.toml");
         let custom_secret = temp_dir.path().join("my.secret");
-        let paths = HomeserverPaths::new_with_overrides(
+        let paths = PersistentDataDir::new_with_overrides(
             temp_dir.path().to_path_buf(),
             Some(custom_config.clone()),
             Some(custom_secret.clone()),
@@ -342,7 +342,7 @@ mod tests {
         let config_file = config_dir.join("config.toml");
 
         let data_dir_root = temp_dir.path().join("data");
-        let paths = HomeserverPaths::new_with_overrides(
+        let paths = PersistentDataDir::new_with_overrides(
             data_dir_root.clone(),
             Some(config_file.clone()),
             None,
@@ -367,7 +367,7 @@ mod tests {
         let secret_file = secret_dir.join("homeserver.secret");
 
         let data_dir_root = temp_dir.path().join("data");
-        let paths = HomeserverPaths::new_with_overrides(
+        let paths = PersistentDataDir::new_with_overrides(
             data_dir_root.clone(),
             None,
             Some(secret_file.clone()),

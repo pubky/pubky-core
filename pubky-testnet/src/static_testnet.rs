@@ -8,7 +8,7 @@ use std::{
 
 use crate::Testnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverApp, MockSetupSource};
+use pubky_homeserver::{ConfigToml, DomainPort, HomeserverApp, MockDataDir};
 
 /// A simple testnet with
 ///
@@ -206,9 +206,9 @@ impl StaticTestnet {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
         config.admin.enabled = true; // Enable admin server for static testnet
         config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
-        let mock = MockSetupSource::new(config, Some(keypair))?;
+        let mock = MockDataDir::new(config, Some(keypair))?;
 
-        let homeserver = HomeserverApp::start_with_mock_setup_source(mock).await?;
+        let homeserver = HomeserverApp::start_with_mock_data_dir(mock).await?;
         self.testnet.homeservers.push(homeserver);
         Ok(())
     }
