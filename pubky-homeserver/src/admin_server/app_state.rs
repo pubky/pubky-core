@@ -22,8 +22,6 @@ pub(crate) struct AppState {
     pub(crate) admin_password: String,
     pub(crate) inner_dav_handler: DavHandler,
     pub(crate) metadata: AdminMetadata,
-    /// Deploy-time default storage quota (MB). `None` = no limit.
-    pub(crate) default_storage_quota_mb: Option<u64>,
     /// Shared cache for resolved user limits
     pub(crate) user_quota_cache: UserQuotaCache,
 }
@@ -43,7 +41,6 @@ impl AppState {
             admin_password: admin_password.to_string(),
             inner_dav_handler,
             metadata: AdminMetadata::default(),
-            default_storage_quota_mb: None,
             user_quota_cache: Arc::new(dashmap::DashMap::new()),
         }
     }
@@ -60,7 +57,6 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
-        self.default_storage_quota_mb = config.general.default_storage_quota_mb();
         self
     }
 }

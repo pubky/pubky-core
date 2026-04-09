@@ -15,9 +15,6 @@ pub(crate) struct AppState {
     pub(crate) signup_mode: SignupMode,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
-    /// Deploy-time default storage quota (MB), applied to new users during open signup.
-    /// `None` = no limit.
-    pub(crate) default_storage_quota_mb: Option<u64>,
     /// Shared cache for resolved per-user limits (used by rate limiter).
     pub(crate) user_quota_cache: UserQuotaCache,
 }

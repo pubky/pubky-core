@@ -220,13 +220,13 @@ pub struct SignupCodeEntity {
     pub id: SignupCodeId,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub used_by: Option<PublicKey>,
-    /// Per-user storage quota in MB. `None` = use defaults / unlimited.
+    /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
     pub quota_storage_mb: Option<i64>,
-    /// Per-user max sessions. `None` = use defaults / unlimited.
+    /// Per-user max sessions. `None` = Default (resolved from system config at enforcement time).
     pub quota_max_sessions: Option<i32>,
-    /// Per-user read rate limit. `None` = use defaults / unlimited.
+    /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
-    /// Per-user write rate limit. `None` = use defaults / unlimited.
+    /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_write: Option<String>,
 }
 
@@ -295,7 +295,7 @@ mod tests {
         let db = SqlDb::test().await;
         let signup_code_id = SignupCodeId::random();
 
-        // Test create code with default (all-unlimited) limits
+        // Test create code with default (all-Default) limits
         let code = SignupCodeRepository::create(
             &signup_code_id,
             &UserQuota::default(),

@@ -12,7 +12,7 @@ use crate::{
         sql::SqlDb,
     },
     shared::webdav::EntryPath,
-    storage_config::StorageConfigToml,
+    storage_config::{StorageConfigToml, StorageToml},
 };
 use bytes::Bytes;
 use futures_util::{stream::StreamExt, Stream};
@@ -25,18 +25,17 @@ use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, W
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
 pub fn build_storage_operator(
-    storage_config: &StorageConfigToml,
+    storage: &StorageToml,
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
-    default_storage_quota_mb: Option<u64>,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone(), default_storage_quota_mb);
+    let user_quota_layer = UserQuotaLayer::new(db.clone(), storage.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
     // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
-    let builder = match storage_config {
+    let builder = match &storage.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
                 Some(path) => path.to_string(),
@@ -90,7 +89,6 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
         context.data_dir.path(),
         &context.sql_db,
         context.events_service.clone(),
-        context.config_toml.general.default_storage_quota_mb(),
     )
 }
 
@@ -109,19 +107,12 @@ pub struct OpendalService {
 
 impl OpendalService {
     pub fn new_from_config(
-        config: &StorageConfigToml,
+        storage: &StorageToml,
         data_directory: &Path,
         db: &SqlDb,
         events_service: EventsService,
-        default_storage_quota_mb: Option<u64>,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(
-            config,
-            data_directory,
-            db,
-            events_service,
-            default_storage_quota_mb,
-        )?;
+        let operator = build_storage_operator(storage, data_directory, db, events_service)?;
         Ok(Self { operator })
     }
 
@@ -282,7 +273,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_build_storage_operator_from_config_file_system() {
         let mut context = AppContext::test().await;
-        context.config_toml.storage = StorageConfigToml::FileSystem;
+        context.config_toml.storage.backend = StorageConfigToml::FileSystem;
 
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");

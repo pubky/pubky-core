@@ -109,9 +109,8 @@ impl AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
-        let default_storage_quota_mb = conf.general.default_storage_quota_mb().map(|v| v as i64);
         Migrator::new(&sql_db)
-            .run(default_storage_quota_mb)
+            .run()
             .await
             .map_err(AppContextConversionError::Migrations)?;
 

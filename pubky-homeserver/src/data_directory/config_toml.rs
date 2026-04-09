@@ -5,8 +5,10 @@
 //! and lets callers optionally layer their own TOML on top.
 
 use super::{
-    domain_port::DomainPort, quota_config::PathLimit, storage_config::StorageConfigToml, Domain,
-    SignupMode,
+    domain_port::DomainPort,
+    quota_config::PathLimit,
+    storage_config::{StorageConfigToml, StorageToml},
+    Domain, SignupMode,
 };
 
 use crate::{
@@ -85,19 +87,12 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
+    /// Deprecated: use `[storage].default_quota_mb` instead.
+    /// Kept for backwards compatibility: `0` means unlimited.
+    /// Ignored when `[storage].default_quota_mb` is set.
+    #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
-}
-
-impl GeneralToml {
-    /// Return the default storage quota as `Option<u64>`: `0` → `None` (unlimited), `n` → `Some(n)`.
-    pub fn default_storage_quota_mb(&self) -> Option<u64> {
-        if self.user_storage_quota_mb == 0 {
-            None
-        } else {
-            Some(self.user_storage_quota_mb)
-        }
-    }
 }
 
 /// A config for Homeserver tracing subscriber configuration
@@ -130,8 +125,8 @@ pub struct ConfigToml {
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
-    /// Storage configuration. Files can be stored in a file system, in memory, or in a Google bucket.
-    pub storage: StorageConfigToml,
+    /// Storage configuration: backend selection + storage-level defaults.
+    pub storage: StorageToml,
     /// Administrative API configuration.
     pub admin: AdminToml,
     /// Metrics server configuration.
@@ -193,7 +188,9 @@ impl ConfigToml {
             .map_err(|e| ConfigReadError::ConfigMergeError(e.to_string()))?;
 
         // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)
-        Ok(merged_val.try_into()?)
+        let mut config: Self = merged_val.try_into()?;
+        config.resolve_legacy_storage_quota();
+        Ok(config)
     }
 
     /// Render the embedded sample config but comment out every value,
@@ -230,7 +227,7 @@ impl ConfigToml {
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
         config.pkdns.dht_relay_nodes = None;
-        config.storage = StorageConfigToml::InMemory;
+        config.storage.backend = StorageConfigToml::InMemory;
         config.logging = None;
         config
     }
@@ -258,13 +255,29 @@ impl ConfigToml {
     pub fn test() -> Self {
         Self::default_test_config()
     }
+
+    /// Populate `[storage].default_quota_mb` from the deprecated
+    /// `[general].user_storage_quota_mb` when the new field is not set.
+    /// Called once at parse time so downstream code only checks one place.
+    fn resolve_legacy_storage_quota(&mut self) {
+        if self.storage.default_quota_mb.is_some() {
+            return;
+        }
+        // Legacy fallback: 0 means unlimited (None), n means Some(n).
+        self.storage.default_quota_mb = match self.general.user_storage_quota_mb {
+            0 => None,
+            n => Some(n),
+        };
+    }
 }
 
 impl FromStr for ConfigToml {
     type Err = toml::de::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s)
+        let mut config: Self = toml::from_str(s)?;
+        config.resolve_legacy_storage_quota();
+        Ok(config)
     }
 }
 

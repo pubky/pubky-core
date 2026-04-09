@@ -119,7 +119,6 @@ impl ClientServer {
             signup_mode: context.config_toml.general.signup_mode.clone(),
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
-            default_storage_quota_mb: context.config_toml.general.default_storage_quota_mb(),
             user_quota_cache: context.user_quota_cache.clone(),
         };
         super::create_app(state.clone(), context)

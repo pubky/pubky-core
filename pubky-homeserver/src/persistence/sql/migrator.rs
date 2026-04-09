@@ -21,24 +21,6 @@ pub struct Migrator<'a> {
     db: &'a SqlDb,
 }
 
-/// Returns the full list of migrations to run. Add new migrations here.
-///
-/// `default_storage_quota_mb`: storage default from `[general].user_storage_quota_mb`.
-/// `None` = unlimited (0 in config), `Some(n)` = n MB.
-pub fn all_migrations(default_storage_quota_mb: Option<i64>) -> Vec<Box<dyn MigrationTrait>> {
-    vec![
-        Box::new(M20250806CreateUserMigration),
-        Box::new(M20250812CreateSignupCodeMigration),
-        Box::new(M20250813CreateSessionMigration),
-        Box::new(M20250814CreateEventMigration),
-        Box::new(M20250815CreateEntryMigration),
-        Box::new(M20251014EventsTableIndexAndContentHashMigration),
-        Box::new(M20260327AddQuotaColumnsMigration {
-            default_storage_quota_mb,
-        }),
-    ]
-}
-
 impl<'a> Migrator<'a> {
     /// Creates a new migrator.
     /// db: The database connection to use.
@@ -46,10 +28,23 @@ impl<'a> Migrator<'a> {
         Self { db }
     }
 
+    /// Returns a list of migrations to run.
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        // Add new migrations here. They run from top to bottom.
+        vec![
+            Box::new(M20250806CreateUserMigration),
+            Box::new(M20250812CreateSignupCodeMigration),
+            Box::new(M20250813CreateSessionMigration),
+            Box::new(M20250814CreateEventMigration),
+            Box::new(M20250815CreateEntryMigration),
+            Box::new(M20251014EventsTableIndexAndContentHashMigration),
+            Box::new(M20260327AddQuotaColumnsMigration),
+        ]
+    }
+
     /// Runs all migrations that are not yet applied.
-    pub async fn run(&self, default_storage_quota_mb: Option<i64>) -> anyhow::Result<()> {
-        self.run_migrations(all_migrations(default_storage_quota_mb))
-            .await
+    pub async fn run(&self) -> anyhow::Result<()> {
+        self.run_migrations(Self::migrations()).await
     }
 
     /// Runs a specific list of migrations.

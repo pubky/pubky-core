@@ -279,13 +279,13 @@ pub struct UserEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
-    /// Per-user storage quota in MB. `None` = use deploy-time default (or unlimited if no custom config).
+    /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
     pub quota_storage_mb: Option<i64>,
-    /// Per-user max sessions. `None` = use deploy-time default (or unlimited if no custom config).
+    /// Per-user max sessions. `None` = Default (resolved from system config at enforcement time).
     pub quota_max_sessions: Option<i32>,
-    /// Per-user read rate limit. `None` = use deploy-time default (or unlimited if no custom config).
+    /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
-    /// Per-user write rate limit. `None` = use deploy-time default (or unlimited if no custom config).
+    /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_write: Option<String>,
 }
 

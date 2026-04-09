@@ -9,12 +9,9 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-# Maximum storage a single user may occupy (in MB).
-# Applied as the default for new users during signup and as
-# the backfill value for existing users when the migration runs.
-# After that, per-user quotas are managed via the admin API:
-#   PATCH /users/{pubkey}/quota
-# Set to 0 for unlimited.
+# DEPRECATED: Use [storage].default_quota_mb instead.
+# Kept for backwards compatibility. 0 means unlimited.
+# Ignored when [storage].default_quota_mb is set.
 user_storage_quota_mb = 0
 
 [drive]
@@ -93,6 +90,13 @@ type = "file_system"
 # In Memory storage
 # Files are saved in memory. Only use when you know what you are doing!
 # type = "in_memory"
+
+# Default per-user storage quota (in MB).
+# Used as the fallback when a user's quota is set to "Default" (NULL in DB).
+# Per-user overrides are managed via the admin API:
+#   PATCH /users/{pubkey}/quota
+# Omit for unlimited. 0 means zero storage (not unlimited).
+# default_quota_mb = 500
 
 [admin]
 # Enable or disable the admin server

@@ -166,7 +166,7 @@ impl SqlDb {
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_without_migrations().await;
         let migrator = Migrator::new(&db);
-        migrator.run(None).await.expect("Failed to run migrations");
+        migrator.run().await.expect("Failed to run migrations");
         db
     }
 }
