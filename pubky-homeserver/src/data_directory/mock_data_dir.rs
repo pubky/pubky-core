@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::DataDir;
 
-/// Mock setup source for testing.
+/// Mock data directory for testing.
 ///
 /// By default it uses a temporary directory that is removed when the value is dropped.
 /// Use [`MockDataDir::new_persistent_data_dir`] to point at a real directory that

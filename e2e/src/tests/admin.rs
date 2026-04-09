@@ -46,11 +46,11 @@ async fn admin_info_includes_metadata() {
     );
     let admin_password = config.admin.admin_password.clone();
 
-    let mock_data_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
 
     let mut testnet = Testnet::new().await.unwrap();
     let homeserver = testnet
-        .create_homeserver_app_with_mock(mock_data_dir)
+        .create_homeserver_app_with_mock(mock_dir)
         .await
         .unwrap();
 

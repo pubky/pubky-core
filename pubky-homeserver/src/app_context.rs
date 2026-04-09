@@ -2,7 +2,7 @@
 //! The application context shared between all components.
 //! Think of it as a simple Dependency Injection container.
 //!
-//! Create with a `DataDir` instance: `AppContext::read_from(data_dir)`
+//! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
 #[cfg(any(test, feature = "testing"))]
@@ -54,7 +54,7 @@ pub enum AppContextConversionError {
 /// The application context shared between all components.
 /// Think of it as a simple Dependency Injection container.
 ///
-/// Create with a `DataDir` instance: `AppContext::read_from(data_dir)`
+/// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 #[derive(Clone)]
 pub struct AppContext {
     /// The SQL database connection.
@@ -91,12 +91,11 @@ impl AppContext {
             .expect("failed to build AppContext from DataDirMock")
     }
 
-    /// Create a new AppContext from a data dir.
+    /// Create a new AppContext from a data directory.
     pub async fn read_from<D: DataDir + 'static>(
         dir: D,
     ) -> Result<Self, AppContextConversionError> {
-        dir
-            .ensure_data_dir_exists_and_is_writable()
+        dir.ensure_data_dir_exists_and_is_writable()
             .map_err(AppContextConversionError::DataDir)?;
         let conf = dir
             .read_or_create_config_file()
@@ -117,13 +116,9 @@ impl AppContext {
             .await
             .map_err(AppContextConversionError::PgEventListener)?;
 
-        let file_service = FileService::new_from_config(
-            &conf,
-            dir.path(),
-            sql_db.clone(),
-            events_service.clone(),
-        )
-        .map_err(AppContextConversionError::Storage)?;
+        let file_service =
+            FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
+                .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
         Ok(Self {

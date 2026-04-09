@@ -102,8 +102,7 @@ impl Testnet {
             config.general.database_url = connection_string.clone();
         }
         let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret(&[0; 32])))?;
-        self.create_homeserver_app_with_mock(mock_dir)
-            .await
+        self.create_homeserver_app_with_mock(mock_dir).await
     }
 
     /// Run the full homeserver app with core and admin server using a freshly generated random keypair.
@@ -116,8 +115,7 @@ impl Testnet {
             config.general.database_url = connection_string.clone();
         }
         let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
-        self.create_homeserver_app_with_mock(mock_dir)
-            .await
+        self.create_homeserver_app_with_mock(mock_dir).await
     }
 
     /// Run the full homeserver app with core and admin server
@@ -129,8 +127,7 @@ impl Testnet {
     ) -> Result<&HomeserverApp> {
         mock_dir.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
-            mock_dir.config_toml.pkdns.dht_relay_nodes =
-                Some(self.dht_relay_urls().to_vec());
+            mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
         if mock_dir.is_temp() {
             // For temporary data dirs, we want to use in-memory storage to speed up the tests.

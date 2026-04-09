@@ -60,7 +60,7 @@ pub enum AdminServerBuildError {
     #[error("Failed to create admin server: {0}")]
     Server(anyhow::Error),
 
-    /// Failed to bootstrap from the setup source.
+    /// Failed to boostrap from the data directory.
     #[error("Failed to bootstrap from the setup source: {0}")]
     DataDir(AppContextConversionError),
 }
@@ -78,28 +78,24 @@ pub struct AdminServer {
 }
 
 impl AdminServer {
-    /// Create a new admin server from homeserver paths.
-    pub async fn from_data_dir(
-        paths: PersistentDataDir,
-    ) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::read_from(paths)
+    /// Create a new admin server from a data directory.
+    pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::read_from(data_dir)
             .await
             .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await
     }
 
-    /// Create a new admin server from a setup path.
-    pub async fn from_data_dir_path(setup_path: PathBuf) -> Result<Self, AdminServerBuildError> {
-        let paths = PersistentDataDir::new(setup_path);
-        Self::from_data_dir(paths).await
+    /// Create a new admin server from a data directory path.
+    pub async fn from_data_dir_path(data_dir_path: PathBuf) -> Result<Self, AdminServerBuildError> {
+        let data_dir = PersistentDataDir::new(data_dir_path);
+        Self::from_data_dir(data_dir).await
     }
 
-    /// Create a new admin server from a mock setup source.
+    /// Create a new admin server from a mock data directory.
     #[cfg(any(test, feature = "testing"))]
-    pub async fn from_mock_dir(
-        setup_source: MockDataDir,
-    ) -> Result<Self, AdminServerBuildError> {
-        let context = AppContext::read_from(setup_source)
+    pub async fn from_mock_dir(mock_dir: MockDataDir) -> Result<Self, AdminServerBuildError> {
+        let context = AppContext::read_from(mock_dir)
             .await
             .map_err(AdminServerBuildError::DataDir)?;
         Self::start(&context).await

@@ -213,9 +213,7 @@ impl EphemeralTestnetBuilder {
         } else {
             MockDataDir::new(config, Some(keypair))?
         };
-        testnet
-            .create_homeserver_app_with_mock(mock_dir)
-            .await?;
+        testnet.create_homeserver_app_with_mock(mock_dir).await?;
 
         Ok(EphemeralTestnet {
             testnet,
@@ -345,9 +343,7 @@ impl EphemeralTestnet {
         }
 
         let mock_dir = MockDataDir::new(config, Some(Keypair::random()))?;
-        self.testnet
-            .create_homeserver_app_with_mock(mock_dir)
-            .await
+        self.testnet.create_homeserver_app_with_mock(mock_dir).await
     }
 
     /// Create a new pubky client builder.

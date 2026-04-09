@@ -40,7 +40,7 @@ pub enum ClientServerBuildError {
     /// Failed to run the Pubky TLS web server.
     #[error("Pubky TLS web server error: {0}")]
     PubkyTlsServer(anyhow::Error),
-    /// Failed to convert the setup source to an AppContext.
+    /// Failed to convert the data directory to an AppContext.
     #[error("AppContext conversion error: {0}")]
     AppContext(AppContextConversionError),
 }
@@ -65,26 +65,28 @@ pub struct ClientServer {
 
 impl ClientServer {
     /// Run the homeserver with configurations from a data directory.
-    pub async fn start_from_setup_path(path: PathBuf) -> Result<Self, ClientServerBuildError> {
-        let paths = PersistentDataDir::new(path);
-        let context = AppContext::read_from(paths).await?;
+    pub async fn start_with_persistent_data_dir_path(
+        dir_path: PathBuf,
+    ) -> Result<Self, ClientServerBuildError> {
+        let data_dir = PersistentDataDir::new(dir_path);
+        let context = AppContext::read_from(data_dir).await?;
         Self::start(context).await
     }
 
     /// Run the homeserver with configurations from a data directory.
     pub async fn start_with_persistent_data_dir(
-        paths: PersistentDataDir,
+        dir: PersistentDataDir,
     ) -> Result<Self, ClientServerBuildError> {
-        let context = AppContext::read_from(paths).await?;
+        let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
 
-    /// Run the homeserver with configurations from a mock setup source.
+    /// Run the homeserver with configurations from a data directory mock.
     #[cfg(any(test, feature = "testing"))]
     pub async fn start_with_mock_data_dir(
-        setup_source: MockDataDir,
+        dir: MockDataDir,
     ) -> Result<Self, ClientServerBuildError> {
-        let context = AppContext::read_from(setup_source).await?;
+        let context = AppContext::read_from(dir).await?;
         Self::start(context).await
     }
 
