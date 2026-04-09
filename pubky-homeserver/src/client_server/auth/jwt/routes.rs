@@ -8,8 +8,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use pubky_common::auth::jws::GrantId;
-use serde::{Deserialize, Serialize};
+use pubky_common::auth::{grant_session::GrantInfo, jws::GrantId};
+use serde::Deserialize;
 
 use super::crypto::jws_crypto::JwsCompact;
 use super::persistence::grant::GrantEntity;
@@ -35,25 +35,13 @@ pub(crate) struct SignupParams {
     signup_token: Option<String>,
 }
 
-/// Summary of an active grant, returned by `GET /sessions`.
-#[derive(Serialize)]
-struct GrantInfo {
-    grant_id: GrantId,
-    client_id: String,
-    capabilities: String,
-    issued_at: u64,
-    expires_at: u64,
-}
-
-impl From<GrantEntity> for GrantInfo {
-    fn from(g: GrantEntity) -> Self {
-        Self {
-            grant_id: g.grant_id,
-            client_id: g.client_id.to_string(),
-            capabilities: g.capabilities.to_string(),
-            issued_at: g.issued_at as u64,
-            expires_at: g.expires_at as u64,
-        }
+fn grant_info_from_entity(g: GrantEntity) -> GrantInfo {
+    GrantInfo {
+        grant_id: g.grant_id,
+        client_id: g.client_id.to_string(),
+        capabilities: g.capabilities.to_string(),
+        issued_at: g.issued_at as u64,
+        expires_at: g.expires_at as u64,
     }
 }
 
@@ -135,7 +123,7 @@ pub async fn list_grants(
         .list_active_grants(user_id)
         .await?
         .into_iter()
-        .map(GrantInfo::from)
+        .map(grant_info_from_entity)
         .collect();
     Ok(Json(grants))
 }
@@ -154,7 +142,10 @@ pub async fn revoke_grant(
         HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid grant ID format")
     })?;
 
-    state.auth_service.revoke_user_grant(&grant_id, &auth).await?;
+    state
+        .auth_service
+        .revoke_user_grant(&grant_id, &auth)
+        .await?;
     Ok(StatusCode::OK)
 }
 

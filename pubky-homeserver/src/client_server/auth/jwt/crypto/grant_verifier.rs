@@ -6,10 +6,7 @@
 //! Pubky Ring creates these grants to give the SDKs the necessary information to authenticate and authorize requests to the homeserver.
 //! The homesserver verifies the grant and returns a short-lived access token for API calls.
 
-use pubky_common::{
-    crypto::PublicKey,
-    auth::grant::GrantClaims,
-};
+use pubky_common::{auth::grant::GrantClaims, crypto::PublicKey};
 
 use super::jws_crypto::{self, JwsCompact};
 
@@ -86,13 +83,13 @@ pub enum Error {
 mod tests {
     use chrono::Utc;
     use pubky_common::{
+        auth::jws::{ClientId, GrantId},
         capabilities::Capability,
         crypto::Keypair,
-        auth::jws::{ClientId, GrantId},
     };
 
-    use super::*;
     use super::jws_crypto;
+    use super::*;
 
     fn sign_raw_grant(keypair: &Keypair, raw: &GrantClaims) -> JwsCompact {
         let header = jws_crypto::eddsa_header("pubky-grant");
@@ -129,6 +126,23 @@ mod tests {
     }
 
     #[test]
+    fn verify_grant_accepts_pubky_common_sign_jws() {
+        // Interop check: SDKs sign grants via `pubky_common::auth::jws::sign_jws`
+        // (raw ed25519-dalek + base64url). The homeserver must accept that wire
+        // format byte-for-byte through the existing `verify_grant` pipeline.
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let raw = make_valid_raw_grant(&user_kp, &client_kp);
+
+        let compact_str = pubky_common::auth::jws::sign_jws(&user_kp, "pubky-grant", &raw);
+        let compact = JwsCompact::parse(&compact_str).unwrap();
+
+        let claims = verify_grant(&compact).unwrap();
+        assert_eq!(claims.jti, raw.jti);
+        assert_eq!(claims.cnf, client_kp.public_key());
+    }
+
+    #[test]
     fn reject_wrong_signer() {
         let user_kp = Keypair::random();
         let wrong_kp = Keypair::random();
@@ -162,7 +176,8 @@ mod tests {
         // Sign with wrong typ header
         let header = jws_crypto::eddsa_header("JWT");
         let enc = jws_crypto::encoding_key(&user_kp);
-        let compact = JwsCompact::parse(&jsonwebtoken::encode(&header, &raw, &enc).unwrap()).unwrap();
+        let compact =
+            JwsCompact::parse(&jsonwebtoken::encode(&header, &raw, &enc).unwrap()).unwrap();
 
         let result = verify_grant(&compact);
         assert!(matches!(result, Err(Error::InvalidHeaderType)));

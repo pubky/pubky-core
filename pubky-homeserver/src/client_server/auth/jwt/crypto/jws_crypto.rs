@@ -182,6 +182,25 @@ mod tests {
     }
 
     #[test]
+    fn pubky_common_sign_jws_round_trips_through_jsonwebtoken_decode() {
+        // The SDK signs with raw ed25519-dalek via `pubky_common::auth::jws::sign_jws`,
+        // while the homeserver verifies with `jsonwebtoken` + PEM-wrapped keys. This
+        // proves the two sides agree on the byte-level JWS Compact format (RFC 7515 +
+        // RFC 8037). If this test ever breaks, the SDK and homeserver would silently
+        // disagree on signature shape — a critical interop bug.
+        let kp = Keypair::random();
+        let claims = serde_json::json!({"sub": "interop", "exp": 9_999_999_999u64});
+        let compact = pubky_common::auth::jws::sign_jws(&kp, "JWT", &claims);
+
+        let dec = decoding_key(&kp.public_key());
+        let validation = eddsa_validation();
+        let decoded: jsonwebtoken::TokenData<serde_json::Value> =
+            jsonwebtoken::decode(&compact, &dec, &validation).unwrap();
+        assert_eq!(decoded.claims["sub"], "interop");
+        assert_eq!(decoded.header.typ.as_deref(), Some("JWT"));
+    }
+
+    #[test]
     fn wrong_key_fails_verification() {
         let keypair = Keypair::random();
         let wrong_keypair = Keypair::random();
@@ -194,8 +213,7 @@ mod tests {
         let token = jsonwebtoken::encode(&header, &claims, &enc).unwrap();
 
         let validation = eddsa_validation();
-        let result =
-            jsonwebtoken::decode::<serde_json::Value>(&token, &wrong_dec, &validation);
+        let result = jsonwebtoken::decode::<serde_json::Value>(&token, &wrong_dec, &validation);
 
         assert!(result.is_err());
     }

@@ -118,8 +118,7 @@ fn check_timestamp(raw: &PopProofClaims) -> Result<(), Error> {
 }
 
 fn parse_verified_pop(raw: PopProofClaims) -> Result<PopProof, Error> {
-    let issued_at =
-        DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
+    let issued_at = DateTime::from_timestamp(raw.iat as i64, 0).ok_or(Error::InvalidTimestamp)?;
     Ok(PopProof {
         grant_id: raw.gid,
         nonce: raw.nonce,
@@ -163,8 +162,8 @@ pub enum Error {
 mod tests {
     use pubky_common::crypto::Keypair;
 
-    use super::*;
     use super::jws_crypto;
+    use super::*;
 
     fn sign_pop(client_kp: &Keypair, raw: &PopProofClaims) -> JwsCompact {
         let header = jws_crypto::eddsa_header("pubky-pop");
@@ -180,6 +179,28 @@ mod tests {
             nonce: PopNonce::generate(),
             iat: Utc::now().timestamp() as u64,
         }
+    }
+
+    #[test]
+    fn verify_accepts_pubky_common_sign_jws() {
+        // Interop check: SDKs sign PoP proofs via `pubky_common::auth::jws::sign_jws`.
+        // The homeserver must accept that wire format byte-for-byte.
+        let client_kp = Keypair::random();
+        let hs_kp = Keypair::random();
+        let raw = make_valid_pop(&hs_kp);
+
+        let compact_str = pubky_common::auth::jws::sign_jws(&client_kp, "pubky-pop", &raw);
+        let compact = JwsCompact::parse(&compact_str).unwrap();
+
+        let cnf_key = client_kp.public_key();
+        let aud = hs_kp.public_key().z32();
+        let context = PopVerificationContext {
+            cnf_key: &cnf_key,
+            expected_audience: &aud,
+            expected_grant_id: &raw.gid,
+        };
+        let pop = PopProof::verify(&compact, &context).unwrap();
+        assert_eq!(pop.grant_id, raw.gid);
     }
 
     #[test]
