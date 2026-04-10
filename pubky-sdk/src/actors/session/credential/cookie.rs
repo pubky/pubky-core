@@ -32,10 +32,7 @@ use reqwest::{Method, RequestBuilder, Response};
 
 use super::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient,
-    actors::storage::resource::resolve_pubky,
-    cross_log,
-    errors::Result,
+    PubkyHttpClient, actors::storage::resource::resolve_pubky, cross_log, errors::Result,
     util::check_http_status,
 };
 

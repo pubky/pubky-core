@@ -1,6 +1,10 @@
 pub(crate) mod approval;
 pub mod auth_flow;
-pub mod auth_relay_listener;
 pub mod deep_links;
-pub mod http_relay_inbox_channel;
-pub mod http_relay_link_channel;
+pub mod relay;
+
+#[allow(
+    unused_imports,
+    reason = "Preserve existing auth module paths after relay split"
+)]
+pub use relay::{auth_relay_listener, http_relay_inbox_channel, http_relay_link_channel};

@@ -1,3 +1,10 @@
+//! Session bootstrap from auth approvals.
+//!
+//! This module is the seam where the auth flow ends and session lifecycle
+//! management begins. It converts a decoded [`AuthApproval`] into the concrete
+//! session credential shape required by [`PubkySession`], while keeping the
+//! JWT-vs-cookie branching contained inside the `session` module.
+
 use std::fmt;
 use std::sync::Arc;
 
@@ -10,9 +17,9 @@ use crate::errors::{AuthError, Result};
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::{PubkyHttpClient, actors::Pkdns};
 
-/// Context required to convert a grant approval into a session credential.
+/// Context required to bootstrap a session from an auth approval.
 #[derive(Clone)]
-pub(crate) struct GrantSessionContext {
+pub(crate) struct SessionBootstrapContext {
     /// Client (`PoP`) keypair bound by the grant's `cnf` claim.
     pub client_keypair: Keypair,
     /// For sign-up flows: the homeserver to create the user on, plus an
@@ -21,9 +28,9 @@ pub(crate) struct GrantSessionContext {
     pub signup_homeserver: Option<(PublicKey, Option<String>)>,
 }
 
-impl fmt::Debug for GrantSessionContext {
+impl fmt::Debug for SessionBootstrapContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GrantSessionContext")
+        f.debug_struct("SessionBootstrapContext")
             .field("client_keypair", &"<redacted>")
             .field(
                 "signup_homeserver",
@@ -33,10 +40,10 @@ impl fmt::Debug for GrantSessionContext {
     }
 }
 
-/// Exchange an [`AuthApproval`] into a fully-formed session credential.
-pub(crate) async fn credential_from_approval(
+/// Convert an [`AuthApproval`] into a fully-formed session credential.
+pub(crate) async fn credential_from_auth_approval(
     client: &PubkyHttpClient,
-    grant_ctx: Option<GrantSessionContext>,
+    session_bootstrap_ctx: Option<SessionBootstrapContext>,
     approval: AuthApproval,
 ) -> Result<Arc<dyn SessionCredential>> {
     match approval {
@@ -44,7 +51,7 @@ pub(crate) async fn credential_from_approval(
             crate::actors::session::cookie::credential_from_auth_token(&token, client).await
         }
         AuthApproval::Grant { jws, claims } => {
-            let ctx = grant_ctx.ok_or_else(|| {
+            let ctx = session_bootstrap_ctx.ok_or_else(|| {
                 AuthError::Validation(
                     "received a grant payload but no client keypair is configured".into(),
                 )
@@ -82,11 +89,12 @@ pub(crate) async fn credential_from_approval(
 }
 
 /// Convert an [`AuthApproval`] into a fully hydrated [`PubkySession`].
-pub(crate) async fn session_from_approval(
+pub(crate) async fn session_from_auth_approval(
     client: PubkyHttpClient,
-    grant_ctx: Option<GrantSessionContext>,
+    session_bootstrap_ctx: Option<SessionBootstrapContext>,
     approval: AuthApproval,
 ) -> Result<PubkySession> {
-    let credential = credential_from_approval(&client, grant_ctx, approval).await?;
+    let credential =
+        credential_from_auth_approval(&client, session_bootstrap_ctx, approval).await?;
     Ok(PubkySession::from_credential(client, credential))
 }

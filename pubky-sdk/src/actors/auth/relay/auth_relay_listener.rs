@@ -4,17 +4,15 @@ use futures_util::future::{AbortHandle, Abortable};
 
 use url::Url;
 
-use super::approval::AuthRelayMessage;
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
+use super::{
+    super::approval::AuthRelayMessage, http_relay_inbox_channel::EncryptedHttpRelayInboxChannel,
+    http_relay_link_channel::EncryptedHttpRelayLinkChannel,
+};
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::{
     PubkyHttpClient,
-    actors::{
-        DEFAULT_HTTP_RELAY_INBOX,
-        auth::{
-            http_relay_inbox_channel::EncryptedHttpRelayInboxChannel,
-            http_relay_link_channel::EncryptedHttpRelayLinkChannel,
-        },
-    },
+    actors::DEFAULT_HTTP_RELAY_INBOX,
     cross_log,
     errors::{AuthError, Result},
 };
@@ -350,17 +348,17 @@ mod tests {
             .unwrap();
         let poll_handle = tokio::spawn(async move {
             let response = listener.await_message().await.unwrap();
-            let approval = super::super::approval::AuthApproval::decode(
+            let approval = crate::actors::auth::approval::AuthApproval::decode(
                 &response,
-                super::super::approval::AuthApprovalMode::LegacyToken,
+                crate::actors::auth::approval::AuthApprovalMode::LegacyToken,
             )
             .unwrap();
 
             match approval {
-                super::super::approval::AuthApproval::Legacy(decoded) => {
+                crate::actors::auth::approval::AuthApproval::Legacy(decoded) => {
                     assert_eq!(*decoded, token)
                 }
-                super::super::approval::AuthApproval::Grant { .. } => {
+                crate::actors::auth::approval::AuthApproval::Grant { .. } => {
                     panic!("expected legacy approval")
                 }
             }
