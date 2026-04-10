@@ -5,7 +5,7 @@
 //! record. The SDK refreshes the JWT transparently using the stored grant
 //! and a fresh `PoP` proof.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use pubky_common::{
@@ -15,14 +15,14 @@ use pubky_common::{
         grant_session::{GrantSessionInfo, GrantSessionResponse},
         jws::PopNonce,
     },
-    capabilities::Capabilities,
     crypto::{Keypair, PublicKey},
-    session::SessionInfo,
 };
+
+use super::super::SessionInfo;
 use reqwest::{Method, RequestBuilder};
 use tokio::sync::Mutex;
 
-use super::{InfoSnapshot, SessionCredential};
+use super::SessionCredential;
 use crate::{
     PubkyHttpClient,
     actors::storage::resource::resolve_pubky,
@@ -44,9 +44,8 @@ pub(crate) fn now_unix() -> u64 {
 
 /// Mutable JWT credential state. Always wrapped in `Arc<Mutex<...>>`.
 ///
-/// Refresh paths take the mutex, hold it across the HTTP call so concurrent
-/// refreshes serialize, and update the [`InfoSnapshot`] separately so reads
-/// of `PubkySession::info()` never block on the refresh.
+/// Refresh paths take the mutex and hold it across the HTTP call so
+/// concurrent refreshes serialize.
 #[derive(Debug)]
 pub(crate) struct JwtState {
     /// Current bearer token (JWS Compact string).
@@ -65,13 +64,14 @@ pub(crate) struct JwtState {
     pub session: GrantSessionInfo,
 }
 
-/// Cheap-to-clone JWT credential. Bundles the mutable token state with the
-/// shared [`InfoSnapshot`]; both share the same `Arc`s across clones, so
-/// every `PubkySession` clone observes the same refreshes.
+/// Cheap-to-clone JWT credential. The mutable token state is shared across
+/// clones via `Arc<Mutex<…>>` so every `PubkySession` clone observes the
+/// same refreshes. Session info is derived from the immutable grant and
+/// never changes.
 #[derive(Clone, Debug)]
 pub(crate) struct JwtCredential {
     pub(crate) state: Arc<Mutex<JwtState>>,
-    pub(crate) info: InfoSnapshot,
+    pub(crate) info: SessionInfo,
 }
 
 impl JwtCredential {
@@ -86,7 +86,7 @@ impl JwtCredential {
     ) -> Result<Self> {
         let claims = AccessJwtClaims::decode(&response.token)
             .map_err(|e| AuthError::Validation(format!("invalid access JWT in response: {e}")))?;
-        let info = Arc::new(RwLock::new(build_session_info(&response.session)));
+        let info = to_session_info(&response.session);
         let state = JwtState {
             jwt: response.token,
             claims,
@@ -111,9 +111,7 @@ impl JwtCredential {
     /// bearer token.
     ///
     /// Holds the credential mutex for the entire refresh so concurrent
-    /// refreshes serialize on the same `Arc<Mutex<...>>`. Updates the
-    /// bundled [`InfoSnapshot`] after the new token is committed so
-    /// subsequent `info()` reads see the latest capabilities.
+    /// refreshes serialize on the same `Arc<Mutex<…>>`.
     pub(crate) async fn refresh(&self, client: &PubkyHttpClient) -> Result<()> {
         cross_log!(info, "Refreshing JWT credential");
         let mut state = self.state.lock().await;
@@ -148,13 +146,7 @@ impl JwtCredential {
 
         state.jwt = parsed.token;
         state.claims = new_claims;
-        let new_info = build_session_info(&parsed.session);
         state.session = parsed.session;
-        drop(state);
-
-        if let Ok(mut locked_info) = self.info.write() {
-            *locked_info = new_info;
-        }
         Ok(())
     }
 }
@@ -165,8 +157,8 @@ impl JwtCredential {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for JwtCredential {
-    fn info(&self) -> InfoSnapshot {
-        Arc::clone(&self.info)
+    fn info(&self) -> SessionInfo {
+        self.info.clone()
     }
 
     fn signout_path(&self) -> &'static str {
@@ -221,7 +213,7 @@ impl SessionCredential for JwtCredential {
                 .map_err(|e| RequestError::DecodeJson {
                     message: format!("decoding /auth/jwt/session response: {e}"),
                 })?;
-        Ok(Some(build_session_info(&session)))
+        Ok(Some(to_session_info(&session)))
     }
 
     fn as_jwt(&self) -> Option<&JwtCredential> {
@@ -229,13 +221,9 @@ impl SessionCredential for JwtCredential {
     }
 }
 
-/// Build a legacy [`SessionInfo`] view from a [`GrantSessionInfo`] so the
-/// existing `PubkySession::info()` API continues to work.
-pub(crate) fn build_session_info(session: &GrantSessionInfo) -> SessionInfo {
-    let caps = Capabilities(session.capabilities.clone());
-    let mut info = SessionInfo::new(&session.pubky, caps, None);
-    info.set_created_at(session.created_at);
-    info
+/// Build a minimal [`SessionInfo`] from a [`GrantSessionInfo`].
+fn to_session_info(session: &GrantSessionInfo) -> SessionInfo {
+    SessionInfo::new(session.pubky.clone(), session.capabilities.clone())
 }
 
 /// Sign a Proof-of-Possession proof JWS for a given grant.

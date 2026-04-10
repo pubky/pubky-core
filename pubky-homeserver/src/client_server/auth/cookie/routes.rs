@@ -16,7 +16,7 @@ use axum_extra::extract::Host;
 use bytes::Bytes;
 use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
-use pubky_common::session::SessionInfo;
+use pubky_common::session::CookieSessionRecord;
 use std::collections::HashMap;
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
@@ -62,8 +62,8 @@ pub(crate) async fn create_session_and_cookie(
     cookie.set_expires(expiry);
     cookies.add(cookie);
 
-    let session = SessionInfo::new(&user.public_key, capabilities.clone(), None);
-    let mut resp = session.serialize().into_response();
+    let record = CookieSessionRecord::new(&user.public_key, capabilities.clone(), None);
+    let mut resp = record.serialize().into_response();
     resp.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/octet-stream"),

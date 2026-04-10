@@ -16,7 +16,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::{
     capabilities::Capabilities,
     crypto::PublicKey,
-    session::SessionInfo,
+    session::CookieSessionRecord,
 };
 use reqwest::Method;
 
@@ -84,8 +84,8 @@ impl PubkySession {
         let raw_set_cookies = collect_set_cookies(&response);
 
         let bytes = response.bytes().await?;
-        let info = SessionInfo::deserialize(&bytes)?;
-        let user = info.public_key().clone();
+        let record = CookieSessionRecord::deserialize(&bytes)?;
+        let user = record.public_key().clone();
         let cookie_name = user.z32();
         let cookie = raw_set_cookies
             .iter()
@@ -113,7 +113,7 @@ impl PubkySession {
         }
 
         cross_log!(info, "Hydrated cookie session for {}", user);
-        let credential = CookieCredential::new(user, cookie, info);
+        let credential = CookieCredential::new(user, cookie, record);
         Ok(Self::from_credential(client, Arc::new(credential)))
     }
 }
@@ -131,9 +131,12 @@ impl PubkySession {
     /// reconstruct a `PubkySession` handle.
     #[must_use]
     pub fn export(&self) -> String {
-        let info = self.info();
-        cross_log!(info, "Exporting session for {}", info.public_key());
-        STANDARD.encode(info.serialize())
+        let cookie_view = self
+            .as_cookie()
+            .expect("export() is only valid for cookie sessions");
+        let record = cookie_view.session_info();
+        cross_log!(info, "Exporting session for {}", record.public_key());
+        STANDARD.encode(record.serialize())
     }
 
     /// Restore a session from an `export()` string. No secrets are read or written;
@@ -155,25 +158,22 @@ impl PubkySession {
             .map_err(|e| RequestError::Validation {
                 message: format!("invalid session export: {e}"),
             })?;
-        let info = SessionInfo::deserialize(&bytes).map_err(|e| RequestError::Validation {
-            message: format!("invalid session export: {e}"),
-        })?;
+        let record =
+            CookieSessionRecord::deserialize(&bytes).map_err(|e| RequestError::Validation {
+                message: format!("invalid session export: {e}"),
+            })?;
 
-        let user = info.public_key().clone();
+        let user = record.public_key().clone();
         // Browser WASM cannot read Set-Cookie, so the secret is None and
         // attachment is delegated to the runtime cookie jar.
         let credential: Arc<dyn SessionCredential> =
-            Arc::new(CookieCredential::new(user, None, info));
+            Arc::new(CookieCredential::new(user, None, record));
         let session = Self::from_credential(client, Arc::clone(&credential));
-        let info = session
+        // Revalidate updates the credential's internal state automatically.
+        session
             .revalidate()
             .await?
             .ok_or(AuthError::RequestExpired)?;
-        // We know the credential is a cookie credential — propagate the
-        // server-authoritative info into its snapshot.
-        if let Some(c) = credential.as_cookie() {
-            c.replace_info(info);
-        }
         cross_log!(info, "Rehydrated session");
         Ok(session)
     }
@@ -236,9 +236,10 @@ impl PubkySession {
             })?;
         cross_log!(info, "Importing session secret for {}", public_key);
 
-        // Build minimal session; placeholder SessionInfo will be replaced
+        // Build minimal session; placeholder record will be replaced
         // after validation.
-        let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
+        let placeholder =
+            CookieSessionRecord::new(&public_key, Capabilities::default(), None);
         let cookie_credential = CookieCredential::new(
             public_key.clone(),
             Some(cookie.to_string()),
@@ -247,16 +248,12 @@ impl PubkySession {
         let credential: Arc<dyn SessionCredential> = Arc::new(cookie_credential);
         let session = Self::from_credential(client, Arc::clone(&credential));
 
-        // Validate cookie and fetch authoritative SessionInfo. The
-        // credential is statically a CookieCredential, so as_cookie()
-        // always returns Some.
-        let info = session
+        // Validate cookie and fetch authoritative session data.
+        // Revalidate updates the credential's internal state automatically.
+        session
             .revalidate()
             .await?
             .ok_or(AuthError::RequestExpired)?;
-        if let Some(c) = credential.as_cookie() {
-            c.replace_info(info);
-        }
         cross_log!(
             info,
             "Successfully imported session secret for {}",

@@ -17,9 +17,10 @@
 //! previous design carried.
 
 use pubky_common::auth::{
-    grant_session::GrantInfo,
+    grant_session::{GrantInfo, GrantSessionInfo},
     jws::GrantId,
 };
+use pubky_common::session::CookieSessionRecord;
 use reqwest::Method;
 
 use super::core::PubkySession;
@@ -49,6 +50,16 @@ impl<'a> JwtSessionView<'a> {
             session,
             credential,
         }
+    }
+
+    /// Returns the full JWT session metadata from the homeserver.
+    ///
+    /// This gives access to JWT-specific fields like `grant_id`,
+    /// `client_id`, `token_expires_at`, and `grant_expires_at` that are
+    /// not available via the shared [`super::core::PubkySession::info`]
+    /// accessor.
+    pub async fn session_info(&self) -> GrantSessionInfo {
+        self.credential.state.lock().await.session.clone()
     }
 
     /// List all active grants for this user.
@@ -174,6 +185,15 @@ impl<'a> CookieSessionView<'a> {
             session,
             credential,
         }
+    }
+
+    /// Returns the full cookie session record.
+    ///
+    /// This gives access to cookie-specific fields like `created_at` and
+    /// the binary serialization format that are not available via the
+    /// shared [`super::core::PubkySession::info`] accessor.
+    pub fn session_info(&self) -> CookieSessionRecord {
+        self.credential.cookie_record()
     }
 
     /// Export the minimum data needed to restore this session later.

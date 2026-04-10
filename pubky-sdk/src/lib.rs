@@ -34,6 +34,8 @@ pub use actors::Pkdns;
 #[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
+pub use actors::SessionInfo;
+#[doc(inline)]
 pub use actors::{CookieSessionView, JwtSessionView};
 #[doc(inline)]
 pub use actors::PubkySigner;
@@ -83,5 +85,6 @@ pub use pubky_common::{
     capabilities::{Capabilities, Capability},
     crypto::{Keypair, PublicKey},
     recovery_file,
+    session::CookieSessionRecord,
 };
 pub use reqwest::{Method, StatusCode};

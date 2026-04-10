@@ -25,10 +25,11 @@ pub(crate) mod cookie;
 pub(crate) mod jwt;
 
 use std::fmt::Debug;
-use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use pubky_common::{crypto::PublicKey, session::SessionInfo};
+use pubky_common::crypto::PublicKey;
+
+use super::SessionInfo;
 use reqwest::{RequestBuilder, Response, StatusCode};
 
 use crate::{PubkyHttpClient, errors::Result};
@@ -45,13 +46,6 @@ pub(crate) fn credential_session_missing(response: &Response) -> bool {
 pub(crate) use cookie::CookieCredential;
 pub(crate) use jwt::JwtCredential;
 
-/// Snapshot of the latest [`SessionInfo`], shared lock-free across clones.
-///
-/// Cookie credentials populate this once at construction. JWT credentials
-/// update it on every successful refresh. Reads use a short `RwLock` read
-/// guard and never block on the JWT refresh state.
-pub(crate) type InfoSnapshot = Arc<RwLock<SessionInfo>>;
-
 /// Behavior shared by every session credential type.
 ///
 /// Implementations live in sibling modules:
@@ -62,6 +56,7 @@ pub(crate) type InfoSnapshot = Arc<RwLock<SessionInfo>>;
 /// behind `Arc<dyn SessionCredential>` from multi-threaded async runtimes.
 /// On WASM (`wasm32`) the `?Send` variant is used because the browser event
 /// loop is single-threaded and the underlying types contain `Rc`/`RefCell`.
+///
 // `async-trait` defaults to boxing futures as `Pin<Box<dyn Future + Send>>`,
 // which doesn't compile on `wasm32-unknown-unknown` because the JS/WASM
 // futures from `wasm-bindgen-futures` hold `Rc<RefCell<…>>` and aren't
@@ -70,9 +65,8 @@ pub(crate) type InfoSnapshot = Arc<RwLock<SessionInfo>>;
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub(crate) trait SessionCredential: Debug + Send + Sync {
-    /// Cached [`SessionInfo`] snapshot. Cheap to read; never blocks on
-    /// network or refresh state.
-    fn info(&self) -> InfoSnapshot;
+    /// Session metadata. Cheap clone; never blocks on network or refresh state.
+    fn info(&self) -> SessionInfo;
 
     /// Path used by `PubkySession::signout` against the user's homeserver.
     fn signout_path(&self) -> &'static str;

@@ -5,7 +5,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::PublicKey;
-use pubky_common::{capabilities::Capabilities, crypto::random_bytes, session::SessionInfo};
+use pubky_common::{capabilities::Capabilities, crypto::random_bytes, session::CookieSessionRecord};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -163,10 +163,11 @@ pub struct SessionEntity {
 }
 
 impl SessionEntity {
-    pub fn to_legacy(&self) -> SessionInfo {
-        let mut session = SessionInfo::new(&self.user_pubkey, self.capabilities.clone(), None);
-        session.set_created_at(self.created_at.and_utc().timestamp() as u64);
-        session
+    pub fn to_legacy(&self) -> CookieSessionRecord {
+        let mut record =
+            CookieSessionRecord::new(&self.user_pubkey, self.capabilities.clone(), None);
+        record.set_created_at(self.created_at.and_utc().timestamp() as u64);
+        record
     }
 }
 

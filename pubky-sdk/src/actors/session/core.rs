@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use pubky_common::{crypto::PublicKey, session::SessionInfo};
+use pubky_common::crypto::PublicKey;
+
+use super::SessionInfo;
 use reqwest::Method;
 
 use super::credential::SessionCredential;
@@ -51,27 +53,13 @@ impl PubkySession {
         Self { client, credential }
     }
 
-    /// Returns a snapshot of the current session info.
-    ///
-    /// For JWT-backed sessions this is a synthesized [`SessionInfo`] derived
-    /// from the most recent `GrantSessionInfo` returned by the homeserver — it
-    /// carries the user public key, capabilities, and creation timestamp.
+    /// Returns the current session info.
     ///
     /// `SessionInfo` is small and `Clone`-cheap; this method returns by value
-    /// so the API is uniform across credential types and reads never block on
-    /// JWT refresh.
-    ///
-    /// # Panics
-    /// - Panics if the internal `RwLock` is poisoned. This is only possible if
-    ///   another thread panicked while holding the lock — extremely unlikely
-    ///   in normal operation since the critical sections are tiny.
+    /// so the API is uniform across credential types.
     #[must_use]
     pub fn info(&self) -> SessionInfo {
-        self.credential
-            .info()
-            .read()
-            .expect("PubkySession::info RwLock poisoned")
-            .clone()
+        self.credential.info()
     }
 
     /// Returns a reference to the internal `PubkyHttpClient`.

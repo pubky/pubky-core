@@ -25,10 +25,12 @@
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use pubky_common::{crypto::PublicKey, session::SessionInfo};
+use pubky_common::{crypto::PublicKey, session::CookieSessionRecord};
+
+use super::super::SessionInfo;
 use reqwest::{Method, RequestBuilder};
 
-use super::{InfoSnapshot, SessionCredential, credential_session_missing};
+use super::{SessionCredential, credential_session_missing};
 use crate::{
     PubkyHttpClient,
     actors::storage::resource::resolve_pubky,
@@ -47,21 +49,23 @@ use crate::{
 pub(crate) struct CookieCredential {
     /// User public key — used to name the `Cookie` header.
     user: PublicKey,
-    /// Cached session info, shared lock-free across clones.
-    info: InfoSnapshot,
+    /// Full cookie session record for cookie-specific view access.
+    record: Arc<RwLock<CookieSessionRecord>>,
     /// Cookie secret captured from `Set-Cookie`. `None` only on browser
     /// WASM where the value is hidden by the fetch spec.
     cookie: Option<String>,
 }
 
 impl CookieCredential {
-    /// Create a cookie credential. `cookie` is `None` only when the
-    /// runtime hides `Set-Cookie` (browser WASM); every other runtime
-    /// captures it.
-    pub(crate) fn new(user: PublicKey, cookie: Option<String>, info: SessionInfo) -> Self {
+    /// Create a cookie credential from a [`CookieSessionRecord`].
+    pub(crate) fn new(
+        user: PublicKey,
+        cookie: Option<String>,
+        record: CookieSessionRecord,
+    ) -> Self {
         Self {
             user,
-            info: Arc::new(RwLock::new(info)),
+            record: Arc::new(RwLock::new(record)),
             cookie,
         }
     }
@@ -72,11 +76,18 @@ impl CookieCredential {
         self.cookie.as_deref()
     }
 
-    /// Replace the cached info snapshot — used by import/restore paths
-    /// after a successful revalidate.
-    pub(crate) fn replace_info(&self, info: SessionInfo) {
-        if let Ok(mut s) = self.info.write() {
-            *s = info;
+    /// Returns a clone of the stored [`CookieSessionRecord`].
+    pub(crate) fn cookie_record(&self) -> CookieSessionRecord {
+        self.record
+            .read()
+            .expect("CookieCredential record RwLock poisoned")
+            .clone()
+    }
+
+    /// Replace the cached record — used during revalidation.
+    pub(crate) fn replace_record(&self, record: CookieSessionRecord) {
+        if let Ok(mut r) = self.record.write() {
+            *r = record;
         }
     }
 }
@@ -87,8 +98,9 @@ impl CookieCredential {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for CookieCredential {
-    fn info(&self) -> InfoSnapshot {
-        Arc::clone(&self.info)
+    fn info(&self) -> SessionInfo {
+        let record = self.record.read().expect("CookieCredential record RwLock poisoned");
+        SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec())
     }
 
     fn signout_path(&self) -> &'static str {
@@ -131,7 +143,10 @@ impl SessionCredential for CookieCredential {
         }
         let response = check_http_status(response).await?;
         let bytes = response.bytes().await?;
-        Ok(Some(SessionInfo::deserialize(&bytes)?))
+        let record = CookieSessionRecord::deserialize(&bytes)?;
+        let info = SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec());
+        self.replace_record(record);
+        Ok(Some(info))
     }
 
     fn as_cookie(&self) -> Option<&CookieCredential> {
