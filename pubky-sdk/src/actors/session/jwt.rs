@@ -1,9 +1,9 @@
 //! JWT-mode session construction functions.
 //!
 //! This module is the SDK's gateway to the homeserver's grant-based auth flow:
-//! - [`session_from_grant_exchange`] turns a fresh user-signed grant
-//!   into a ready-to-use, JWT-backed session.
-//! - [`session_from_grant_signup`] does the same but creates the user
+//! - [`credential_from_grant_exchange`] turns a fresh user-signed grant
+//!   into a ready-to-use JWT credential.
+//! - [`credential_from_grant_signup`] does the same but creates the user
 //!   first.
 //!
 //! All grant-management operations (`list_grants`, `revoke_grant`,
@@ -19,7 +19,6 @@ use pubky_common::{
 };
 use reqwest::Method;
 
-use super::core::PubkySession;
 use super::credential::{JwtCredential, SessionCredential, jwt::sign_pop_for_grant};
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
@@ -48,21 +47,21 @@ pub(crate) enum GrantExchangeMode {
 /// - Propagates HTTP transport / server errors from `POST /auth/jwt/session`.
 /// - Returns [`crate::errors::Error::Authentication`] if the response JWT
 ///   cannot be decoded.
-pub(crate) async fn session_from_grant_exchange(
-    client: PubkyHttpClient,
+pub(crate) async fn credential_from_grant_exchange(
+    client: &PubkyHttpClient,
     grant_jws: String,
     grant_claims: GrantClaims,
     client_keypair: Keypair,
     homeserver_pubkey: PublicKey,
-) -> Result<PubkySession> {
+) -> Result<Arc<dyn SessionCredential>> {
     cross_log!(
         info,
-        "Exchanging grant for JWT session (user={}, hs={})",
+        "Exchanging grant for JWT credential (user={}, hs={})",
         grant_claims.iss.z32(),
         homeserver_pubkey.z32()
     );
     let response = post_grant_session(
-        &client,
+        client,
         &grant_jws,
         &grant_claims,
         &client_keypair,
@@ -70,8 +69,7 @@ pub(crate) async fn session_from_grant_exchange(
         &GrantExchangeMode::Signin,
     )
     .await?;
-    wrap_jwt_response(
-        client,
+    credential_from_grant_response(
         response,
         grant_jws,
         grant_claims,
@@ -80,30 +78,25 @@ pub(crate) async fn session_from_grant_exchange(
     )
 }
 
-/// Like [`session_from_grant_exchange`] but hits
+/// Like [`credential_from_grant_exchange`] but hits
 /// `POST /auth/jwt/signup?signup_token=…` so the homeserver creates the
 /// user first.
-///
-/// # Errors
-/// - Propagates HTTP transport / server errors from `POST /auth/jwt/signup`.
-/// - Returns [`crate::errors::Error::Authentication`] if the response JWT
-///   cannot be decoded.
-pub(crate) async fn session_from_grant_signup(
-    client: PubkyHttpClient,
+pub(crate) async fn credential_from_grant_signup(
+    client: &PubkyHttpClient,
     grant_jws: String,
     grant_claims: GrantClaims,
     client_keypair: Keypair,
     homeserver_pk: PublicKey,
     signup_token: Option<&str>,
-) -> Result<PubkySession> {
+) -> Result<Arc<dyn SessionCredential>> {
     cross_log!(
         info,
-        "Signup grant for JWT session (user={}, hs={})",
+        "Signup grant for JWT credential (user={}, hs={})",
         grant_claims.iss.z32(),
         homeserver_pk.z32()
     );
     let response = post_grant_session(
-        &client,
+        client,
         &grant_jws,
         &grant_claims,
         &client_keypair,
@@ -113,8 +106,7 @@ pub(crate) async fn session_from_grant_signup(
         },
     )
     .await?;
-    wrap_jwt_response(
-        client,
+    credential_from_grant_response(
         response,
         grant_jws,
         grant_claims,
@@ -123,14 +115,13 @@ pub(crate) async fn session_from_grant_signup(
     )
 }
 
-fn wrap_jwt_response(
-    client: PubkyHttpClient,
+fn credential_from_grant_response(
     response: GrantSessionResponse,
     grant_jws: String,
     grant_claims: GrantClaims,
     client_keypair: Keypair,
     homeserver_pk: PublicKey,
-) -> Result<PubkySession> {
+) -> Result<Arc<dyn SessionCredential>> {
     let credential = JwtCredential::from_response(
         response,
         grant_jws,
@@ -139,7 +130,7 @@ fn wrap_jwt_response(
         homeserver_pk,
     )?;
     let credential: Arc<dyn SessionCredential> = Arc::new(credential);
-    Ok(PubkySession::from_credential(client, credential))
+    Ok(credential)
 }
 
 /// `POST` a grant + `PoP` proof to either `/auth/jwt/session` or

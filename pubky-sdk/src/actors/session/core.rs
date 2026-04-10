@@ -29,11 +29,11 @@ use crate::{PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http
 /// [`Self::as_cookie`].
 ///
 /// Credential-specific factory functions live in dedicated modules:
-/// - Cookie: [`super::cookie`] — `session_from_auth_token`,
-///   `session_from_cookie_response`, `import_session`, `import_session_secret`,
-///   `session_from_secret_file`
-/// - JWT: [`super::jwt`] — `session_from_grant_exchange`,
-///   `session_from_grant_signup`
+/// - Cookie: [`super::cookie`] — `credential_from_auth_token`,
+///   `session_from_auth_token`, `session_from_cookie_response`, `import_session`,
+///   `import_session_secret`, `session_from_secret_file`
+/// - JWT: [`super::jwt`] — `credential_from_grant_exchange`,
+///   `credential_from_grant_signup`
 ///
 /// Thin delegations on `PubkySession` (`export`, `import`, `import_secret`,
 /// `from_secret_file`) preserve the public API surface.

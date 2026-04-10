@@ -1,14 +1,16 @@
 use std::fmt;
+use std::sync::Arc;
 
 use pubky_common::crypto::{Keypair, PublicKey};
 
+use super::core::PubkySession;
+use super::credential::SessionCredential;
+use crate::actors::auth::approval::AuthApproval;
 use crate::errors::{AuthError, Result};
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
-use crate::{PubkyHttpClient, PubkySession, actors::Pkdns};
+use crate::{PubkyHttpClient, actors::Pkdns};
 
-use super::approval::AuthApproval;
-
-/// Context required to convert a grant approval into a JWT-backed [`PubkySession`].
+/// Context required to convert a grant approval into a session credential.
 #[derive(Clone)]
 pub(crate) struct GrantSessionContext {
     /// Client (`PoP`) keypair bound by the grant's `cnf` claim.
@@ -31,15 +33,15 @@ impl fmt::Debug for GrantSessionContext {
     }
 }
 
-/// Convert an [`AuthApproval`] into a fully hydrated [`PubkySession`].
-pub(crate) async fn session_from_approval(
-    client: PubkyHttpClient,
+/// Exchange an [`AuthApproval`] into a fully-formed session credential.
+pub(crate) async fn credential_from_approval(
+    client: &PubkyHttpClient,
     grant_ctx: Option<GrantSessionContext>,
     approval: AuthApproval,
-) -> Result<PubkySession> {
+) -> Result<Arc<dyn SessionCredential>> {
     match approval {
         AuthApproval::Legacy(token) => {
-            crate::actors::session::cookie::session_from_auth_token(&token, client).await
+            crate::actors::session::cookie::credential_from_auth_token(&token, client).await
         }
         AuthApproval::Grant { jws, claims } => {
             let ctx = grant_ctx.ok_or_else(|| {
@@ -49,7 +51,7 @@ pub(crate) async fn session_from_approval(
             })?;
             let claims = *claims;
             if let Some((hs_pk, signup_token)) = ctx.signup_homeserver {
-                crate::actors::session::jwt::session_from_grant_signup(
+                crate::actors::session::jwt::credential_from_grant_signup(
                     client,
                     jws,
                     claims,
@@ -59,7 +61,6 @@ pub(crate) async fn session_from_approval(
                 )
                 .await
             } else {
-                // Sign-in: resolve the user's homeserver via PKARR.
                 let pkdns = Pkdns::with_client(client.clone());
                 let hs_pk = pkdns.get_homeserver_of(&claims.iss).await.ok_or_else(|| {
                     AuthError::Validation(format!(
@@ -67,7 +68,7 @@ pub(crate) async fn session_from_approval(
                         claims.iss.z32()
                     ))
                 })?;
-                crate::actors::session::jwt::session_from_grant_exchange(
+                crate::actors::session::jwt::credential_from_grant_exchange(
                     client,
                     jws,
                     claims,
@@ -78,4 +79,14 @@ pub(crate) async fn session_from_approval(
             }
         }
     }
+}
+
+/// Convert an [`AuthApproval`] into a fully hydrated [`PubkySession`].
+pub(crate) async fn session_from_approval(
+    client: PubkyHttpClient,
+    grant_ctx: Option<GrantSessionContext>,
+    approval: AuthApproval,
+) -> Result<PubkySession> {
+    let credential = credential_from_approval(&client, grant_ctx, approval).await?;
+    Ok(PubkySession::from_credential(client, credential))
 }

@@ -13,6 +13,8 @@
 
 use std::sync::Arc;
 
+#[cfg(target_arch = "wasm32")]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::{capabilities::Capabilities, crypto::PublicKey, session::CookieSessionRecord};
 use reqwest::Method;
 
@@ -30,10 +32,10 @@ use crate::{AuthToken, PubkyHttpClient, Result, cross_log, util::check_http_stat
 ///
 /// POSTs the token to the homeserver's `/session` endpoint and constructs a
 /// cookie-based [`PubkySession`].
-pub(crate) async fn session_from_auth_token(
+pub(crate) async fn credential_from_auth_token(
     token: &AuthToken,
-    client: PubkyHttpClient,
-) -> Result<PubkySession> {
+    client: &PubkyHttpClient,
+) -> Result<Arc<dyn SessionCredential>> {
     let url = format!("pubky{}/session", token.public_key().z32());
     cross_log!(
         info,
@@ -51,66 +53,28 @@ pub(crate) async fn session_from_auth_token(
     let response = check_http_status(response).await?;
     cross_log!(
         info,
-        "Session exchange for {} succeeded; constructing session",
+        "Session exchange for {} succeeded; constructing credential",
         token.public_key()
     );
-    session_from_cookie_response(client, response).await
+    let credential = CookieCredential::from_response(response).await?;
+    Ok(Arc::new(credential))
 }
 
-/// Construct a cookie-based session **from a successful `/session` or `/signup` response**.
-///
-/// - Reads the `SessionInfo` body (to learn the user pubky).
-/// - Tries to capture the session cookie from the `Set-Cookie` headers
-///   so it can be replayed manually. The capture succeeds on native and
-///   on Node.js WASM. It fails on browser WASM, where the fetch spec
-///   hides `Set-Cookie` from JavaScript — in that case the cookie is
-///   stored as `None` and the browser cookie jar handles attachment.
-///
-/// # Errors
-/// - On native we still treat a missing `Set-Cookie` as a hard error
-///   because the runtime should always expose it.
+pub(crate) async fn session_from_auth_token(
+    token: &AuthToken,
+    client: PubkyHttpClient,
+) -> Result<PubkySession> {
+    let credential = credential_from_auth_token(token, &client).await?;
+    Ok(PubkySession::from_credential(client, credential))
+}
+
 pub(crate) async fn session_from_cookie_response(
     client: PubkyHttpClient,
     response: reqwest::Response,
 ) -> Result<PubkySession> {
-    // Snapshot Set-Cookie headers before consuming the body. This is a
-    // single code path on all targets — what differs by runtime is
-    // whether the underlying fetch implementation surfaces the header
-    // values to us.
-    let raw_set_cookies = collect_set_cookies(&response);
-
-    let bytes = response.bytes().await?;
-    let record = CookieSessionRecord::deserialize(&bytes)?;
-    let user = record.public_key().clone();
-    let cookie_name = user.z32();
-    let cookie = raw_set_cookies
-        .iter()
-        .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
-        .find(|c| c.name() == cookie_name)
-        .map(|c| c.value().to_string());
-
-    // Native always has access to Set-Cookie. Treat its absence as a
-    // hard error so we never silently lose the secret on this target.
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if cookie.is_none() {
-            return Err(AuthError::Validation("missing session cookie".into()).into());
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    if cookie.is_none() {
-        cross_log!(
-            info,
-            "Hydrating WASM cookie session without captured secret \
-             (browser jar will handle attachment) for {}",
-            user
-        );
-    }
-
-    cross_log!(info, "Hydrated cookie session for {}", user);
-    let credential = CookieCredential::new(user, cookie, record);
-    Ok(PubkySession::from_credential(client, Arc::new(credential)))
+    let credential: Arc<dyn SessionCredential> =
+        Arc::new(CookieCredential::from_response(response).await?);
+    Ok(PubkySession::from_credential(client, credential))
 }
 
 // =====================================================================
@@ -308,33 +272,4 @@ pub(crate) async fn session_from_secret_file(
         secret_file_path.display()
     );
     import_session_secret(token.trim(), client).await
-}
-
-// =====================================================================
-// Helpers
-// =====================================================================
-
-/// Cross-target reader for `Set-Cookie` response header values.
-///
-/// `reqwest::HeaderMap::get_all` returns the same iterator on all targets,
-/// but the *underlying* fetch implementation decides whether the header is
-/// surfaced at all:
-///
-/// - **Native**: always returns every `Set-Cookie` value verbatim.
-/// - **Node.js WASM** (undici): returns the values; the browser-only fetch
-///   spec restrictions are not enforced.
-/// - **Browser WASM**: returns an empty iterator — the WHATWG fetch spec
-///   blocks JavaScript from reading `Set-Cookie` for any cross-origin or
-///   credentialed response.
-///
-/// This is a humble object: it has no logic of its own beyond defending
-/// against non-UTF-8 header values.
-fn collect_set_cookies(response: &reqwest::Response) -> Vec<String> {
-    let mut out = Vec::new();
-    for val in response.headers().get_all(reqwest::header::SET_COOKIE) {
-        if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
-            out.push(raw.to_owned());
-        }
-    }
-    out
 }

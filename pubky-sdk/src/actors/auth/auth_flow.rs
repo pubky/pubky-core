@@ -77,8 +77,8 @@ use crate::{
             deep_links::{
                 DeepLink, SigninDeepLink, SigninJwtDeepLink, SignupDeepLink, SignupJwtDeepLink,
             },
-            session_exchange::{GrantSessionContext, session_from_approval},
         },
+        session::exchange::{GrantSessionContext, session_from_approval},
     },
     errors::{AuthError, Result},
 };

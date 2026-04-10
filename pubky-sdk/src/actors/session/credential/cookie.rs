@@ -28,13 +28,19 @@ use async_trait::async_trait;
 use pubky_common::{crypto::PublicKey, session::CookieSessionRecord};
 
 use super::super::SessionInfo;
-use reqwest::{Method, RequestBuilder};
+use reqwest::{Method, RequestBuilder, Response};
 
 use super::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient, actors::storage::resource::resolve_pubky, cross_log, errors::Result,
+    PubkyHttpClient,
+    actors::storage::resource::resolve_pubky,
+    cross_log,
+    errors::Result,
     util::check_http_status,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::errors::AuthError;
 
 /// Cookie-based session credential (legacy).
 ///
@@ -67,6 +73,42 @@ impl CookieCredential {
         }
     }
 
+    /// Build a cookie credential from a successful `/session` or `/signup`
+    /// response.
+    pub(crate) async fn from_response(response: Response) -> Result<Self> {
+        let raw_set_cookies = collect_set_cookies(&response);
+
+        let bytes = response.bytes().await?;
+        let record = CookieSessionRecord::deserialize(&bytes)?;
+        let user = record.public_key().clone();
+        let cookie_name = user.z32();
+        let cookie = raw_set_cookies
+            .iter()
+            .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
+            .find(|c| c.name() == cookie_name)
+            .map(|c| c.value().to_string());
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if cookie.is_none() {
+                return Err(AuthError::Validation("missing session cookie".into()).into());
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        if cookie.is_none() {
+            cross_log!(
+                info,
+                "Hydrating WASM cookie credential without captured secret \
+                 (browser jar will handle attachment) for {}",
+                user
+            );
+        }
+
+        cross_log!(info, "Hydrated cookie credential for {}", user);
+        Ok(Self::new(user, cookie, record))
+    }
+
     /// Cookie secret accessor — used by [`super::super::view::CookieSessionView`]
     /// to export sessions for later restore. Returns `None` on browser WASM.
     pub(crate) fn cookie_secret(&self) -> Option<&str> {
@@ -87,6 +129,17 @@ impl CookieCredential {
             *r = record;
         }
     }
+}
+
+/// Cross-target reader for `Set-Cookie` response header values.
+fn collect_set_cookies(response: &Response) -> Vec<String> {
+    let mut out = Vec::new();
+    for val in response.headers().get_all(reqwest::header::SET_COOKIE) {
+        if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
+            out.push(raw.to_owned());
+        }
+    }
+    out
 }
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
