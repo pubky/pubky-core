@@ -398,10 +398,10 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_directory::user_quota::UserQuota;
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
+    use crate::persistence::user_quota::UserQuota;
 
     use super::*;
 
@@ -617,7 +617,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_override_variants() {
-        use crate::data_directory::user_quota::QuotaOverride;
+        use crate::persistence::user_quota::QuotaOverride;
 
         let db = SqlDb::test().await;
         // System default: 1 MB
@@ -735,7 +735,7 @@ mod tests {
 
         // Admin raises quota to 1 MB
         let config = UserQuota {
-            storage_quota_mb: crate::data_directory::user_quota::QuotaOverride::Value(1),
+            storage_quota_mb: crate::persistence::user_quota::QuotaOverride::Value(1),
             ..Default::default()
         };
         UserRepository::set_quota(user.id, &config, &mut db.pool().into())

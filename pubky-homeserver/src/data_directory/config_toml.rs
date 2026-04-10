@@ -91,6 +91,10 @@ pub struct GeneralToml {
     /// Kept for backwards compatibility: `0` means unlimited.
     /// Ignored when `[storage].default_quota_mb` is set.
     #[serde(default)]
+    #[deprecated(
+        since = "0.7.0",
+        note = "use `storage.default_quota_mb` instead; this field is only resolved at TOML parse time"
+    )]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
 }
@@ -264,7 +268,9 @@ impl ConfigToml {
             return;
         }
         // Legacy fallback: 0 means unlimited (None), n means Some(n).
-        self.storage.default_quota_mb = match self.general.user_storage_quota_mb {
+        #[allow(deprecated)]
+        let legacy = self.general.user_storage_quota_mb;
+        self.storage.default_quota_mb = match legacy {
             0 => None,
             n => Some(n),
         };
@@ -295,7 +301,10 @@ mod tests {
     fn test_default_config() {
         let c = ConfigToml::default();
         assert_eq!(c.general.signup_mode, SignupMode::TokenRequired);
-        assert_eq!(c.general.user_storage_quota_mb, 0);
+        #[allow(deprecated)]
+        {
+            assert_eq!(c.general.user_storage_quota_mb, 0);
+        }
         assert_eq!(
             c.drive.icann_listen_socket,
             SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6286))

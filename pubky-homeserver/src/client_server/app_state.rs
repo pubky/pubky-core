@@ -1,8 +1,8 @@
-use crate::data_directory::user_quota::UserQuotaCache;
 use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
+use crate::persistence::user_quota::UserQuotaCache;
 use crate::SignupMode;
 use pubky_common::auth::AuthVerifier;
 

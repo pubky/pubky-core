@@ -17,8 +17,6 @@ pub mod quota_config;
 mod signup_mode;
 /// Opendal config for the TomlConfig.
 pub mod storage_config;
-/// Per-user quota configuration.
-pub mod user_quota;
 
 mod log_level;
 pub use config_toml::{AdminToml, ConfigReadError, ConfigToml, LoggingToml, MetricsToml};

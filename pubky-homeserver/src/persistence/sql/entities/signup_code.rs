@@ -7,8 +7,8 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::data_directory::user_quota::UserQuota;
 use crate::persistence::sql::UnifiedExecutor;
+use crate::persistence::user_quota::UserQuota;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -341,7 +341,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_create_with_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::data_directory::user_quota::QuotaOverride;
+        use crate::persistence::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -459,8 +459,8 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_signup_token_limits_applied_to_user() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::data_directory::user_quota::QuotaOverride;
         use crate::persistence::sql::user::UserRepository;
+        use crate::persistence::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;

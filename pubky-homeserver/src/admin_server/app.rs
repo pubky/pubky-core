@@ -560,8 +560,8 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_generate_signup_token_with_limits() {
-        use crate::data_directory::user_quota::QuotaOverride;
         use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+        use crate::persistence::user_quota::QuotaOverride;
 
         let context = AppContext::test().await;
         let server = create_test_server(&context);

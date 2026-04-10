@@ -53,11 +53,11 @@ use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::quota_config::BandwidthRate;
-use crate::data_directory::user_quota::{
-    CachedUserQuota, QuotaOverride, UserQuota, UserQuotaCache, MAX_CACHED_USER_QUOTAS,
-};
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
+use crate::persistence::user_quota::{
+    CachedUserQuota, QuotaOverride, UserQuota, UserQuotaCache, MAX_CACHED_USER_QUOTAS,
+};
 use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
 use crate::shared::HttpError;
 use futures_util::StreamExt;
@@ -852,7 +852,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_direction_detection() {
-        use crate::data_directory::user_quota::QuotaOverride;
+        use crate::persistence::user_quota::QuotaOverride;
 
         let write_rate: BandwidthRate = "5mb/s".parse().unwrap();
         let read_rate: BandwidthRate = "10mb/s".parse().unwrap();
@@ -875,7 +875,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_unlimited_bypass() {
-        use crate::data_directory::user_quota::QuotaOverride;
+        use crate::persistence::user_quota::QuotaOverride;
 
         let quota = UserQuota {
             rate_write: QuotaOverride::Unlimited,

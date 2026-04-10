@@ -5,7 +5,7 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
-use crate::data_directory::user_quota::UserQuotaCache;
+use crate::persistence::user_quota::UserQuotaCache;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{

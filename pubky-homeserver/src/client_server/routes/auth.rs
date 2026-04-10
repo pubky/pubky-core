@@ -33,7 +33,7 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
-use crate::data_directory::user_quota::{CachedUserQuota, QuotaOverride, UserQuota};
+use crate::persistence::user_quota::{CachedUserQuota, QuotaOverride, UserQuota};
 
 /// How long a session cookie is valid before expiring.
 const SESSION_EXPIRY_DAYS: i64 = 365;

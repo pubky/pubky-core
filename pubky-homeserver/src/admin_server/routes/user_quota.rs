@@ -7,8 +7,8 @@ use axum::{
 use pubky_common::crypto::PublicKey;
 
 use crate::{
-    data_directory::user_quota::UserQuotaPatch,
     persistence::sql::user::{UserEntity, UserRepository},
+    persistence::user_quota::UserQuotaPatch,
     shared::{HttpError, HttpResult},
 };
 
@@ -83,8 +83,8 @@ mod tests {
     use super::*;
     use crate::admin_server::app::create_app;
     use crate::data_directory::quota_config::BandwidthRate;
-    use crate::data_directory::user_quota::{QuotaOverride, UserQuota};
     use crate::persistence::files::FileService;
+    use crate::persistence::user_quota::{QuotaOverride, UserQuota};
     use crate::AppContext;
 
     fn create_test_server(context: &AppContext) -> TestServer {

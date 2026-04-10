@@ -63,11 +63,13 @@ impl<T> QuotaOverride<T> {
     }
 
     /// Returns `true` if the field is `Unlimited`.
+    #[cfg(test)]
     pub fn is_unlimited(&self) -> bool {
         matches!(self, QuotaOverride::Unlimited)
     }
 
     /// Returns the inner value if `Value(t)`, else `None`.
+    #[cfg(test)]
     pub fn as_value(&self) -> Option<&T> {
         match self {
             QuotaOverride::Value(v) => Some(v),

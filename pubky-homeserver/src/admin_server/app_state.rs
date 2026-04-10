@@ -3,7 +3,7 @@ use dav_server_opendalfs::OpendalFs;
 
 use std::sync::Arc;
 
-use crate::data_directory::user_quota::UserQuotaCache;
+use crate::persistence::user_quota::UserQuotaCache;
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::ConfigToml;
 
