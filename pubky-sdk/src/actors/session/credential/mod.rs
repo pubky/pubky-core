@@ -10,8 +10,9 @@
 //!
 //! [`SessionCredential`] is the port (Clean Architecture sense). All
 //! session-aware code (`PubkySession`, `SessionStorage`) talks to the trait
-//! and never matches on a credential variant. The two implementations live in
-//! sibling modules so that retiring cookies later is a single-file delete.
+//! and never matches on a credential variant. The cookie implementation is
+//! isolated so retirement is a small, localized delete (credential module +
+//! cookie view + legacy cookie API shim).
 //!
 //! ## Why a trait, not an enum
 //!

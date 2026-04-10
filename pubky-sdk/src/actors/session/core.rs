@@ -131,58 +131,6 @@ impl PubkySession {
         Ok(())
     }
 
-    // =================================================================
-    // Thin delegations — keep the public API surface on PubkySession
-    // =================================================================
-
-    /// Export session metadata for rehydrating after a tab refresh or process restart.
-    ///
-    /// Delegates to [`CookieSessionView::export`]. Panics if the session is
-    /// not cookie-backed.
-    #[must_use]
-    pub fn export(&self) -> String {
-        self.as_cookie()
-            .expect("export() is only valid for cookie sessions")
-            .export()
-    }
-
-    /// Restore a session from an `export()` string.
-    ///
-    /// Delegates to [`super::cookie::import_session`].
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
-    /// - On native, returns an error because exports are only supported on WASM.
-    pub async fn import(export: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        super::cookie::import_session(export, client).await
-    }
-
-    /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
-    ///
-    /// Delegates to [`super::cookie::import_session_secret`].
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] if the token is malformed.
-    /// - Propagates transport failures while validating the session.
-    pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        super::cookie::import_session_secret(token, client).await
-    }
-
-    /// Restore a session from a secret token stored in a file.
-    ///
-    /// Delegates to [`super::cookie::session_from_secret_file`].
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] when the file extension is not `.sess`.
-    /// - Propagates errors from the stored token validation.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn from_secret_file(
-        path: &std::path::Path,
-        client: Option<PubkyHttpClient>,
-    ) -> Result<Self> {
-        super::cookie::session_from_secret_file(path, client).await
-    }
-
     /// Returns a [`JwtSessionView`] if this session is JWT-backed.
     ///
     /// JWT-only operations (`list_grants`, `revoke_grant`, `current_jwt`,

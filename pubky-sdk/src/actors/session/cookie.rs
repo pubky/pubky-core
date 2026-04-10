@@ -7,8 +7,9 @@
 //! (`import_session_secret` / `session_from_secret_file`).
 //!
 //! **Retirement plan:** When the cookie credential is retired, delete this
-//! file alongside [`super::credential::cookie`] and
-//! [`super::view::CookieSessionView`]. No edits to `core.rs` are required.
+//! file alongside [`super::credential::cookie`],
+//! [`super::view::CookieSessionView`], and [`super::legacy_cookie`] (plus the
+//! module entry). No edits to `core.rs` are required.
 
 use std::sync::Arc;
 
