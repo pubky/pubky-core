@@ -1,3 +1,17 @@
+//! Legacy cookie-session API shim on [`PubkySession`](super::core::PubkySession).
+//!
+//! This module exists only to preserve the older convenience methods on
+//! `PubkySession` itself, such as `export`, `import`, `import_secret`,
+//! `from_secret_file`, and `write_secret_file`.
+//!
+//! It does **not** implement cookie-session mechanics. The actual cookie
+//! session construction and rehydration logic lives in [`super::cookie`], and
+//! the underlying credential type lives in [`super::credential::cookie`].
+//!
+//! In short:
+//! - [`super::cookie`] = cookie session implementation/bootstrap
+//! - [`super::cookie_legacy_api`] = legacy `PubkySession` compatibility surface
+
 use super::core::PubkySession;
 use crate::{PubkyHttpClient, Result};
 
