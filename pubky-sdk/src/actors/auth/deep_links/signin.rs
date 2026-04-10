@@ -6,10 +6,13 @@ use url::Url;
 
 use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
 
-/// A deep link for signing into a Pubky homeserver.
-/// Supported formats:
-/// - New format with intent: <pubkyauth://signin?caps={}&relay={}&secret>={}
-/// - Old format without intent: <pubkyauth:///?caps={}&relay={}&secret>={}
+/// A deep link for signing into a Pubky homeserver via the legacy
+/// [`AuthToken`](pubky_common::auth::AuthToken) flow (cookie-based session).
+///
+/// Format: `pubkyauth://signin?caps=…&relay=…&secret=…`.
+///
+/// For the grant + JWT flow, use [`SigninJwtDeepLink`](super::SigninJwtDeepLink)
+/// instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SigninDeepLink {
     capabilities: Capabilities,
@@ -19,11 +22,6 @@ pub struct SigninDeepLink {
 
 impl SigninDeepLink {
     /// Create a new signin deep link.
-    ///
-    /// # Arguments
-    /// * `capabilities` - The capabilities to use for the signin flow.
-    /// * `relay` - The relay to use for the signin flow.
-    /// * `secret` - The secret to use for the signin flow.
     #[must_use]
     pub fn new(capabilities: Capabilities, relay: Url, secret: [u8; 32]) -> Self {
         Self {

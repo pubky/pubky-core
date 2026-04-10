@@ -1,15 +1,15 @@
 //! Grant-based session response types.
 //!
-//! These types represent the response from `POST /session` when using
-//! grant-based authentication. Shared between homeserver (serializes)
-//! and SDK (deserializes).
+//! These types represent the response from `POST /session` and grant management
+//! endpoints when using grant-based authentication. Shared between homeserver
+//! (serializes) and SDK (deserializes).
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::jws::{ClientId, GrantId},
     capabilities::Capability,
     crypto::PublicKey,
-    auth::jws::{ClientId, GrantId},
 };
 
 /// Response from `POST /session` for grant-based authentication.
@@ -27,6 +27,23 @@ pub struct GrantSessionResponse {
     pub token: String,
     /// Session metadata.
     pub session: GrantSessionInfo,
+}
+
+/// Summary of an active grant returned by `GET /auth/jwt/sessions`.
+///
+/// Used by Ring's session management UI to show all authorized apps for a user.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrantInfo {
+    /// Grant identifier (revocation target).
+    pub grant_id: GrantId,
+    /// Application identifier (domain string).
+    pub client_id: String,
+    /// Capabilities this grant authorizes, formatted as a comma-separated string.
+    pub capabilities: String,
+    /// Issued-at timestamp (Unix seconds).
+    pub issued_at: u64,
+    /// Expiry timestamp (Unix seconds).
+    pub expires_at: u64,
 }
 
 /// Session metadata returned alongside the JWT.

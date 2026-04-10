@@ -179,9 +179,7 @@ impl<'a> ListBuilder<'a> {
                     .client
                     .cross_request(Method::GET, url.clone())
                     .await?;
-                #[cfg(not(target_arch = "wasm32"))]
-                let rb = storage.with_session_cookie(rb);
-                rb
+                storage.attach_credential(rb).await?
             }
         };
 

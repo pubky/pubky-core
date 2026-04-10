@@ -62,7 +62,10 @@
 
 use url::Url;
 
-use pubky_common::crypto::random_bytes;
+use pubky_common::{
+    auth::jws::ClientId,
+    crypto::{Keypair, random_bytes},
+};
 
 use crate::{
     AuthToken, Capabilities, PubkyHttpClient, PubkySession, PublicKey,
@@ -70,10 +73,12 @@ use crate::{
         DEFAULT_HTTP_RELAY_INBOX,
         auth::{
             auth_subscription::AuthSubscription,
-            deep_links::{DeepLink, SigninDeepLink, SignupDeepLink},
+            deep_links::{
+                DeepLink, SigninDeepLink, SigninJwtDeepLink, SignupDeepLink, SignupJwtDeepLink,
+            },
         },
     },
-    errors::Result,
+    errors::{AuthError, Result},
 };
 
 /// End-to-end **auth flow** (request + live polling) you *hold on to*.
@@ -205,7 +210,8 @@ impl AuthFlowKind {
 
 /// Builder for [`PubkyAuthFlow`].
 ///
-/// Use to override the HTTP relay and/or the `PubkyHttpClient`.
+/// Use to override the HTTP relay, the `PubkyHttpClient`, or to enable
+/// grant-based authentication via [`Self::client_id`].
 #[derive(Debug, Clone)]
 pub struct PubkyAuthFlowBuilder {
     caps: Capabilities,
@@ -213,6 +219,11 @@ pub struct PubkyAuthFlowBuilder {
     client: Option<PubkyHttpClient>,
     auth_kind: AuthFlowKind,
     client_secret: [u8; 32],
+    /// Application identifier — when set, the flow uses the grant + `PoP` path.
+    client_id: Option<ClientId>,
+    /// Optional pre-generated `PoP` keypair. When `client_id` is set and this
+    /// is `None`, a fresh keypair is generated at [`start`](Self::start).
+    client_keypair: Option<Keypair>,
 }
 
 impl PubkyAuthFlowBuilder {
@@ -230,6 +241,8 @@ impl PubkyAuthFlowBuilder {
             client: None,
             auth_kind,
             client_secret: random_bytes::<32>(),
+            client_id: None,
+            client_keypair: None,
         }
     }
 
@@ -252,19 +265,74 @@ impl PubkyAuthFlowBuilder {
         self
     }
 
+    /// Set the application identifier — switches the flow to **grant + `PoP`** mode.
+    ///
+    /// When `client_id` is set:
+    /// - The deep link gains `cid=<client_id>` and `cpk=<client_pk_z32>` params.
+    /// - The signer (Ring) signs a `pubky-grant` JWS instead of a legacy
+    ///   [`AuthToken`](pubky_common::auth::AuthToken).
+    /// - The resulting [`PubkySession`] is JWT-backed and self-refreshes.
+    ///
+    /// Apps that want a long-lived, mirror-friendly session should always set this.
+    pub fn client_id(mut self, id: ClientId) -> Self {
+        self.client_id = Some(id);
+        self
+    }
+
+    /// Pre-generated Ed25519 keypair used as the grant's `cnf` claim and to sign
+    /// `PoP` proofs. Only meaningful when [`Self::client_id`] is set. If
+    /// omitted, a fresh random keypair is generated at [`Self::start`].
+    pub fn client_keypair(mut self, keypair: Keypair) -> Self {
+        self.client_keypair = Some(keypair);
+        self
+    }
+
     /// Finalize: derive channel, compute the `pubkyauth://` deep link, spawn the background poller,
     /// and return the flow handle.
+    ///
+    /// # Errors
+    /// - Returns [`AuthError::Validation`] if [`Self::client_keypair`] was set
+    ///   without a corresponding [`Self::client_id`]. In grant + JWT mode both
+    ///   must be supplied (or neither, for the legacy flow).
     pub fn start(self) -> Result<PubkyAuthFlow> {
         let client = match &self.client {
             Some(c) => c.clone(),
             None => PubkyHttpClient::new()?,
         };
 
-        let auth_url = self.create_url();
+        // Resolve the optional grant binding. `client_id` and the PoP keypair
+        // travel together; a bare keypair without a client_id would otherwise
+        // be silently dropped, so we reject it explicitly.
+        let grant_binding = match (self.client_id.clone(), self.client_keypair.clone()) {
+            (Some(cid), Some(kp)) => Some((cid, kp)),
+            (Some(cid), None) => Some((cid, Keypair::random())),
+            (None, None) => None,
+            (None, Some(_)) => {
+                return Err(AuthError::Validation(
+                    "client_keypair is set without client_id; pass both for grant + JWT mode or neither for the legacy flow".into(),
+                )
+                .into());
+            }
+        };
+
+        let auth_url =
+            self.create_url(grant_binding.as_ref().map(|(cid, kp)| (cid.clone(), kp.public_key())));
+
+        // For the SignUp grant flow, the homeserver public key is taken from
+        // the AuthFlowKind. For the SignIn grant flow, the homeserver pubkey is
+        // resolved from PKARR after we receive the grant — see AuthSubscription.
+        let signup_homeserver = match &self.auth_kind {
+            AuthFlowKind::SignUp {
+                homeserver_public_key,
+                signup_token,
+            } => Some((*homeserver_public_key.clone(), signup_token.clone())),
+            AuthFlowKind::SignIn => None,
+        };
 
         let subscription = AuthSubscription::builder(self.client_secret)
             .relay_base_url(self.base_relay)
             .client(client)
+            .grant_context(grant_binding.map(|(_, kp)| kp), signup_homeserver)
             .start()?;
 
         Ok(PubkyAuthFlow {
@@ -274,18 +342,46 @@ impl PubkyAuthFlowBuilder {
     }
 
     /// Create the auth URL for the auth flow.
-    /// Depending on the auth kind, the URL will be different
-    fn create_url(&self) -> DeepLink {
-        match &self.auth_kind {
-            AuthFlowKind::SignIn => DeepLink::Signin(SigninDeepLink::new(
+    /// Depending on the auth kind and whether grant binding is set,
+    /// the typed deep link variant differs.
+    fn create_url(&self, grant_binding: Option<(ClientId, PublicKey)>) -> DeepLink {
+        match (&self.auth_kind, grant_binding) {
+            (AuthFlowKind::SignIn, Some((cid, cpk))) => {
+                DeepLink::SigninJwt(SigninJwtDeepLink::new(
+                    self.caps.clone(),
+                    self.base_relay.clone(),
+                    self.client_secret,
+                    cid,
+                    cpk,
+                ))
+            }
+            (AuthFlowKind::SignIn, None) => DeepLink::Signin(SigninDeepLink::new(
                 self.caps.clone(),
                 self.base_relay.clone(),
                 self.client_secret,
             )),
-            AuthFlowKind::SignUp {
-                homeserver_public_key,
-                signup_token,
-            } => DeepLink::Signup(SignupDeepLink::new(
+            (
+                AuthFlowKind::SignUp {
+                    homeserver_public_key,
+                    signup_token,
+                },
+                Some((cid, cpk)),
+            ) => DeepLink::SignupJwt(SignupJwtDeepLink::new(
+                self.caps.clone(),
+                self.base_relay.clone(),
+                self.client_secret,
+                *homeserver_public_key.clone(),
+                signup_token.clone(),
+                cid,
+                cpk,
+            )),
+            (
+                AuthFlowKind::SignUp {
+                    homeserver_public_key,
+                    signup_token,
+                },
+                None,
+            ) => DeepLink::Signup(SignupDeepLink::new(
                 self.caps.clone(),
                 self.base_relay.clone(),
                 self.client_secret,

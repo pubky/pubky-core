@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    crypto::PublicKey,
     auth::jws::{self, GrantId, TokenId},
+    crypto::PublicKey,
 };
 
 /// Access JWT claims — homeserver-signed, short-lived.
@@ -57,6 +57,14 @@ impl AccessJwtClaims {
     /// Check if the token is expired at a given time.
     pub fn is_expired(&self, now: u64) -> bool {
         self.exp <= now
+    }
+
+    /// Check whether the token expires within `slack` seconds from `now`.
+    ///
+    /// Used by the SDK to decide when to proactively refresh the JWT before
+    /// the homeserver starts rejecting it.
+    pub fn is_near_expiry(&self, now: u64, slack: u64) -> bool {
+        self.exp.saturating_sub(slack) <= now
     }
 }
 

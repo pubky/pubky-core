@@ -1446,6 +1446,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -3896,6 +3897,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 name = "pubky"
 version = "0.7.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "cookie",
  "eventsource-stream",
@@ -3911,6 +3913,7 @@ dependencies = [
  "pubky-testnet",
  "reqwest 0.13.2",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

@@ -1,0 +1,140 @@
+//! Cookie credential — legacy auth flow.
+//!
+//! This is the **legacy** session credential. It will be removed once all
+//! ecosystem clients have migrated to the JWT flow. Until then it lives in
+//! this single file: deleting it (plus the corresponding line in
+//! [`super::mod`](super)) is the only file change required to retire the
+//! cookie code path.
+//!
+//! ## Cross-target behavior
+//!
+//! The struct shape is identical on every target — only the *availability*
+//! of the cookie secret differs by runtime:
+//!
+//! | Runtime | Set-Cookie visibility | Cookie secret stored | Attach strategy |
+//! |---|---|---|---|
+//! | Native (`reqwest`) | Yes | Always `Some` | Manual `Cookie` header |
+//! | Node.js WASM (undici) | Yes | `Some` | Manual `Cookie` header |
+//! | Browser WASM (fetch) | **Hidden by spec** | `None` | Browser cookie jar |
+//!
+//! The browser case is the only one where we cannot capture the secret —
+//! the WHATWG fetch spec hides `Set-Cookie` from JavaScript so the runtime
+//! cookie jar is the only place the value lives. On every other runtime
+//! the SDK owns the secret and exports/imports just like on native.
+
+use std::sync::{Arc, RwLock};
+
+use async_trait::async_trait;
+use pubky_common::{crypto::PublicKey, session::SessionInfo};
+use reqwest::{Method, RequestBuilder};
+
+use super::{InfoSnapshot, SessionCredential, credential_session_missing};
+use crate::{
+    PubkyHttpClient,
+    actors::storage::resource::resolve_pubky,
+    cross_log,
+    errors::Result,
+    util::check_http_status,
+};
+
+/// Cookie-based session credential (legacy).
+///
+/// On native and Node.js WASM the credential owns the opaque secret string
+/// and replays it on every request. On browser WASM the secret is
+/// inaccessible (the fetch spec hides `Set-Cookie`) and the browser cookie
+/// jar handles attachment automatically — `cookie` is `None`.
+#[derive(Clone, Debug)]
+pub(crate) struct CookieCredential {
+    /// User public key — used to name the `Cookie` header.
+    user: PublicKey,
+    /// Cached session info, shared lock-free across clones.
+    info: InfoSnapshot,
+    /// Cookie secret captured from `Set-Cookie`. `None` only on browser
+    /// WASM where the value is hidden by the fetch spec.
+    cookie: Option<String>,
+}
+
+impl CookieCredential {
+    /// Create a cookie credential. `cookie` is `None` only when the
+    /// runtime hides `Set-Cookie` (browser WASM); every other runtime
+    /// captures it.
+    pub(crate) fn new(user: PublicKey, cookie: Option<String>, info: SessionInfo) -> Self {
+        Self {
+            user,
+            info: Arc::new(RwLock::new(info)),
+            cookie,
+        }
+    }
+
+    /// Cookie secret accessor — used by [`super::super::view::CookieSessionView`]
+    /// to export sessions for later restore. Returns `None` on browser WASM.
+    pub(crate) fn cookie_secret(&self) -> Option<&str> {
+        self.cookie.as_deref()
+    }
+
+    /// Replace the cached info snapshot — used by import/restore paths
+    /// after a successful revalidate.
+    pub(crate) fn replace_info(&self, info: SessionInfo) {
+        if let Ok(mut s) = self.info.write() {
+            *s = info;
+        }
+    }
+}
+
+// Mirrors the cfg pair on the trait definition: native gets `Send` bounds
+// for tokio, WASM uses `?Send` because `wasm-bindgen-futures` are not
+// `Send`. See `super::SessionCredential` for the full rationale.
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl SessionCredential for CookieCredential {
+    fn info(&self) -> InfoSnapshot {
+        Arc::clone(&self.info)
+    }
+
+    fn signout_path(&self) -> &'static str {
+        "/session"
+    }
+
+    async fn attach(
+        &self,
+        rb: RequestBuilder,
+        _client: &PubkyHttpClient,
+    ) -> Result<RequestBuilder> {
+        // When we own the secret (native, Node.js WASM) we attach it
+        // manually. When we don't (browser WASM) the runtime cookie jar
+        // is the source of truth and we leave the request alone.
+        match &self.cookie {
+            Some(cookie) => {
+                let cookie_name = self.user.z32();
+                Ok(rb.header(
+                    reqwest::header::COOKIE,
+                    format!("{cookie_name}={cookie}"),
+                ))
+            }
+            None => Ok(rb),
+        }
+    }
+
+    async fn revalidate(
+        &self,
+        client: &PubkyHttpClient,
+        user: &PublicKey,
+    ) -> Result<Option<SessionInfo>> {
+        let url = format!("pubky{}/session", user.z32());
+        let resolved = resolve_pubky(&url)?;
+        let rb = client.cross_request(Method::GET, resolved).await?;
+        let rb = self.attach(rb, client).await?;
+        let response = rb.send().await.map_err(crate::Error::from)?;
+        if credential_session_missing(&response) {
+            cross_log!(info, "Cookie session missing on revalidate");
+            return Ok(None);
+        }
+        let response = check_http_status(response).await?;
+        let bytes = response.bytes().await?;
+        Ok(Some(SessionInfo::deserialize(&bytes)?))
+    }
+
+    fn as_cookie(&self) -> Option<&CookieCredential> {
+        Some(self)
+    }
+}

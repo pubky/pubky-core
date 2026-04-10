@@ -1,36 +1,46 @@
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use pubky_common::capabilities::Capabilities;
 use std::{fmt::Display, str::FromStr};
+
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use pubky_common::{auth::jws::ClientId, capabilities::Capabilities, crypto::PublicKey};
 use url::Url;
 
-use crate::PublicKey;
 use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
 
-/// A deep link for signing up to a Pubky homeserver via the legacy
-/// [`AuthToken`](pubky_common::auth::AuthToken) flow (cookie-based session).
+/// A deep link for signing up to a Pubky homeserver via the **grant + JWT**
+/// (Proof-of-Possession) flow.
 ///
-/// Format: `pubkyauth://signup?caps=…&relay=…&secret=…&hs=…&st=…`.
+/// Format:
+/// `pubkyauth://signup?caps=…&relay=…&secret=…&hs=…&st=…&cid=…&cpk=…`
 ///
-/// For the grant + JWT flow, use [`SignupJwtDeepLink`](super::SignupJwtDeepLink)
-/// instead.
+/// `cid` is the application identifier and `cpk` is the client public key
+/// bound by the grant's `cnf` claim. Both are required — for the legacy
+/// cookie flow without grant binding, use [`SignupDeepLink`](super::SignupDeepLink).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignupDeepLink {
+pub struct SignupJwtDeepLink {
     capabilities: Capabilities,
     relay: Url,
     secret: [u8; 32],
     homeserver: PublicKey,
     signup_token: Option<String>,
+    client_id: ClientId,
+    client_pk: PublicKey,
 }
 
-impl SignupDeepLink {
-    /// Create a new signup deep link.
+impl SignupJwtDeepLink {
+    /// Create a new JWT-mode signup deep link.
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "All fields are part of the wire format and equally required to construct a deep link"
+    )]
     pub fn new(
         capabilities: Capabilities,
         relay: Url,
         secret: [u8; 32],
         homeserver: PublicKey,
         signup_token: Option<String>,
+        client_id: ClientId,
+        client_pk: PublicKey,
     ) -> Self {
         Self {
             capabilities,
@@ -38,6 +48,8 @@ impl SignupDeepLink {
             secret,
             homeserver,
             signup_token,
+            client_id,
+            client_pk,
         }
     }
 
@@ -69,26 +81,38 @@ impl SignupDeepLink {
     pub fn signup_token(&self) -> Option<String> {
         self.signup_token.clone()
     }
+
+    /// Application identifier carried by this deep link.
+    #[must_use]
+    pub fn client_id(&self) -> &ClientId {
+        &self.client_id
+    }
+
+    /// Client public key (`cnf` for the grant) carried by this deep link.
+    #[must_use]
+    pub fn client_pk(&self) -> &PublicKey {
+        &self.client_pk
+    }
 }
 
-impl Display for SignupDeepLink {
+impl Display for SignupJwtDeepLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let url = format!(
+        write!(
+            f,
             "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
             self.capabilities,
             self.relay,
             URL_SAFE_NO_PAD.encode(self.secret),
             self.homeserver.z32()
-        );
-        write!(f, "{url}")?;
+        )?;
         if let Some(signup_token) = self.signup_token.as_ref() {
             write!(f, "&st={signup_token}")?;
         }
-        Ok(())
+        write!(f, "&cid={}&cpk={}", self.client_id, self.client_pk.z32())
     }
 }
 
-impl FromStr for SignupDeepLink {
+impl FromStr for SignupJwtDeepLink {
     type Err = DeepLinkParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -100,6 +124,7 @@ impl FromStr for SignupDeepLink {
         if intent != "signup" {
             return Err(DeepLinkParseError::InvalidIntent("signup"));
         }
+
         let raw_caps = url
             .query_pairs()
             .find(|(key, _)| key == "caps")
@@ -151,89 +176,125 @@ impl FromStr for SignupDeepLink {
             .find(|(key, _)| key == "st")
             .map(|(_, value)| value.to_string());
 
-        Ok(SignupDeepLink {
+        let raw_cid = url
+            .query_pairs()
+            .find(|(key, _)| key == "cid")
+            .ok_or(DeepLinkParseError::MissingQueryParameter("cid"))?
+            .1
+            .to_string();
+        let client_id = ClientId::new(&raw_cid)
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("cid", Box::new(e)))?;
+
+        let raw_cpk = url
+            .query_pairs()
+            .find(|(key, _)| key == "cpk")
+            .ok_or(DeepLinkParseError::MissingQueryParameter("cpk"))?
+            .1
+            .to_string();
+        let client_pk = PublicKey::try_from_z32(&raw_cpk)
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("cpk", Box::new(e)))?;
+
+        Ok(SignupJwtDeepLink {
             capabilities,
             relay,
             secret,
             homeserver,
             signup_token,
+            client_id,
+            client_pk,
         })
     }
 }
 
-impl From<SignupDeepLink> for Url {
-    fn from(val: SignupDeepLink) -> Self {
+impl From<SignupJwtDeepLink> for Url {
+    fn from(val: SignupJwtDeepLink) -> Self {
         Url::parse(&val.to_string()).expect("Should be able to parse the deep link")
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use pubky_common::crypto::Keypair;
+
     use super::*;
 
     #[test]
-    fn test_signup_deep_link_parse_no_signup_token() {
+    fn test_signup_jwt_deep_link_parse_no_signup_token() {
         let capabilities = Capabilities::builder()
-            .read_write("/")
-            .read("/test")
+            .read_write("/pub/franky.app/")
             .finish();
         let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
-        let secret = [123; 32];
+        let secret = [42; 32];
         let homeserver =
             PublicKey::from_str("5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo").unwrap();
-        let deep_link = SignupDeepLink::new(
+        let client_id = ClientId::new("franky.pubky.app").unwrap();
+        let client_kp = Keypair::random();
+        let client_pk = client_kp.public_key();
+
+        let deep_link = SignupJwtDeepLink::new(
             capabilities.clone(),
             relay.clone(),
             secret,
             homeserver.clone(),
             None,
+            client_id.clone(),
+            client_pk.clone(),
         );
         let deep_link_str = deep_link.to_string();
         assert_eq!(
             deep_link_str,
             format!(
-                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}",
+                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&cid={}&cpk={}",
                 capabilities,
                 relay,
                 URL_SAFE_NO_PAD.encode(secret),
-                homeserver.z32()
+                homeserver.z32(),
+                client_id,
+                client_pk.z32()
             )
         );
-        let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
+        let deep_link_parsed = SignupJwtDeepLink::from_str(&deep_link_str).unwrap();
         assert_eq!(deep_link_parsed, deep_link);
     }
 
     #[test]
-    fn test_signup_deep_link_parse_with_signup_token() {
+    fn test_signup_jwt_deep_link_parse_with_signup_token() {
         let capabilities = Capabilities::builder()
-            .read_write("/")
-            .read("/test")
+            .read_write("/pub/franky.app/")
             .finish();
         let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
-        let secret = [123; 32];
+        let secret = [42; 32];
         let homeserver =
             PublicKey::from_str("5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo").unwrap();
         let signup_token = "1234567890";
-        let deep_link = SignupDeepLink::new(
+        let client_id = ClientId::new("franky.pubky.app").unwrap();
+        let client_kp = Keypair::random();
+        let client_pk = client_kp.public_key();
+
+        let deep_link = SignupJwtDeepLink::new(
             capabilities.clone(),
             relay.clone(),
             secret,
             homeserver.clone(),
             Some(signup_token.to_string()),
+            client_id.clone(),
+            client_pk.clone(),
         );
         let deep_link_str = deep_link.to_string();
         assert_eq!(
             deep_link_str,
             format!(
-                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&st={}",
+                "pubkyauth://signup?caps={}&relay={}&secret={}&hs={}&st={}&cid={}&cpk={}",
                 capabilities,
                 relay,
                 URL_SAFE_NO_PAD.encode(secret),
                 homeserver.z32(),
-                signup_token
+                signup_token,
+                client_id,
+                client_pk.z32()
             )
         );
-        let deep_link_parsed = SignupDeepLink::from_str(&deep_link_str).unwrap();
+        let deep_link_parsed = SignupJwtDeepLink::from_str(&deep_link_str).unwrap();
         assert_eq!(deep_link_parsed, deep_link);
     }
 }

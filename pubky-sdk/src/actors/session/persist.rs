@@ -1,49 +1,57 @@
-use std::path::Path;
+//! Cookie session persistence — `import_secret` / `from_secret_file`.
+//!
+//! These constructors live on [`PubkySession`] (rather than on a cookie
+//! view) because they *create* a session from stored material rather than
+//! acting on an existing one. The cookie-only post-construction operations
+//! (`export_secret`, `write_secret_file`) live on
+//! [`super::view::CookieSessionView`].
+//!
+//! ## Cross-target availability
+//!
+//! - [`PubkySession::import_secret`] — string-based, **cross-target**. Works
+//!   on native, on Node.js WASM, and on browser WASM (though browser WASM
+//!   typically cannot obtain the secret in the first place because the
+//!   fetch spec hides `Set-Cookie`).
+//! - [`PubkySession::from_secret_file`] — filesystem-based, **native-only**.
+//!
+//! When the cookie credential is retired, this entire file deletes
+//! alongside [`super::credential::cookie`].
+
+use std::sync::Arc;
 
 use crate::PublicKey;
-use pubky_common::session::SessionInfo;
+use pubky_common::{capabilities::Capabilities, session::SessionInfo};
 
 use super::core::PubkySession;
+use super::credential::{CookieCredential, SessionCredential};
 use crate::{
-    Capabilities, PubkyHttpClient, Result, cross_log,
+    PubkyHttpClient, Result, cross_log,
     errors::{AuthError, RequestError},
 };
 
 impl PubkySession {
-    /// Export the minimum data needed to restore this session later.
-    /// Returns a single compact secret token `<pubkey>:<cookie_secret>`
-    ///
-    /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
-    /// from a signer on a script restart.
-    ///
-    /// Treat the returned String as a **bearer secret**. Do not log it; store it
-    /// securely.
-    #[must_use]
-    pub fn export_secret(&self) -> String {
-        let public_key = self.info().public_key().z32();
-        let cookie = self.cookie.clone();
-        cross_log!(info, "Exporting session secret for {}", public_key);
-        format!("{public_key}:{cookie}")
-    }
-
     /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
     ///
-    /// Useful for scripts that need restarting. Helps avoiding a new Auth flow
+    /// Useful for scripts that need restarting. Helps avoid a new auth flow
     /// from a signer on a script restart.
     ///
-    /// Performs a `/session` roundtrip to validate and hydrate the authoritative `SessionInfo`.
-    /// Returns `AuthError::RequestExpired` if the cookie is invalid/expired.
+    /// Performs a `/session` roundtrip to validate and hydrate the
+    /// authoritative `SessionInfo`. Returns [`AuthError::RequestExpired`]
+    /// if the cookie is invalid/expired.
+    ///
+    /// Available on every target.
     /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] if the token is malformed or contains an invalid public key.
-    /// - Propagates transport failures while validating the session with the homeserver.
+    /// - Returns [`crate::errors::RequestError::Validation`] if the token
+    ///   is malformed or contains an invalid public key.
+    /// - Propagates transport failures while validating the session with
+    ///   the homeserver.
     pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        // 1) Get the transport for this session
         let client = match client {
             Some(c) => c,
             None => PubkyHttpClient::new()?,
         };
 
-        // 2) Parse `<pubkey>:<cookie_secret>` (cookie may contain `:`, so split at the first one)
+        // Cookie may contain `:`, so split at the first colon only.
         let (pk_str, cookie) = token
             .split_once(':')
             .ok_or_else(|| RequestError::Validation {
@@ -56,20 +64,27 @@ impl PubkySession {
             })?;
         cross_log!(info, "Importing session secret for {}", public_key);
 
-        // 3) Build minimal session; placeholder SessionInfo will be replaced after validation.
+        // Build minimal session; placeholder SessionInfo will be replaced
+        // after validation.
         let placeholder = SessionInfo::new(&public_key, Capabilities::default(), None);
-        let mut session = Self {
-            client,
-            info: placeholder,
-            cookie: cookie.to_string(),
-        };
+        let cookie_credential = CookieCredential::new(
+            public_key.clone(),
+            Some(cookie.to_string()),
+            placeholder,
+        );
+        let credential: Arc<dyn SessionCredential> = Arc::new(cookie_credential);
+        let session = Self::from_credential(client, Arc::clone(&credential));
 
-        // 4) Validate cookie and fetch authoritative SessionInfo
+        // Validate cookie and fetch authoritative SessionInfo. The
+        // credential is statically a CookieCredential, so as_cookie()
+        // always returns Some.
         let info = session
             .revalidate()
             .await?
             .ok_or(AuthError::RequestExpired)?;
-        session.info = info;
+        if let Some(c) = credential.as_cookie() {
+            c.replace_info(info);
+        }
         cross_log!(
             info,
             "Successfully imported session secret for {}",
@@ -79,64 +94,26 @@ impl PubkySession {
         Ok(session)
     }
 
-    /// Write the session secret token to disk. Ensures a `.sess` extension.
-    ///
-    /// Behavior:
-    /// - If `secret_file_path` already ends with `.sess`, it is used as-is.
-    /// - If it has no extension, `.sess` is added.
-    /// - If it has a different extension, `.<ext>.sess` is appended (e.g., `foo.txt.sess`).
-    ///
-    /// On Unix, permissions are set to `0o600`.
-    /// # Errors
-    /// - Returns [`std::io::Error`] if the file cannot be written or permissions cannot be set.
-    pub fn write_secret_file<P: AsRef<Path>>(&self, secret_file_path: P) -> std::io::Result<()> {
-        let token = self.export_secret();
-        let p = secret_file_path.as_ref();
-
-        let target = match p.extension().and_then(|e| e.to_str()) {
-            Some("sess") => p.to_path_buf(),
-            Some(_) => {
-                // Append, do not replace: `name.ext` -> `name.ext.sess`
-                let mut out = p.to_path_buf();
-                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("session");
-                out.set_file_name(format!("{fname}.sess"));
-                out
-            }
-            None => {
-                // No extension: add `.sess`
-                let mut out = p.to_path_buf();
-                out.set_extension("sess");
-                out
-            }
-        };
-
-        std::fs::write(&target, token)?;
-        cross_log!(
-            info,
-            "Wrote session secret for {} to {}",
-            self.info().public_key(),
-            target.display()
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600))?;
-        };
-        Ok(())
-    }
-
-    /// Restore a session from a secret token stored in a file. Requires a `.sess` extension.
+    /// Restore a session from a secret token stored in a file. Requires a
+    /// `.sess` extension. Native-only — depends on the standard filesystem
+    /// APIs.
     ///
     /// Validation:
     /// - `.sess` — valid; file is read and parsed.
-    /// - `.pkarr` — rejected with a clear error message pointing to `Keypair::from_secret_file`.
-    /// - Any other or missing extension — rejected with a `.sess`-specific error.
+    /// - `.pkarr` — rejected with a clear error message pointing to
+    ///   `Keypair::from_secret_file`.
+    /// - Any other or missing extension — rejected with a `.sess`-specific
+    ///   error.
     /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] when the file extension is not `.sess`.
-    /// - Returns [`crate::errors::RequestError::Validation`] if the file cannot be read.
-    /// - Propagates errors from [`Self::import_secret`] when the stored token is invalid or when the session cannot be revalidated.
+    /// - Returns [`crate::errors::RequestError::Validation`] when the file
+    ///   extension is not `.sess`.
+    /// - Returns [`crate::errors::RequestError::Validation`] if the file
+    ///   cannot be read.
+    /// - Propagates errors from [`Self::import_secret`] when the stored
+    ///   token is invalid or when the session cannot be revalidated.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn from_secret_file(
-        secret_file_path: &Path,
+        secret_file_path: &std::path::Path,
         client: Option<PubkyHttpClient>,
     ) -> Result<Self> {
         match secret_file_path.extension().and_then(|e| e.to_str()) {

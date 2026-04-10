@@ -1,6 +1,7 @@
-//! Shared JWS decoding utilities and token identifier types.
+//! Shared JWS encoding/decoding utilities and token identifier types.
 //!
 //! This module provides:
+//! - JWS Compact Serialization signing for `EdDSA` (Ed25519)
 //! - Lightweight JWS payload decoding (no signature verification)
 //! - Typed identifiers for grants, tokens, nonces, and client IDs
 
@@ -9,13 +10,42 @@ use std::fmt;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::random_bytes;
+use crate::crypto::{random_bytes, Keypair};
 
 /// Maximum length for a [`RandomId`] (supports base64url and UUIDs).
 const RANDOM_ID_MAX_LENGTH: usize = 36;
 
 /// Maximum length for a [`ClientId`] (DNS domain name limit per RFC 1035).
 const CLIENT_ID_MAX_LENGTH: usize = 253;
+
+// ── JWS Encoding ────────────────────────────────────────────────────────────
+
+/// Sign claims as a JWS Compact Serialization string with Ed25519 (EdDSA).
+///
+/// Implements RFC 7515 (JWS) + RFC 8037 (CFRG curves):
+/// - Header: `{"alg":"EdDSA","typ":"<typ>"}`
+/// - Payload: JSON-encoded `claims`
+/// - Signature: Ed25519 over the ASCII bytes `b64url(header) || "." || b64url(payload)`
+///
+/// Returns the canonical compact form `<header>.<payload>.<signature>` so it can
+/// be passed straight into the homeserver's JSON request body or any RFC-7515
+/// JWS verifier (e.g. `jsonwebtoken::decode`).
+pub fn sign_jws<T: Serialize>(keypair: &Keypair, typ: &str, claims: &T) -> String {
+    let header = serde_json::json!({ "alg": "EdDSA", "typ": typ });
+    let header_b64 = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&header)
+            .expect("invariant: serde_json serialization of a static header object cannot fail"),
+    );
+    let payload_b64 = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(claims).expect("invariant: claims must be serde_json-serializable"),
+    );
+
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let signature = keypair.sign(signing_input.as_bytes());
+    let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
+
+    format!("{signing_input}.{signature_b64}")
+}
 
 // ── JWS Decoding ────────────────────────────────────────────────────────────
 
@@ -265,6 +295,60 @@ mod tests {
         let json = serde_json::to_string(&id).unwrap();
         let parsed: ClientId = serde_json::from_str(&json).unwrap();
         assert_eq!(id, parsed);
+    }
+
+    #[test]
+    fn sign_jws_round_trips_through_decode_jws_payload() {
+        let kp = Keypair::random();
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct Claims {
+            sub: String,
+            iat: u64,
+        }
+        let claims = Claims {
+            sub: "alice".into(),
+            iat: 1_700_000_000,
+        };
+        let compact = sign_jws(&kp, "pubky-test", &claims);
+
+        // Three dot-separated parts.
+        assert_eq!(compact.matches('.').count(), 2);
+
+        // Payload survives decode.
+        let decoded: Claims = decode_jws_payload(&compact).unwrap();
+        assert_eq!(decoded, claims);
+    }
+
+    #[test]
+    fn sign_jws_signature_verifies_with_raw_ed25519() {
+        let kp = Keypair::random();
+        let claims = serde_json::json!({"foo": "bar"});
+        let compact = sign_jws(&kp, "pubky-test", &claims);
+
+        let mut parts = compact.splitn(3, '.');
+        let header_b64 = parts.next().unwrap();
+        let payload_b64 = parts.next().unwrap();
+        let signature_b64 = parts.next().unwrap();
+        let signing_input = format!("{header_b64}.{payload_b64}");
+
+        let signature_bytes = URL_SAFE_NO_PAD.decode(signature_b64).unwrap();
+        assert_eq!(signature_bytes.len(), 64);
+        let signature_arr: [u8; 64] = signature_bytes.try_into().unwrap();
+        let signature = ed25519_dalek::Signature::from_bytes(&signature_arr);
+        kp.public_key()
+            .verify(signing_input.as_bytes(), &signature)
+            .expect("signature must verify against the keypair's public key");
+    }
+
+    #[test]
+    fn sign_jws_header_contains_alg_and_typ() {
+        let kp = Keypair::random();
+        let compact = sign_jws(&kp, "pubky-grant", &serde_json::json!({}));
+        let header_b64 = compact.split('.').next().unwrap();
+        let header_bytes = URL_SAFE_NO_PAD.decode(header_b64).unwrap();
+        let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
+        assert_eq!(header["alg"], "EdDSA");
+        assert_eq!(header["typ"], "pubky-grant");
     }
 
     #[test]

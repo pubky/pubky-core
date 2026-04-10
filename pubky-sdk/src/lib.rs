@@ -34,6 +34,8 @@ pub use actors::Pkdns;
 #[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
+pub use actors::{CookieSessionView, JwtSessionView};
+#[doc(inline)]
 pub use actors::PubkySigner;
 #[doc(inline)]
 pub use actors::deep_links;
@@ -71,7 +73,13 @@ pub use pkarr;
 // Re-exports
 #[doc(inline)]
 pub use pubky_common::{
-    auth::AuthToken,
+    auth::{
+        AuthToken,
+        access_jwt::AccessJwtClaims,
+        grant::GrantClaims,
+        grant_session::{GrantInfo, GrantSessionInfo, GrantSessionResponse},
+        jws::{ClientId, GrantId, PopNonce},
+    },
     capabilities::{Capabilities, Capability},
     crypto::{Keypair, PublicKey},
     recovery_file,
