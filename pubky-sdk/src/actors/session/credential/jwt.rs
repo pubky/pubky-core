@@ -119,12 +119,18 @@ impl JwtCredential {
         // Double-check pattern: by the time we acquired the lock, another
         // task may have already refreshed. Skip the network call if the
         // token is comfortably fresh now.
-        if !state.claims.is_near_expiry(now_unix(), REFRESH_SLACK_SECS / 2) {
+        if !state
+            .claims
+            .is_near_expiry(now_unix(), REFRESH_SLACK_SECS / 2)
+        {
             return Ok(());
         }
 
-        let pop_jws =
-            sign_pop_for_grant(&state.client_keypair, &state.homeserver_pk, &state.grant_claims.jti);
+        let pop_jws = sign_pop_for_grant(
+            &state.client_keypair,
+            &state.homeserver_pk,
+            &state.grant_claims.jti,
+        );
         let body = serde_json::json!({ "grant": &state.grant_jws, "pop": pop_jws });
 
         let url = format!("pubky{}/auth/jwt/session", state.grant_claims.iss.z32());
@@ -165,16 +171,14 @@ impl SessionCredential for JwtCredential {
         "/auth/jwt/session"
     }
 
-    async fn attach(
-        &self,
-        rb: RequestBuilder,
-        client: &PubkyHttpClient,
-    ) -> Result<RequestBuilder> {
+    async fn attach(&self, rb: RequestBuilder, client: &PubkyHttpClient) -> Result<RequestBuilder> {
         // Snapshot expiry quickly so we don't hold the lock across the
         // network call when no refresh is needed.
         let needs_refresh = {
             let jwt_state = self.state.lock().await;
-            jwt_state.claims.is_near_expiry(now_unix(), REFRESH_SLACK_SECS)
+            jwt_state
+                .claims
+                .is_near_expiry(now_unix(), REFRESH_SLACK_SECS)
         };
         if needs_refresh {
             self.refresh(client).await?;

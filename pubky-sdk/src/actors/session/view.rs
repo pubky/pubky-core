@@ -178,10 +178,7 @@ pub struct CookieSessionView<'a> {
 }
 
 impl<'a> CookieSessionView<'a> {
-    pub(crate) const fn new(
-        session: &'a PubkySession,
-        credential: &'a CookieCredential,
-    ) -> Self {
+    pub(crate) const fn new(session: &'a PubkySession, credential: &'a CookieCredential) -> Self {
         Self {
             session,
             credential,

@@ -2,12 +2,12 @@ use std::fmt;
 
 use futures_util::future::{AbortHandle, Abortable};
 
-use pubky_common::crypto::{Keypair, PublicKey};
 use url::Url;
 
+use super::approval::AuthRelayMessage;
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::{
-    AuthToken, PubkyHttpClient, PubkySession,
+    PubkyHttpClient,
     actors::{
         DEFAULT_HTTP_RELAY_INBOX,
         auth::{
@@ -18,8 +18,6 @@ use crate::{
     cross_log,
     errors::{AuthError, Result},
 };
-
-use super::approval::{AuthApproval, GrantContext, session_from_approval};
 
 #[cfg(target_arch = "wasm32")]
 use futures_util::FutureExt; // for `.map(|_| ())` in WASM spawn
@@ -90,105 +88,48 @@ fn is_link_url(url: &Url) -> bool {
 ///
 /// Use it like this:
 /// 1. Construct with the builder
-///    [`AuthSubscription::builder`] to override relay/client.
-/// 2. Complete the flow with [`await_approval`](Self::await_approval) **or**
-///    poll with [`try_poll_once`](Self::try_poll_once) / [`try_token`](Self::try_token).
+///    [`AuthRelayListener::builder`] to override relay/client.
+/// 2. Receive the decrypted relay message with [`await_message`](Self::await_message)
+///    or [`try_message`](Self::try_message).
 ///
 /// Background polling **starts immediately** at construction. Dropping this value cancels
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug)]
-pub struct AuthSubscription {
-    client: PubkyHttpClient,
-    rx: flume::Receiver<Result<AuthApproval>>,
+pub struct AuthRelayListener {
+    rx: flume::Receiver<Result<AuthRelayMessage>>,
     abort: AbortHandle,
-    grant_ctx: Option<GrantContext>,
 }
 
-impl AuthSubscription {
-    /// Create a builder for [`AuthSubscription`].
-    pub fn builder(secret: [u8; 32]) -> AuthSubscriptionBuilder {
-        AuthSubscriptionBuilder::new(secret)
+impl AuthRelayListener {
+    /// Create a builder for [`AuthRelayListener`].
+    pub fn builder(secret: [u8; 32]) -> AuthRelayListenerBuilder {
+        AuthRelayListenerBuilder::new(secret)
     }
 
-    /// Block until the signer approves and the server issues a session.
-    ///
-    /// This awaits the background poller's result, decrypts/verifies the
-    /// payload, and completes the appropriate `/session` exchange:
-    /// - Legacy [`AuthToken`] payloads → cookie session via `/session`.
-    /// - Grant JWS payloads → JWT session via `/auth/jwt/session` (or
-    ///   `/auth/jwt/signup` when the flow was constructed for signup).
+    /// Block until the signer approves and the relay delivers the decrypted
+    /// auth message.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
     /// - Propagates HTTP/transport failures while polling the relay.
-    /// - Propagates errors from the internal session exchange if it fails.
-    pub async fn await_approval(self) -> Result<PubkySession> {
-        let approval = self.recv_approval().await?;
-        session_from_approval(self.client.clone(), self.grant_ctx.clone(), approval).await
+    pub(crate) async fn await_message(self) -> Result<AuthRelayMessage> {
+        self.recv_message().await
     }
 
-    /// Block until the signer approves and we receive an [`AuthToken`] (legacy
-    /// flow only).
-    ///
-    /// This awaits the background poller's result.
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
-    /// - Returns [`crate::errors::Error::Authentication`] if the relay payload is a grant (use `await_approval` instead).
-    /// - Propagates HTTP/transport failures encountered while polling the relay.
-    pub async fn await_token(self) -> Result<AuthToken> {
-        match self.recv_approval().await? {
-            AuthApproval::Legacy(token) => Ok(*token),
-            AuthApproval::Grant { .. } => Err(AuthError::Validation(
-                "received a grant payload; use await_approval() instead of await_token()".into(),
-            )
-            .into()),
-        }
-    }
-
-    async fn recv_approval(&self) -> Result<AuthApproval> {
+    async fn recv_message(&self) -> Result<AuthRelayMessage> {
         self.rx
             .recv_async()
             .await
             .map_err(|_err| AuthError::RequestExpired)?
     }
 
-    /// Non-blocking probe (single step) that **consumes any ready token** and returns:
-    /// - `Ok(Some(session))` when a token was delivered and the session established.
-    /// - `Ok(None)` if no payload yet (keep polling later).
-    /// - `Err(e)` on transport/server errors or if the channel expired.
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expired before a token arrived.
-    /// - Propagates HTTP/transport failures from constructing the session.
-    pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
-        let Some(approval) = self.rx.try_recv().ok() else {
-            return Ok(None);
-        };
-        let approval = approval?;
-        Ok(Some(
-            session_from_approval(self.client.clone(), self.grant_ctx.clone(), approval)
-                .await?,
-        ))
-    }
-
-    /// Non-blocking check: returns a verified [`AuthToken`] (legacy flow only)
-    /// if the background poller has delivered it.
-    ///
-    /// - `Some(Ok(AuthToken))` when ready.
-    /// - `Some(Err(_))` if the background task failed (expired/transport error)
-    ///   or the payload is a grant (use [`Self::try_poll_once`] for grant flows).
-    /// - `None` if not yet delivered.
+    /// Non-blocking check for a ready relay message.
     #[must_use]
-    pub fn try_token(&self) -> Option<Result<AuthToken>> {
-        match self.rx.try_recv().ok()? {
-            Ok(AuthApproval::Legacy(token)) => Some(Ok(*token)),
-            Ok(AuthApproval::Grant { .. }) => Some(Err(AuthError::Validation(
-                "received a grant payload; use try_poll_once() for grant flows".into(),
-            )
-            .into())),
-            Err(e) => Some(Err(e)),
-        }
+    pub(crate) fn try_message(&self) -> Option<Result<AuthRelayMessage>> {
+        let Some(message) = self.rx.try_recv().ok() else {
+            return None;
+        };
+        Some(message)
     }
 
     // -- internals --
@@ -198,14 +139,14 @@ impl AuthSubscription {
     async fn poll_for_approval_loop(
         client: PubkyHttpClient,
         encrypted_channel: EncryptedAuthChannel,
-        tx: flume::Sender<Result<AuthApproval>>,
+        tx: flume::Sender<Result<AuthRelayMessage>>,
     ) {
         cross_log!(
             info,
             "Starting auth flow polling for relay channel {}",
             encrypted_channel
         );
-        let result = Self::poll_for_approval(&client, &encrypted_channel).await;
+        let result = Self::poll_for_message(&client, &encrypted_channel).await;
 
         if result.is_ok() {
             cross_log!(
@@ -218,55 +159,49 @@ impl AuthSubscription {
         let _ = tx.send(result);
     }
 
-    async fn poll_for_approval(
+    async fn poll_for_message(
         client: &PubkyHttpClient,
         encrypted_channel: &EncryptedAuthChannel,
-    ) -> Result<AuthApproval> {
+    ) -> Result<AuthRelayMessage> {
         let response = encrypted_channel
             .poll(client, None)
             .await?
             .ok_or(AuthError::RequestExpired)?;
-        let approval = AuthApproval::parse(&response)?;
 
         // ACK: confirms receipt for inbox channels, no-op for link.
-        // Best-effort: a failed ACK should not invalidate a verified payload.
+        // Best-effort: a failed ACK should not invalidate a delivered payload.
         if let Err(e) = encrypted_channel.ack(client).await {
             cross_log!(warn, "Inbox ACK failed (non-fatal): {e}");
         }
 
-        Ok(approval)
+        Ok(AuthRelayMessage::new(response))
     }
 }
 
-impl Drop for AuthSubscription {
+impl Drop for AuthRelayListener {
     fn drop(&mut self) {
         // Stop background polling immediately.
         self.abort.abort();
     }
 }
 
-/// Builder for [`AuthSubscription`].
+/// Builder for [`AuthRelayListener`].
 ///
-/// Use to override the HTTP relay and/or the `PubkyHttpClient`. Optional
-/// [`Self::grant_context`] hooks the subscription up to grant + JWT mode.
+/// Use to override the HTTP relay and/or the `PubkyHttpClient`.
 #[derive(Debug, Clone)]
-pub struct AuthSubscriptionBuilder {
+pub struct AuthRelayListenerBuilder {
     relay_base_url: Url,
     secret: [u8; 32],
     client: Option<PubkyHttpClient>,
-    grant_keypair: Option<Keypair>,
-    signup_homeserver: Option<(PublicKey, Option<String>)>,
 }
 
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
-impl AuthSubscriptionBuilder {
+impl AuthRelayListenerBuilder {
     pub(crate) fn new(secret: [u8; 32]) -> Self {
         Self {
             relay_base_url: Url::parse(DEFAULT_HTTP_RELAY_INBOX).expect("Always valid"),
             secret,
             client: None,
-            grant_keypair: None,
-            signup_homeserver: None,
         }
     }
 
@@ -282,35 +217,18 @@ impl AuthSubscriptionBuilder {
         self
     }
 
-    /// Configure the grant + JWT context for this subscription.
-    ///
-    /// `grant_keypair` is the `PoP` keypair bound to the grant's `cnf` claim.
-    /// `signup_homeserver` is `Some((hs_pk, signup_token))` for sign-up flows
-    /// and `None` for sign-in flows (where the homeserver is resolved from
-    /// PKARR after the grant arrives).
-    pub(crate) fn grant_context(
-        mut self,
-        grant_keypair: Option<Keypair>,
-        signup_homeserver: Option<(PublicKey, Option<String>)>,
-    ) -> Self {
-        self.grant_keypair = grant_keypair;
-        self.signup_homeserver = signup_homeserver;
-        self
-    }
-
     // Spawn background polling (single-shot delivery)
     fn spawn_background_polling(
         encrypted_channel: EncryptedAuthChannel,
         client: PubkyHttpClient,
-        grant_ctx: Option<GrantContext>,
-    ) -> AuthSubscription {
+    ) -> AuthRelayListener {
         let (tx, rx) = flume::bounded(1);
         let (abort_handle, abort_reg) = AbortHandle::new_pair();
         let bg_client = client.clone();
 
         let fut = async move {
             cross_log!(info, "Spawning auth flow polling task");
-            AuthSubscription::poll_for_approval_loop(bg_client, encrypted_channel.clone(), tx)
+            AuthRelayListener::poll_for_approval_loop(bg_client, encrypted_channel.clone(), tx)
                 .await;
         };
 
@@ -320,11 +238,9 @@ impl AuthSubscriptionBuilder {
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(Abortable::new(fut, abort_reg).map(|_| ()));
 
-        AuthSubscription {
-            client,
+        AuthRelayListener {
             rx,
             abort: abort_handle,
-            grant_ctx,
         }
     }
 
@@ -334,7 +250,7 @@ impl AuthSubscriptionBuilder {
     /// The channel type is auto-detected from the relay URL path:
     /// - `/link` or `/link/` → link channel (synchronous pairing)
     /// - Otherwise → inbox channel (store-and-forward, default)
-    pub fn start(self) -> Result<AuthSubscription> {
+    pub fn start(self) -> Result<AuthRelayListener> {
         let client = match self.client {
             Some(c) => c,
             None => PubkyHttpClient::new()?,
@@ -352,16 +268,7 @@ impl AuthSubscriptionBuilder {
             )?)
         };
 
-        let grant_ctx = self.grant_keypair.map(|kp| GrantContext {
-            client_keypair: kp,
-            signup_homeserver: self.signup_homeserver,
-        });
-
-        Ok(Self::spawn_background_polling(
-            encrypted_channel,
-            client,
-            grant_ctx,
-        ))
+        Ok(Self::spawn_background_polling(encrypted_channel, client))
     }
 }
 
@@ -370,6 +277,8 @@ mod tests {
     use pubky_common::capabilities::Capabilities;
 
     use super::*;
+    use crate::AuthToken;
+    use crate::Keypair;
 
     #[test]
     fn is_link_url_with_link_path() {
@@ -434,14 +343,27 @@ mod tests {
             channel.produce(&client, &token_bytes).await.unwrap();
         });
 
-        let subscriber = AuthSubscription::builder(encrypted_channel.secret().to_owned())
+        let listener = AuthRelayListener::builder(encrypted_channel.secret().to_owned())
             .relay_base_url(inbox_base)
             .client(main_client.clone())
             .start()
             .unwrap();
         let poll_handle = tokio::spawn(async move {
-            let response = subscriber.await_token().await.unwrap();
-            assert_eq!(response, token);
+            let response = listener.await_message().await.unwrap();
+            let approval = super::super::approval::AuthApproval::decode(
+                &response,
+                super::super::approval::AuthApprovalMode::LegacyToken,
+            )
+            .unwrap();
+
+            match approval {
+                super::super::approval::AuthApproval::Legacy(decoded) => {
+                    assert_eq!(*decoded, token)
+                }
+                super::super::approval::AuthApproval::Grant { .. } => {
+                    panic!("expected legacy approval")
+                }
+            }
         });
 
         let (producer_result, poll_result) = tokio::join!(producer_handle, poll_handle);

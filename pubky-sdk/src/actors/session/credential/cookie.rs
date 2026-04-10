@@ -32,10 +32,7 @@ use reqwest::{Method, RequestBuilder};
 
 use super::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient,
-    actors::storage::resource::resolve_pubky,
-    cross_log,
-    errors::Result,
+    PubkyHttpClient, actors::storage::resource::resolve_pubky, cross_log, errors::Result,
     util::check_http_status,
 };
 
@@ -99,7 +96,10 @@ impl CookieCredential {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for CookieCredential {
     fn info(&self) -> SessionInfo {
-        let record = self.record.read().expect("CookieCredential record RwLock poisoned");
+        let record = self
+            .record
+            .read()
+            .expect("CookieCredential record RwLock poisoned");
         SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec())
     }
 
@@ -118,10 +118,7 @@ impl SessionCredential for CookieCredential {
         match &self.cookie {
             Some(cookie) => {
                 let cookie_name = self.user.z32();
-                Ok(rb.header(
-                    reqwest::header::COOKIE,
-                    format!("{cookie_name}={cookie}"),
-                ))
+                Ok(rb.header(reqwest::header::COOKIE, format!("{cookie_name}={cookie}")))
             }
             None => Ok(rb),
         }

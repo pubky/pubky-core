@@ -72,10 +72,12 @@ use crate::{
     actors::{
         DEFAULT_HTTP_RELAY_INBOX,
         auth::{
-            auth_subscription::AuthSubscription,
+            approval::{AuthApproval, AuthApprovalMode},
+            auth_relay_listener::AuthRelayListener,
             deep_links::{
                 DeepLink, SigninDeepLink, SigninJwtDeepLink, SignupDeepLink, SignupJwtDeepLink,
             },
+            session_exchange::{GrantSessionContext, session_from_approval},
         },
     },
     errors::{AuthError, Result},
@@ -96,7 +98,10 @@ use crate::{
 /// the background task; the relay channel itself expires server-side after its TTL.
 #[derive(Debug)]
 pub struct PubkyAuthFlow {
-    subscription: AuthSubscription,
+    relay_listener: AuthRelayListener,
+    client: PubkyHttpClient,
+    approval_mode: AuthApprovalMode,
+    grant_session_ctx: Option<GrantSessionContext>,
     auth_url: DeepLink,
 }
 
@@ -136,7 +141,16 @@ impl PubkyAuthFlow {
     /// - Propagates HTTP/transport failures while polling the relay.
     /// - Propagates errors from the internal session exchange if it fails.
     pub async fn await_approval(self) -> Result<PubkySession> {
-        self.subscription.await_approval().await
+        let Self {
+            relay_listener,
+            client,
+            approval_mode,
+            grant_session_ctx,
+            auth_url: _,
+        } = self;
+        let approval = Self::await_decoded_approval(relay_listener, approval_mode).await?;
+
+        session_from_approval(client, grant_session_ctx, approval).await
     }
 
     /// Block until the signer approves and we receive an [`AuthToken`].
@@ -147,7 +161,18 @@ impl PubkyAuthFlow {
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expires before approval.
     /// - Propagates HTTP/transport failures encountered while polling the relay.
     pub async fn await_token(self) -> Result<AuthToken> {
-        self.subscription.await_token().await
+        let Self {
+            relay_listener,
+            client: _,
+            approval_mode,
+            grant_session_ctx: _,
+            auth_url: _,
+        } = self;
+
+        Self::legacy_token_from_approval(
+            Self::await_decoded_approval(relay_listener, approval_mode).await?,
+            "received a grant payload; use await_approval() instead of await_token()",
+        )
     }
 
     /// Non-blocking probe (single step) that **consumes any ready token** and returns:
@@ -159,7 +184,18 @@ impl PubkyAuthFlow {
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel expired before a token arrived.
     /// - Propagates HTTP/transport failures from constructing the session.
     pub async fn try_poll_once(&self) -> Result<Option<PubkySession>> {
-        self.subscription.try_poll_once().await
+        let Some(approval) = self.try_decoded_approval()? else {
+            return Ok(None);
+        };
+
+        Ok(Some(
+            session_from_approval(
+                self.client.clone(),
+                self.grant_session_ctx.clone(),
+                approval,
+            )
+            .await?,
+        ))
     }
 
     /// Non-blocking check: returns a verified `AuthToken` if the background poller has delivered it.
@@ -169,7 +205,42 @@ impl PubkyAuthFlow {
     /// - `None` if not yet delivered.
     #[must_use]
     pub fn try_token(&self) -> Option<Result<AuthToken>> {
-        self.subscription.try_token()
+        let approval = match self.try_decoded_approval() {
+            Ok(Some(approval)) => approval,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+
+        Some(Self::legacy_token_from_approval(
+            approval,
+            "received a grant payload; use try_poll_once() for grant flows",
+        ))
+    }
+
+    async fn await_decoded_approval(
+        relay_listener: AuthRelayListener,
+        approval_mode: AuthApprovalMode,
+    ) -> Result<AuthApproval> {
+        let message = relay_listener.await_message().await?;
+        AuthApproval::decode(&message, approval_mode)
+    }
+
+    fn try_decoded_approval(&self) -> Result<Option<AuthApproval>> {
+        let Some(message) = self.relay_listener.try_message() else {
+            return Ok(None);
+        };
+
+        Ok(Some(AuthApproval::decode(&message?, self.approval_mode)?))
+    }
+
+    fn legacy_token_from_approval(
+        approval: AuthApproval,
+        grant_message: &str,
+    ) -> Result<AuthToken> {
+        match approval {
+            AuthApproval::Legacy(token) => Ok(*token),
+            AuthApproval::Grant { .. } => Err(AuthError::Validation(grant_message.into()).into()),
+        }
     }
 }
 
@@ -315,12 +386,15 @@ impl PubkyAuthFlowBuilder {
             }
         };
 
-        let auth_url =
-            self.create_url(grant_binding.as_ref().map(|(cid, kp)| (cid.clone(), kp.public_key())));
+        let auth_url = self.create_url(
+            grant_binding
+                .as_ref()
+                .map(|(cid, kp)| (cid.clone(), kp.public_key())),
+        );
 
         // For the SignUp grant flow, the homeserver public key is taken from
         // the AuthFlowKind. For the SignIn grant flow, the homeserver pubkey is
-        // resolved from PKARR after we receive the grant — see AuthSubscription.
+        // resolved from PKARR after we receive the grant — see AuthRelayListener.
         let signup_homeserver = match &self.auth_kind {
             AuthFlowKind::SignUp {
                 homeserver_public_key,
@@ -329,14 +403,27 @@ impl PubkyAuthFlowBuilder {
             AuthFlowKind::SignIn => None,
         };
 
-        let subscription = AuthSubscription::builder(self.client_secret)
+        let approval_mode = if grant_binding.is_some() {
+            AuthApprovalMode::GrantJwt
+        } else {
+            AuthApprovalMode::LegacyToken
+        };
+
+        let grant_session_ctx = grant_binding.map(|(_, client_keypair)| GrantSessionContext {
+            client_keypair,
+            signup_homeserver,
+        });
+
+        let relay_listener = AuthRelayListener::builder(self.client_secret)
             .relay_base_url(self.base_relay)
-            .client(client)
-            .grant_context(grant_binding.map(|(_, kp)| kp), signup_homeserver)
+            .client(client.clone())
             .start()?;
 
         Ok(PubkyAuthFlow {
-            subscription,
+            relay_listener,
+            client,
+            approval_mode,
+            grant_session_ctx,
             auth_url,
         })
     }

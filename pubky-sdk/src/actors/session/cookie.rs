@@ -13,20 +13,14 @@
 
 use std::sync::Arc;
 
-use pubky_common::{
-    capabilities::Capabilities,
-    crypto::PublicKey,
-    session::CookieSessionRecord,
-};
+use pubky_common::{capabilities::Capabilities, crypto::PublicKey, session::CookieSessionRecord};
 use reqwest::Method;
 
 use super::core::PubkySession;
 use super::credential::{CookieCredential, SessionCredential};
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{AuthError, RequestError};
-use crate::{
-    AuthToken, PubkyHttpClient, Result, cross_log, util::check_http_status,
-};
+use crate::{AuthToken, PubkyHttpClient, Result, cross_log, util::check_http_status};
 
 // =====================================================================
 // Construction from AuthToken (legacy sign-in / sign-up)
@@ -221,21 +215,16 @@ pub(crate) async fn import_session_secret(
             message: "invalid secret: expected `<pubkey>:<cookie>`".into(),
         })?;
 
-    let public_key =
-        PublicKey::try_from_z32(pk_str).map_err(|_err| RequestError::Validation {
-            message: "invalid public key".into(),
-        })?;
+    let public_key = PublicKey::try_from_z32(pk_str).map_err(|_err| RequestError::Validation {
+        message: "invalid public key".into(),
+    })?;
     cross_log!(info, "Importing session secret for {}", public_key);
 
     // Build minimal session; placeholder record will be replaced
     // after validation.
-    let placeholder =
-        CookieSessionRecord::new(&public_key, Capabilities::default(), None);
-    let cookie_credential = CookieCredential::new(
-        public_key.clone(),
-        Some(cookie.to_string()),
-        placeholder,
-    );
+    let placeholder = CookieSessionRecord::new(&public_key, Capabilities::default(), None);
+    let cookie_credential =
+        CookieCredential::new(public_key.clone(), Some(cookie.to_string()), placeholder);
     let credential: Arc<dyn SessionCredential> = Arc::new(cookie_credential);
     let session = PubkySession::from_credential(client, Arc::clone(&credential));
 

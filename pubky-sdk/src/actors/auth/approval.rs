@@ -1,21 +1,36 @@
-use std::fmt;
-use pubky_common::{
-    auth::grant::GrantClaims,
-    crypto::{Keypair, PublicKey},
-};
+use pubky_common::auth::grant::GrantClaims;
 
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
-use crate::{AuthToken, PubkyHttpClient, PubkySession, actors::Pkdns};
+use crate::AuthToken;
 use crate::errors::{AuthError, Result};
+
+/// Decrypted auth message delivered through the relay channel.
+#[derive(Debug, Clone)]
+pub(crate) struct AuthRelayMessage(Vec<u8>);
+
+impl AuthRelayMessage {
+    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// Which auth payload shape this flow expects from the signer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthApprovalMode {
+    LegacyToken,
+    GrantJwt,
+}
 
 /// Approval payload delivered through the relay channel.
 ///
-/// The relay protocol carries opaque encrypted bytes; once decrypted, those
-/// bytes can either be a postcard-encoded legacy [`AuthToken`] or a UTF-8
-/// `pubky-grant` JWS string. We try the grant interpretation first and fall
-/// back to the legacy [`AuthToken`] — relay payloads are tagged by content
-/// shape, not by an explicit protocol version, so old apps still work
-/// unchanged.
+/// The relay protocol carries opaque encrypted bytes. The auth flow already
+/// knows which payload shape it expects, so decoding is explicit:
+/// legacy flows verify a postcard-encoded [`AuthToken`], while grant flows
+/// decode a UTF-8 `pubky-grant` JWS.
 ///
 /// Both variants are boxed to keep the enum size small and uniform; the
 /// legacy [`AuthToken`] carries a 64-byte signature, namespace, timestamp,
@@ -33,106 +48,115 @@ pub(crate) enum AuthApproval {
 }
 
 impl AuthApproval {
-    /// Parse a relay payload into either a legacy [`AuthToken`] or a grant JWS.
-    ///
-    /// Tries the grant interpretation first (3-segment base64url JWS that
-    /// decodes to [`GrantClaims`]). Falls back to verifying the bytes as a
-    /// postcard-encoded [`AuthToken`].
-    ///
-    /// # Verification asymmetry
-    /// - **Grant** payloads are decoded only — the homeserver verifies the
-    ///   signature when the SDK posts the grant to `/auth/jwt/session`.
-    /// - **Legacy** payloads go through [`AuthToken::verify`], which checks
-    ///   the signature, namespace, and timestamp window here in the SDK.
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::Error::Authentication`] if the bytes are
-    ///   neither a valid grant JWS nor a verifiable [`AuthToken`].
-    pub(crate) fn parse(bytes: &[u8]) -> Result<Self> {
-        if let Ok(text) = std::str::from_utf8(bytes) {
-            // Grant JWS Compact strings are 3 dot-separated base64url segments.
-            // Decode-only here; the homeserver verifies the signature.
-            if let Ok(claims) = GrantClaims::decode(text) {
-                return Ok(Self::Grant {
-                    jws: text.to_string(),
-                    claims: Box::new(claims),
-                });
-            }
-        }
-        let token = AuthToken::verify(bytes)?;
+    fn decode_legacy(message: &AuthRelayMessage) -> Result<Self> {
+        let token = AuthToken::verify(message.as_bytes())?;
         Ok(Self::Legacy(Box::new(token)))
     }
-}
 
-/// Context required to convert an [`AuthApproval`] into a JWT-backed
-/// [`PubkySession`]. Captured at flow construction time.
-#[derive(Clone)]
-pub(crate) struct GrantContext {
-    /// Client (`PoP`) keypair bound by the grant's `cnf` claim.
-    pub client_keypair: Keypair,
-    /// For sign-up flows: the homeserver to create the user on, plus an
-    /// optional signup token. For sign-in flows this is `None` and the
-    /// homeserver is resolved from PKARR after the grant arrives.
-    pub signup_homeserver: Option<(PublicKey, Option<String>)>,
-}
+    fn decode_grant(message: &AuthRelayMessage) -> Result<Self> {
+        let text = std::str::from_utf8(message.as_bytes())
+            .map_err(|e| AuthError::Validation(format!("invalid grant payload encoding: {e}")))?;
+        let claims = GrantClaims::decode(text)
+            .map_err(|e| AuthError::Validation(format!("invalid grant payload: {e}")))?;
 
-impl fmt::Debug for GrantContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GrantContext")
-            .field("client_keypair", &"<redacted>")
-            .field(
-                "signup_homeserver",
-                &self.signup_homeserver.as_ref().map(|(pk, _)| pk.z32()),
-            )
-            .finish()
+        Ok(Self::Grant {
+            jws: text.to_string(),
+            claims: Box::new(claims),
+        })
+    }
+
+    /// Decode a relay message into the auth payload shape expected by the flow.
+    pub(crate) fn decode(
+        message: &AuthRelayMessage,
+        mode: AuthApprovalMode,
+    ) -> Result<AuthApproval> {
+        match mode {
+            AuthApprovalMode::LegacyToken => Self::decode_legacy(message),
+            AuthApprovalMode::GrantJwt => Self::decode_grant(message),
+        }
     }
 }
 
-/// Convert an [`AuthApproval`] into a fully hydrated [`PubkySession`].
-pub(crate) async fn session_from_approval(
-    client: PubkyHttpClient,
-    grant_ctx: Option<GrantContext>,
-    approval: AuthApproval,
-) -> Result<PubkySession> {
-    match approval {
-        AuthApproval::Legacy(token) => {
-            crate::actors::session::cookie::session_from_auth_token(&token, client).await
+#[cfg(test)]
+mod tests {
+    use pubky_common::{
+        auth::jws::{ClientId, GrantId, sign_jws},
+        capabilities::Capabilities,
+    };
+
+    use super::*;
+    use crate::Keypair;
+
+    #[test]
+    fn decode_legacy_message_in_legacy_mode() {
+        let keypair = Keypair::random();
+        let token = AuthToken::sign(&keypair, Capabilities::default());
+        let message = AuthRelayMessage::new(token.serialize());
+
+        let approval = AuthApproval::decode(&message, AuthApprovalMode::LegacyToken).unwrap();
+
+        match approval {
+            AuthApproval::Legacy(decoded) => assert_eq!(*decoded, token),
+            AuthApproval::Grant { .. } => panic!("expected legacy approval"),
         }
-        AuthApproval::Grant { jws, claims } => {
-            let ctx = grant_ctx.ok_or_else(|| {
-                AuthError::Validation(
-                    "received a grant payload but no client keypair is configured".into(),
-                )
-            })?;
-            let claims = *claims;
-            if let Some((hs_pk, signup_token)) = ctx.signup_homeserver {
-                crate::actors::session::jwt::session_from_grant_signup(
-                    client,
-                    jws,
-                    claims,
-                    ctx.client_keypair,
-                    hs_pk,
-                    signup_token.as_deref(),
-                )
-                .await
-            } else {
-                // Sign-in: resolve the user's homeserver via PKARR.
-                let pkdns = Pkdns::with_client(client.clone());
-                let hs_pk = pkdns.get_homeserver_of(&claims.iss).await.ok_or_else(|| {
-                    AuthError::Validation(format!(
-                        "could not resolve homeserver for {}",
-                        claims.iss.z32()
-                    ))
-                })?;
-                crate::actors::session::jwt::session_from_grant_exchange(
-                    client,
-                    jws,
-                    claims,
-                    ctx.client_keypair,
-                    hs_pk,
-                )
-                .await
+    }
+
+    #[test]
+    fn decode_legacy_message_in_grant_mode_fails() {
+        let keypair = Keypair::random();
+        let token = AuthToken::sign(&keypair, Capabilities::default());
+        let message = AuthRelayMessage::new(token.serialize());
+
+        let error = AuthApproval::decode(&message, AuthApprovalMode::GrantJwt).unwrap_err();
+
+        assert!(error.to_string().contains("invalid grant payload"));
+    }
+
+    #[test]
+    fn decode_grant_message_in_grant_mode() {
+        let user_keypair = Keypair::random();
+        let client_keypair = Keypair::random();
+        let claims = GrantClaims {
+            iss: user_keypair.public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            caps: Capabilities::default().0,
+            cnf: client_keypair.public_key(),
+            jti: GrantId::generate(),
+            iat: 1,
+            exp: 2,
+        };
+        let grant_jws = sign_jws(&user_keypair, "pubky-grant", &claims);
+        let message = AuthRelayMessage::new(grant_jws.clone().into_bytes());
+
+        let approval = AuthApproval::decode(&message, AuthApprovalMode::GrantJwt).unwrap();
+
+        match approval {
+            AuthApproval::Grant {
+                jws,
+                claims: decoded,
+            } => {
+                assert_eq!(jws, grant_jws);
+                assert_eq!(*decoded, claims);
             }
+            AuthApproval::Legacy(_) => panic!("expected grant approval"),
         }
+    }
+
+    #[test]
+    fn decode_grant_message_in_legacy_mode_fails() {
+        let user_keypair = Keypair::random();
+        let claims = GrantClaims {
+            iss: user_keypair.public_key(),
+            client_id: ClientId::new("test.app").unwrap(),
+            caps: Capabilities::default().0,
+            cnf: Keypair::random().public_key(),
+            jti: GrantId::generate(),
+            iat: 1,
+            exp: 2,
+        };
+        let grant_jws = sign_jws(&user_keypair, "pubky-grant", &claims);
+        let message = AuthRelayMessage::new(grant_jws.into_bytes());
+
+        assert!(AuthApproval::decode(&message, AuthApprovalMode::LegacyToken).is_err());
     }
 }

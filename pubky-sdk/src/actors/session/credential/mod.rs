@@ -77,11 +77,7 @@ pub(crate) trait SessionCredential: Debug + Send + Sync {
     /// JWT implementations may proactively refresh the bearer token here.
     /// Cookie implementations attach a `Cookie` header (or rely on the
     /// browser jar on WASM).
-    async fn attach(
-        &self,
-        rb: RequestBuilder,
-        client: &PubkyHttpClient,
-    ) -> Result<RequestBuilder>;
+    async fn attach(&self, rb: RequestBuilder, client: &PubkyHttpClient) -> Result<RequestBuilder>;
 
     /// Round-trip the homeserver to verify this credential is still valid.
     ///

@@ -12,8 +12,9 @@ use pubky_common::{
 };
 
 use crate::{
-    Capabilities, cross_log,
+    Capabilities,
     actors::auth::deep_links::{DeepLink, DeepLinkParseError},
+    cross_log,
     errors::{AuthError, Result},
     util::check_http_status,
 };
@@ -44,12 +45,13 @@ impl PubkySigner {
     /// - Propagates transport failures when posting to the relay or if the
     ///   relay responds with a non-success status.
     pub async fn approve_auth(&self, pubkyauth_url: impl AsRef<str>) -> Result<()> {
-        let deep_link: DeepLink = pubkyauth_url
-            .as_ref()
-            .parse()
-            .map_err(|e: DeepLinkParseError| {
-                AuthError::Validation(format!("invalid pubkyauth URL: {e}"))
-            })?;
+        let deep_link: DeepLink =
+            pubkyauth_url
+                .as_ref()
+                .parse()
+                .map_err(|e: DeepLinkParseError| {
+                    AuthError::Validation(format!("invalid pubkyauth URL: {e}"))
+                })?;
 
         let (relay, client_secret, encrypted_payload) = match &deep_link {
             DeepLink::Signin(d) => {

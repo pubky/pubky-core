@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use crate::PublicKey;
 use crate::actors::session::credential::SessionCredential;
 use reqwest::{Method, RequestBuilder};
+use std::sync::Arc;
 
 use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath};
 use crate::{

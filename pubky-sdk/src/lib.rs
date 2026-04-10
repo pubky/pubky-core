@@ -34,15 +34,15 @@ pub use actors::Pkdns;
 #[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
-pub use actors::SessionInfo;
-#[doc(inline)]
-pub use actors::{CookieSessionView, JwtSessionView};
-#[doc(inline)]
 pub use actors::PubkySigner;
+#[doc(inline)]
+pub use actors::SessionInfo;
 #[doc(inline)]
 pub use actors::deep_links;
 #[doc(inline)]
 pub use actors::{AuthFlowKind, PubkyAuthFlow};
+#[doc(inline)]
+pub use actors::{CookieSessionView, JwtSessionView};
 #[doc(inline)]
 pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
 #[doc(inline)]
