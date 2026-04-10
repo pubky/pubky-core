@@ -16,6 +16,7 @@
 //! `require_jwt_handle()` checks and the `export_secret()` panic that the
 //! previous design carried.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::auth::{
     grant_session::{GrantInfo, GrantSessionInfo},
     jws::GrantId,
@@ -194,6 +195,19 @@ impl<'a> CookieSessionView<'a> {
     /// shared [`super::core::PubkySession::info`] accessor.
     pub fn session_info(&self) -> CookieSessionRecord {
         self.credential.cookie_record()
+    }
+
+    /// Export session metadata for rehydrating after a tab refresh or process restart.
+    ///
+    /// The returned string contains **no secrets**; it is a base64 encoding of the
+    /// public `SessionInfo`. The caller remains responsible for persisting the
+    /// HTTP-only session cookie; `export()` merely captures the metadata needed to
+    /// reconstruct a `PubkySession` handle.
+    #[must_use]
+    pub fn export(&self) -> String {
+        let record = self.session_info();
+        crate::cross_log!(info, "Exporting session for {}", record.public_key());
+        STANDARD.encode(record.serialize())
     }
 
     /// Export the minimum data needed to restore this session later.

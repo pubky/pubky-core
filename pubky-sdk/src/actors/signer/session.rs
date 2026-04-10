@@ -40,7 +40,8 @@ impl PubkySigner {
             .await?;
 
         self.publish_signup_homeserver(homeserver).await?;
-        PubkySession::new_from_response(self.client.clone(), response).await
+        crate::actors::session::cookie::session_from_cookie_response(self.client.clone(), response)
+            .await
     }
 
     // All of these methods use root capabilities
@@ -76,7 +77,9 @@ impl PubkySigner {
     async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let session = PubkySession::new(&token, self.client.clone()).await?;
+        let session =
+            crate::actors::session::cookie::session_from_auth_token(&token, self.client.clone())
+                .await?;
         cross_log!(
             info,
             "Signin completed for {}; mode {:?}",

@@ -279,7 +279,9 @@ impl AuthSubscription {
         approval: AuthApproval,
     ) -> Result<PubkySession> {
         match approval {
-            AuthApproval::Legacy(token) => PubkySession::new(&token, client).await,
+            AuthApproval::Legacy(token) => {
+                crate::actors::session::cookie::session_from_auth_token(&token, client).await
+            }
             AuthApproval::Grant { jws, claims } => {
                 let ctx = grant_ctx.ok_or_else(|| {
                     AuthError::Validation(
@@ -288,7 +290,7 @@ impl AuthSubscription {
                 })?;
                 let claims = *claims;
                 if let Some((hs_pk, signup_token)) = ctx.signup_homeserver {
-                    PubkySession::from_grant_signup(
+                    crate::actors::session::jwt::session_from_grant_signup(
                         client,
                         jws,
                         claims,
@@ -306,7 +308,7 @@ impl AuthSubscription {
                             claims.iss.z32()
                         ))
                     })?;
-                    PubkySession::from_grant_exchange(
+                    crate::actors::session::jwt::session_from_grant_exchange(
                         client,
                         jws,
                         claims,
