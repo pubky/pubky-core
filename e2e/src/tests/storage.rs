@@ -941,7 +941,6 @@ async fn test_homeserver_with_file_storage() {
 
     let keypair = Keypair::from_secret(&[1; 32]);
     let signer = pubky.signer(keypair);
-
     let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
 
     let path = "/pub/foo.txt";

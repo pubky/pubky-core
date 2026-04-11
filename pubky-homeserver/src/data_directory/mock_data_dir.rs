@@ -99,7 +99,18 @@ impl DataDir for MockDataDir {
     }
 
     fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
-        Ok(()) // Always ok because this is validated by the tempfile crate or create_dir_all.
+        if let MockDataDirKind::Persistent(path) = &self.root {
+            std::fs::create_dir_all(path)?;
+
+            // Check if we can write to the data directory
+            let test_file_path = path.join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
+            std::fs::write(test_file_path.clone(), b"test")
+                .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+            std::fs::remove_file(test_file_path)
+                .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+        }
+
+        Ok(())
     }
 
     fn read_or_create_config_file(&self) -> anyhow::Result<super::ConfigToml> {

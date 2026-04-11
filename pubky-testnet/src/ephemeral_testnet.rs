@@ -227,6 +227,7 @@ impl EphemeralTestnetBuilder {
             config.storage = StorageConfigToml::FileSystem;
             MockDataDir::new_persistent_data_dir(data_dir, config, Some(keypair))?
         } else {
+            config.storage = StorageConfigToml::InMemory;
             MockDataDir::new(config, Some(keypair))?
         };
         testnet.create_homeserver_app_with_mock(mock_dir).await?;
