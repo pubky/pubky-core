@@ -42,18 +42,99 @@ impl ConnectionString {
 
 #[cfg(any(test, feature = "testing"))]
 impl ConnectionString {
+    const TEST_PARAM_KEY: &'static str = "pubky-test";
+    const TEST_DB_NAME_KEY: &'static str = "pubky-test-db-name";
+    const TEST_PERSIST_KEY: &'static str = "pubky-test-persist";
+    const DEFAULT_CONNECTION_STRING: &'static str =
+        "postgres://localhost:5432/postgres?pubky-test=true";
+
     /// Returns a connection string for a test database.
     /// This is a postgres database that is not real.
     /// It is used as an indicator for a empheral test database.
     pub fn default_test_db() -> Self {
-        Self::new("postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true").unwrap()
+        Self::new(Self::DEFAULT_CONNECTION_STRING).unwrap()
     }
 
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
-        self.0
+        self.has_param(Self::TEST_PARAM_KEY, Some("true"))
+    }
+
+    /// Adds a parameter to the connection string that indicates that this is a test database.
+    pub fn add_test_db_flag(&mut self) {
+        if !self.is_test_db() {
+            self.add_param(Self::TEST_PARAM_KEY, "true");
+        }
+    }
+
+    /// Returns the value of the database name parameter if it exists.
+    pub fn db_name_key(&self) -> Option<String> {
+        self.0.query_pairs().find_map(|(key, value)| {
+            if key == Self::TEST_DB_NAME_KEY {
+                Some(value.into_owned())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Adds a db name as a parameter to the connection string.
+    pub fn add_test_db_name(&mut self, db_name: &str) {
+        if self.db_name_key().is_none() {
+            self.add_param(Self::TEST_DB_NAME_KEY, db_name);
+        }
+    }
+
+    /// Removes the db name parameter from the connection string.
+    pub fn remove_test_db_name(&mut self) {
+        self.remove_param(Self::TEST_DB_NAME_KEY);
+    }
+
+    /// Returns true if the connection string is for a persistent database.
+    pub fn is_persistent(&self) -> bool {
+        self.has_param(Self::TEST_PERSIST_KEY, Some("true"))
+    }
+
+    /// Adds a parameter to the connection string that indicates that this db must persist.
+    pub fn add_persist_param(&mut self) {
+        if !self.is_persistent() {
+            self.add_param(Self::TEST_PERSIST_KEY, "true");
+        }
+    }
+
+    /// Removes the parameter from the connection string that indicates that this db must persist.
+    pub fn remove_persist_param(&mut self) {
+        self.remove_param(Self::TEST_PERSIST_KEY);
+    }
+
+    fn has_param(&self, param_key: &str, param_value: Option<&str>) -> bool {
+        self.0.query_pairs().any(|(key, value)| {
+            if key == param_key {
+                if let Some(param_value) = param_value {
+                    return value == param_value;
+                }
+
+                return true;
+            }
+
+            false
+        })
+    }
+
+    fn add_param(&mut self, key: &str, value: &str) {
+        self.0.query_pairs_mut().append_pair(key, value);
+    }
+
+    fn remove_param(&mut self, param_key: &str) {
+        let new_queries = self
+            .0
             .query_pairs()
-            .any(|(key, value)| key == "pubky-test" && value == "true")
+            .filter_map(|(key, value)| {
+                (key != param_key).then_some((key.into_owned(), value.into_owned()))
+            })
+            .collect::<Vec<_>>();
+
+        self.0.query_pairs_mut().clear().extend_pairs(new_queries);
     }
 }
 

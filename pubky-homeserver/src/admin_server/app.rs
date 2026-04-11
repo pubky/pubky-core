@@ -61,7 +61,7 @@ pub enum AdminServerBuildError {
     Server(anyhow::Error),
 
     /// Failed to boostrap from the data directory.
-    #[error("Failed to bootstrap from the setup source: {0}")]
+    #[error("Failed to boostrap from the data directory: {0}")]
     DataDir(AppContextConversionError),
 }
 

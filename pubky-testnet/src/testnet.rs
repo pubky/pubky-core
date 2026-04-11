@@ -7,10 +7,7 @@
 use anyhow::Result;
 use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
-use pubky_homeserver::{
-    storage_config::StorageConfigToml, ConfigToml, ConnectionString, DomainPort, HomeserverApp,
-    MockDataDir,
-};
+use pubky_homeserver::{ConfigToml, ConnectionString, DomainPort, HomeserverApp, MockDataDir};
 use std::{str::FromStr, time::Duration};
 use url::Url;
 
@@ -128,13 +125,6 @@ impl Testnet {
         mock_dir.config_toml.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
-        }
-        if mock_dir.is_temp() {
-            // For temporary data dirs, we want to use in-memory storage to speed up the tests.
-            mock_dir.config_toml.storage = StorageConfigToml::InMemory;
-        } else {
-            // For persistent data dirs, we want to use file system storage to actually persist the data.
-            mock_dir.config_toml.storage = StorageConfigToml::FileSystem;
         }
         let homeserver = HomeserverApp::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);

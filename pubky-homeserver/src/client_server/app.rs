@@ -31,7 +31,7 @@ use super::layers::{
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
-/// Errors that can occur when building a `ClientServer`.
+/// Errors that can occur when building a `HomeserverCore`.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientServerBuildError {
     /// Failed to run the ICANN web server.

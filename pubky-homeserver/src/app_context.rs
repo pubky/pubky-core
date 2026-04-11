@@ -55,6 +55,7 @@ pub enum AppContextConversionError {
 /// Think of it as a simple Dependency Injection container.
 ///
 /// Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
+///
 #[derive(Clone)]
 pub struct AppContext {
     /// The SQL database connection.
@@ -179,10 +180,13 @@ impl AppContext {
         {
             // If we are in a test environment and it's a test db connection string,
             // we use an empheral test db.
-            return if config_toml.general.database_url.is_test_db() {
-                Ok(SqlDb::test().await)
+            let database_url = &config_toml.general.database_url;
+            return if database_url.is_test_db() && database_url.db_name_key().is_none() {
+                SqlDb::test_with_conn(database_url.clone())
+                    .await
+                    .map_err(AppContextConversionError::SqlDb)
             } else {
-                SqlDb::connect(&config_toml.general.database_url)
+                SqlDb::connect(database_url)
                     .await
                     .map_err(AppContextConversionError::SqlDb)
             };

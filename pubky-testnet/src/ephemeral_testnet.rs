@@ -81,6 +81,7 @@ pub struct EphemeralTestnetBuilder {
     homeserver_keypair: Option<Keypair>,
     http_relay: bool,
     data_dir: Option<std::path::PathBuf>,
+    drop_db_on_cleanup: bool,
     #[cfg(feature = "embedded-postgres")]
     use_embedded_postgres: bool,
 }
@@ -96,6 +97,7 @@ impl EphemeralTestnetBuilder {
             data_dir: None,
             #[cfg(feature = "embedded-postgres")]
             use_embedded_postgres: false,
+            drop_db_on_cleanup: true,
         }
     }
 
@@ -123,15 +125,23 @@ impl EphemeralTestnetBuilder {
         self
     }
 
+    /// Defines that a database will be dropped when the testnet is dropped.
+    ///
+    /// This works only for test databases. If the `postgres` connection string
+    /// points to a persistent database, this option has no effect.
+    pub fn drop_db_on_cleanup(mut self, drop: bool) -> Self {
+        self.drop_db_on_cleanup = drop;
+        self
+    }
+
     /// Set a persistent data directory for the homeserver.
     ///
     /// When set, the homeserver will use `{data_dir}/data/files` as its file storage
     /// root and the directory **will not** be removed when the testnet is dropped.
-    /// This is useful for integration tests that verify data survives a restart.
     ///
     /// Without this option, an in-memory storage backend is used (the default for
     /// fast, hermetic tests).
-    pub fn data_dir(mut self, path: std::path::PathBuf) -> Self {
+    pub fn with_data_dir(mut self, path: std::path::PathBuf) -> Self {
         self.data_dir = Some(path);
         self
     }
@@ -202,6 +212,12 @@ impl EphemeralTestnetBuilder {
 
         if let Some(connection_string) = testnet.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
+        }
+
+        if !self.drop_db_on_cleanup {
+            config.general.database_url.add_persist_param();
+        } else {
+            config.general.database_url.remove_persist_param();
         }
 
         let keypair = self

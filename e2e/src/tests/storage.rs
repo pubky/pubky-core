@@ -3,7 +3,7 @@ use bytes::Bytes;
 use pubky_testnet::{
     pubky::{errors::RequestError, Error, IntoPubkyResource, Keypair, Method, StatusCode},
     pubky_homeserver::MockDataDir,
-    Testnet,
+    EphemeralTestnet, Testnet,
 };
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -915,4 +915,78 @@ async fn write_same_path_separate_users() {
     assert_eq!(content_length, content1.len() as u64);
     let read_bytes_b = response.bytes().await.unwrap();
     assert_eq!(read_bytes_b, content1);
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn test_homeserver_with_file_storage() {
+    // Create directory for the file storage
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_dir = temp_dir.path().to_path_buf();
+
+    // Create testnet with a defined file storage directory.
+    let testnet = EphemeralTestnet::builder()
+        .with_data_dir(data_dir.clone())
+        .drop_db_on_cleanup(false)
+        .build()
+        .await
+        .unwrap();
+
+    // Run homeserver and put some data in it
+    let homeserver = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let db_connection_url = homeserver
+        .db_connection()
+        .expect("test config should have a database connection");
+
+    let keypair = Keypair::from_secret(&[1; 32]);
+    let signer = pubky.signer(keypair);
+
+    let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
+
+    let path = "/pub/foo.txt";
+
+    session
+        .storage()
+        .put(path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    // Drop the testnet to ensure all resources are cleaned up and files are flushed to disk
+    drop(testnet);
+
+    // Create again the testnet with the same data directory
+    // to verify that the data persists across testnet instances.
+    let testnet = EphemeralTestnet::builder()
+        .with_data_dir(data_dir)
+        .postgres(db_connection_url.0)
+        .build()
+        .await
+        .unwrap();
+
+    let pubky = testnet.sdk().unwrap();
+    let homeserver = testnet.homeserver_app();
+
+    // Sign in with the same user keypair to get a session on the new testnet.
+    // The new testnet has a fresh DHT, so we first publish the PKDNS record
+    // pointing this user to the homeserver, then signin (which resolves via DHT).
+    let keypair = Keypair::from_secret(&[1; 32]);
+    let signer = pubky.signer(keypair);
+    signer
+        .pkdns()
+        .publish_homeserver_force(Some(&homeserver.public_key()))
+        .await
+        .unwrap();
+    let session = signer.signin().await.unwrap();
+
+    let response = session.storage().get(path).await.unwrap();
+
+    let content_header = response.headers().get("content-type").unwrap();
+    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
+    assert_eq!(content_header, "text/plain");
+
+    let byte_value = response.bytes().await.unwrap();
+    assert_eq!(byte_value.as_ref(), &[0, 1, 2, 3, 4]);
 }
