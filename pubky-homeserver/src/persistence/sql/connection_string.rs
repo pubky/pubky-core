@@ -57,7 +57,7 @@ impl ConnectionString {
 
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
-        self.has_param(Self::TEST_FLAG_KEY, Some("true"))
+        self.has_param(Self::TEST_FLAG_KEY, "true")
     }
 
     /// Adds a parameter to the connection string that indicates that this is a test database.
@@ -68,7 +68,7 @@ impl ConnectionString {
     }
 
     /// Returns the value of the database name parameter if it exists.
-    pub fn db_name_key(&self) -> Option<String> {
+    pub fn test_db_name(&self) -> Option<String> {
         self.0.query_pairs().find_map(|(key, value)| {
             if key == Self::TEST_DB_NAME_KEY {
                 Some(value.into_owned())
@@ -80,7 +80,7 @@ impl ConnectionString {
 
     /// Adds a db name as a parameter to the connection string.
     pub fn add_test_db_name(&mut self, db_name: &str) {
-        if self.db_name_key().is_none() {
+        if self.test_db_name().is_none() {
             self.add_param(Self::TEST_DB_NAME_KEY, db_name);
         }
     }
@@ -92,7 +92,7 @@ impl ConnectionString {
 
     /// Returns true if the connection string is for a persistent database.
     pub fn is_persistent(&self) -> bool {
-        self.has_param(Self::TEST_PERSIST_KEY, Some("true"))
+        self.has_param(Self::TEST_PERSIST_KEY, "true")
     }
 
     /// Adds a parameter to the connection string that indicates that this db must persist.
@@ -107,18 +107,10 @@ impl ConnectionString {
         self.remove_param(Self::TEST_PERSIST_KEY);
     }
 
-    fn has_param(&self, param_key: &str, param_value: Option<&str>) -> bool {
-        self.0.query_pairs().any(|(key, value)| {
-            if key == param_key {
-                if let Some(param_value) = param_value {
-                    return value == param_value;
-                }
-
-                return true;
-            }
-
-            false
-        })
+    fn has_param(&self, param_key: &str, param_value: &str) -> bool {
+        self.0
+            .query_pairs()
+            .any(|(key, value)| key == param_key && value == param_value)
     }
 
     fn add_param(&mut self, key: &str, value: &str) {

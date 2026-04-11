@@ -81,8 +81,6 @@ impl MockDataDir {
     /// Use this for integration tests that need to verify persistence across process restarts.
     #[cfg(any(test, feature = "testing"))]
     pub fn test_persistent_data_dir(data_dir: PathBuf) -> Self {
-        use crate::storage_config::StorageConfigToml;
-
         let mut config = super::ConfigToml::default_test_config();
         // Set storage to `FileSystem` for persistent data directory
         config.storage = StorageConfigToml::FileSystem;
@@ -114,9 +112,9 @@ impl DataDir for MockDataDir {
             // Check if we can write to the data directory
             let test_file_path = path.join("test_write_f2d560932f9b437fa9ef430ba436d611"); // random file name to not conflict with anything
             std::fs::write(test_file_path.clone(), b"test")
-                .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+                .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {err}"))?;
             std::fs::remove_file(test_file_path)
-                .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {}", err))?;
+                .map_err(|err| anyhow::anyhow!("Failed to remove from data directory: {err}"))?;
         }
 
         Ok(())

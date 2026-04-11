@@ -55,7 +55,7 @@ impl SqlDb {
     ///
     /// The connection string is gathered from the db dropper, which is only set for test databases.
     #[cfg(any(test, feature = "testing"))]
-    pub fn connection_string(&self) -> Option<TestDbConnectionWithName> {
+    pub fn test_db_connection_string(&self) -> Option<TestDbConnectionWithName> {
         let db_dropper = self.db_dropper.as_ref()?;
 
         let mut connection_string = ConnectionString::new(&db_dropper.connection_string)
@@ -88,16 +88,16 @@ impl TestDbConnectionWithName {
 struct TestDbDropper {
     db_name: String,
     connection_string: String,
-    dropper_switch_on: bool,
+    should_drop: bool,
 }
 
 #[cfg(any(test, feature = "testing"))]
 impl TestDbDropper {
-    pub fn new(db_name: String, connection_string: String, dropper_switch_on: bool) -> Self {
+    pub fn new(db_name: String, connection_string: String, should_drop: bool) -> Self {
         Self {
             db_name,
             connection_string,
-            dropper_switch_on,
+            should_drop,
         }
     }
 }
@@ -105,9 +105,10 @@ impl TestDbDropper {
 #[cfg(any(test, feature = "testing"))]
 impl Drop for TestDbDropper {
     fn drop(&mut self) {
-        // Drop the database after the test if dropper switch is one (i.e. is `true`).
+        // Drop the database after the test if dropper switch is on,
+        // i.e. self.should_drop is `true`.
         // This works in combination with the pubky_test macro.
-        if self.dropper_switch_on {
+        if self.should_drop {
             let _ = pubky_test_utils::register_db_to_drop(
                 self.db_name.clone(),
                 self.connection_string.clone(),
@@ -146,7 +147,7 @@ impl SqlDb {
         let admin_con_string = Self::derive_connection_string(admin_con_string);
 
         // If the connection has a db name defined, we assume that the test database already exists and we can connect to it directly.
-        let test_db_con_string = if let Some(db_name) = admin_con_string.db_name_key() {
+        let test_db_con_string = if let Some(db_name) = admin_con_string.test_db_name() {
             let mut test_db_con_string = admin_con_string.clone();
             test_db_con_string.set_database_name(&db_name);
 

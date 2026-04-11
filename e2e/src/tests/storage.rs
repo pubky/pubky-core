@@ -936,7 +936,7 @@ async fn homeserver_with_persistent_file_storage() {
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
     let db_connection_url = homeserver
-        .db_connection()
+        .test_db_connection()
         .expect("test config should have a database connection");
 
     let keypair = Keypair::from_secret(&[1; 32]);

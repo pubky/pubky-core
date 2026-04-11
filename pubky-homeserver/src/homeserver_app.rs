@@ -152,9 +152,9 @@ impl HomeserverApp {
         url::Url::parse(&self.client_server.icann_http_url_string()).expect("valid url")
     }
 
-    /// Return db connection string
+    /// Return db connection string for test databases, if available.
     #[cfg(any(test, feature = "testing"))]
-    pub fn db_connection(&self) -> Option<TestDbConnectionWithName> {
-        self.context.sql_db.connection_string()
+    pub fn test_db_connection(&self) -> Option<TestDbConnectionWithName> {
+        self.context.sql_db.test_db_connection_string()
     }
 }
