@@ -51,15 +51,15 @@ impl SqlDb {
         &self.pool
     }
 
-    /// Gets connection data for the test database.
+    /// Gets connection string for the test database.
     ///
-    /// The connection data is gathered from the db dropper, which is only set for test databases.
+    /// The connection string is gathered from the db dropper, which is only set for test databases.
     #[cfg(any(test, feature = "testing"))]
-    pub fn connection_data(&self) -> Option<TestDbConnectionWithName> {
+    pub fn connection_string(&self) -> Option<TestDbConnectionWithName> {
         let db_dropper = self.db_dropper.as_ref()?;
 
-        let mut connection_string =
-            ConnectionString::new(&db_dropper.connection_string).expect("valid connection string");
+        let mut connection_string = ConnectionString::new(&db_dropper.connection_string)
+            .expect("test connection is postgres; qed");
 
         // Add the database name to the connection string.
         connection_string.add_test_db_name(&db_dropper.db_name);
@@ -73,7 +73,15 @@ impl SqlDb {
 
 /// Helper struct that wraps connection string with a database name param used for testing.
 #[cfg(any(test, feature = "testing"))]
-pub struct TestDbConnectionWithName(pub ConnectionString);
+pub struct TestDbConnectionWithName(ConnectionString);
+
+#[cfg(any(test, feature = "testing"))]
+impl TestDbConnectionWithName {
+    /// Gets the inner connection string.
+    pub fn into_inner(self) -> ConnectionString {
+        self.0
+    }
+}
 
 /// Helper struct to drop the postgres test database after the db connection is dropped.
 #[cfg(any(test, feature = "testing"))]
@@ -97,7 +105,7 @@ impl TestDbDropper {
 #[cfg(any(test, feature = "testing"))]
 impl Drop for TestDbDropper {
     fn drop(&mut self) {
-        // Drop the database after the test.
+        // Drop the database after the test if dropper switch is one (i.e. is `true`).
         // This works in combination with the pubky_test macro.
         if self.dropper_switch_on {
             let _ = pubky_test_utils::register_db_to_drop(
@@ -137,6 +145,7 @@ impl SqlDb {
     ) -> Result<Self, sqlx::Error> {
         let admin_con_string = Self::derive_connection_string(admin_con_string);
 
+        // If the connection has a db name defined, we assume that the test database already exists and we can connect to it directly.
         let test_db_con_string = if let Some(db_name) = admin_con_string.db_name_key() {
             let mut test_db_con_string = admin_con_string.clone();
             test_db_con_string.set_database_name(&db_name);
@@ -207,7 +216,9 @@ impl SqlDb {
         db
     }
 
-    pub async fn test_with_conn(admin_con_string: ConnectionString) -> Result<Self, sqlx::Error> {
+    pub async fn test_with_connection(
+        admin_con_string: ConnectionString,
+    ) -> Result<Self, sqlx::Error> {
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_postgres_db(Some(admin_con_string)).await?;
         let migrator = Migrator::new(&db);

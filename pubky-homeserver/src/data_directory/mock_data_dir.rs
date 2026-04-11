@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-
 use super::DataDir;
+use crate::storage_config::StorageConfigToml;
+use std::path::{Path, PathBuf};
 
 /// Mock data directory for testing.
 ///
@@ -46,6 +46,11 @@ impl MockDataDir {
         let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
         std::fs::create_dir_all(&data_dir)?;
 
+        debug_assert!(
+            matches!(config_toml.storage, StorageConfigToml::FileSystem),
+            "MockDataDir with persistent data directory should use FileSystem storage config"
+        );
+
         Ok(Self {
             root: MockDataDirKind::Persistent(data_dir),
             config_toml,
@@ -76,7 +81,11 @@ impl MockDataDir {
     /// Use this for integration tests that need to verify persistence across process restarts.
     #[cfg(any(test, feature = "testing"))]
     pub fn test_persistent_data_dir(data_dir: PathBuf) -> Self {
-        let config = super::ConfigToml::default_test_config();
+        use crate::storage_config::StorageConfigToml;
+
+        let mut config = super::ConfigToml::default_test_config();
+        // Set storage to `FileSystem` for persistent data directory
+        config.storage = StorageConfigToml::FileSystem;
         let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
 
         Self::new_persistent_data_dir(data_dir, config, Some(keypair))

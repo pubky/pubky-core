@@ -919,7 +919,7 @@ async fn write_same_path_separate_users() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn test_homeserver_with_file_storage() {
+async fn homeserver_with_persistent_file_storage() {
     // Create directory for the file storage
     let temp_dir = tempfile::tempdir().unwrap();
     let data_dir = temp_dir.path().to_path_buf();
@@ -960,7 +960,7 @@ async fn test_homeserver_with_file_storage() {
     // to verify that the data persists across testnet instances.
     let testnet = EphemeralTestnet::builder()
         .with_data_dir(data_dir)
-        .postgres(db_connection_url.0)
+        .postgres(db_connection_url.into_inner())
         .build()
         .await
         .unwrap();
@@ -981,9 +981,7 @@ async fn test_homeserver_with_file_storage() {
     let session = signer.signin().await.unwrap();
 
     let response = session.storage().get(path).await.unwrap();
-
     let content_header = response.headers().get("content-type").unwrap();
-    // Tests if MIME type was inferred correctly from the file path (magic bytes do not work)
     assert_eq!(content_header, "text/plain");
 
     let byte_value = response.bytes().await.unwrap();

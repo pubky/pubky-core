@@ -182,7 +182,7 @@ impl AppContext {
             // we use an empheral test db.
             let database_url = &config_toml.general.database_url;
             return if database_url.is_test_db() && database_url.db_name_key().is_none() {
-                SqlDb::test_with_conn(database_url.clone())
+                SqlDb::test_with_connection(database_url.clone())
                     .await
                     .map_err(AppContextConversionError::SqlDb)
             } else {

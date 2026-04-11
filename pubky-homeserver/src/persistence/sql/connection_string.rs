@@ -42,7 +42,7 @@ impl ConnectionString {
 
 #[cfg(any(test, feature = "testing"))]
 impl ConnectionString {
-    const TEST_PARAM_KEY: &'static str = "pubky-test";
+    const TEST_FLAG_KEY: &'static str = "pubky-test";
     const TEST_DB_NAME_KEY: &'static str = "pubky-test-db-name";
     const TEST_PERSIST_KEY: &'static str = "pubky-test-persist";
     const DEFAULT_CONNECTION_STRING: &'static str =
@@ -50,20 +50,20 @@ impl ConnectionString {
 
     /// Returns a connection string for a test database.
     /// This is a postgres database that is not real.
-    /// It is used as an indicator for a empheral test database.
+    /// It is used as an indicator for an ephemeral test database.
     pub fn default_test_db() -> Self {
         Self::new(Self::DEFAULT_CONNECTION_STRING).unwrap()
     }
 
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
-        self.has_param(Self::TEST_PARAM_KEY, Some("true"))
+        self.has_param(Self::TEST_FLAG_KEY, Some("true"))
     }
 
     /// Adds a parameter to the connection string that indicates that this is a test database.
     pub fn add_test_db_flag(&mut self) {
         if !self.is_test_db() {
-            self.add_param(Self::TEST_PARAM_KEY, "true");
+            self.add_param(Self::TEST_FLAG_KEY, "true");
         }
     }
 
