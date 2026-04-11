@@ -935,7 +935,7 @@ async fn homeserver_with_persistent_file_storage() {
     // Run homeserver and put some data in it
     let homeserver = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
-    let db_connection_url = homeserver
+    let db_connection = homeserver
         .test_db_connection()
         .expect("test config should have a database connection");
 
@@ -960,7 +960,7 @@ async fn homeserver_with_persistent_file_storage() {
     // to verify that the data persists across testnet instances.
     let testnet = EphemeralTestnet::builder()
         .with_data_dir(data_dir)
-        .postgres(db_connection_url.into_inner())
+        .postgres(db_connection.into_inner())
         .build()
         .await
         .unwrap();
