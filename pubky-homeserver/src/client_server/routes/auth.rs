@@ -33,7 +33,7 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
-use crate::persistence::user_quota::{CachedUserQuota, QuotaOverride, UserQuota};
+use crate::persistence::user_quota::{CachedUserQuota, UserQuota};
 
 /// How long a session cookie is valid before expiring.
 const SESSION_EXPIRY_DAYS: i64 = 365;
@@ -167,9 +167,6 @@ pub async fn signin(
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
-///
-/// Uses a transaction with `FOR UPDATE` on the user row to serialize concurrent
-/// session creation and prevent the max_sessions limit from being bypassed.
 async fn create_session_and_cookie(
     state: &AppState,
     cookies: Cookies,
@@ -177,30 +174,8 @@ async fn create_session_and_cookie(
     user: &UserEntity,
     capabilities: &Capabilities,
 ) -> HttpResult<impl IntoResponse> {
-    let mut tx = state.sql_db.pool().begin().await?;
-
-    // Lock the user row to serialize concurrent session creation and
-    // re-read the quota so we never use a stale max_sessions value.
-    let fresh_user =
-        UserRepository::get_for_update(&user.public_key, &mut (&mut tx).into()).await?;
-
-    // Only enforce session cap when an explicit value is set.
-    // Default and Unlimited both mean no limit.
-    if let QuotaOverride::Value(max) = fresh_user.quota().max_sessions {
-        let count = SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
-        if count >= i64::from(max) {
-            // Explicitly rollback to release the FOR UPDATE lock immediately,
-            // rather than waiting for `tx` to be dropped when the future completes.
-            tx.rollback().await.ok();
-            return Err(HttpError::new_with_message(
-                StatusCode::TOO_MANY_REQUESTS,
-                format!("Maximum sessions ({max}) reached"),
-            ));
-        }
-    }
-
-    let session_secret = SessionRepository::create(user.id, capabilities, uexecutor!(tx)).await?;
-    tx.commit().await?;
+    let session_secret =
+        SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
 
     // 3) Build and set cookie
     let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());

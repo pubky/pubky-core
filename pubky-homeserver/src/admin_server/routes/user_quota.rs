@@ -4,12 +4,11 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use pubky_common::crypto::PublicKey;
 
 use crate::{
-    persistence::sql::user::{UserEntity, UserRepository},
+    persistence::sql::user::UserRepository,
     persistence::user_quota::UserQuotaPatch,
-    shared::{HttpError, HttpResult},
+    shared::{pubkey_path_validator::Z32Pubkey, HttpError, HttpResult},
 };
 
 use super::super::app_state::AppState;
@@ -24,22 +23,14 @@ fn map_user_not_found(e: sqlx::Error) -> HttpError {
     }
 }
 
-/// Parse a z32 public key path param and fetch the corresponding user entity.
-async fn resolve_user(state: &AppState, pubkey_str: &str) -> HttpResult<UserEntity> {
-    let pubkey = PublicKey::try_from_z32(pubkey_str)
-        .map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key"))?;
-
-    UserRepository::get(&pubkey, &mut state.sql_db.pool().into())
-        .await
-        .map_err(map_user_not_found)
-}
-
 /// GET /users/{pubkey}/quota — return the user's effective limits.
 pub async fn get_user_quota(
     State(state): State<AppState>,
-    Path(pubkey_str): Path<String>,
+    Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
-    let user = resolve_user(&state, &pubkey_str).await?;
+    let user = UserRepository::get(&pubkey.0, &mut state.sql_db.pool().into())
+        .await
+        .map_err(map_user_not_found)?;
 
     Ok(Json(user.quota()))
 }
@@ -54,22 +45,19 @@ pub async fn get_user_quota(
 /// - value → explicit custom limit
 pub async fn patch_user_quota(
     State(state): State<AppState>,
-    Path(pubkey_str): Path<String>,
+    Path(pubkey): Path<Z32Pubkey>,
     Json(patch): Json<UserQuotaPatch>,
 ) -> HttpResult<impl IntoResponse> {
     patch
         .validate_rate_roundtrips()
         .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
-    let pubkey = PublicKey::try_from_z32(&pubkey_str)
-        .map_err(|_| HttpError::new_with_message(StatusCode::BAD_REQUEST, "Invalid public key"))?;
-
-    UserRepository::patch_quota(&pubkey, &patch, state.sql_db.pool())
+    UserRepository::patch_quota(&pubkey.0, &patch, state.sql_db.pool())
         .await
         .map_err(map_user_not_found)?;
 
     // Evict from shared cache so the next request re-resolves from DB
-    state.user_quota_cache.remove(&pubkey);
+    state.user_quota_cache.remove(&pubkey.0);
 
     Ok(StatusCode::OK)
 }
@@ -104,7 +92,6 @@ mod tests {
         let json = r#"{"storage_quota_mb": 500}"#;
         let config: UserQuota = serde_json::from_str(json).unwrap();
         assert_eq!(config.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(config.max_sessions, QuotaOverride::Default);
         assert_eq!(config.rate_read, QuotaOverride::Default);
         assert_eq!(config.rate_write, QuotaOverride::Default);
     }
@@ -113,14 +100,12 @@ mod tests {
     fn test_null_fields() {
         let json = r#"{
             "storage_quota_mb": null,
-            "max_sessions": null,
             "rate_read": null,
             "rate_write": null
         }"#;
         let config: UserQuota = serde_json::from_str(json).unwrap();
         // null maps to Default for all fields
         assert_eq!(config.storage_quota_mb, QuotaOverride::Default);
-        assert_eq!(config.max_sessions, QuotaOverride::Default);
         assert_eq!(config.rate_read, QuotaOverride::Default);
         assert_eq!(config.rate_write, QuotaOverride::Default);
     }
@@ -135,12 +120,10 @@ mod tests {
     fn test_mixed_fields() {
         let json = r#"{
             "storage_quota_mb": 500,
-            "max_sessions": null,
             "rate_read": "100mb/m"
         }"#;
         let config: UserQuota = serde_json::from_str(json).unwrap();
         assert_eq!(config.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(config.max_sessions, QuotaOverride::Default);
         assert_eq!(
             config.rate_read,
             QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
@@ -179,7 +162,6 @@ mod tests {
         // PATCH with partial body (absent fields = keep existing)
         let body = serde_json::json!({
             "storage_quota_mb": 500,
-            "max_sessions": 10,
             "rate_read": "100mb/m"
         });
         let response = server
@@ -200,7 +182,6 @@ mod tests {
         response.assert_status_ok();
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 500);
-        assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
         // rate_write was Default → should be absent from JSON
         assert!(json.get("rate_write").is_none());
@@ -208,7 +189,6 @@ mod tests {
         // PATCH with null fields to reset to Default
         let body = serde_json::json!({
             "storage_quota_mb": null,
-            "max_sessions": null,
             "rate_read": null,
             "rate_write": null
         });
@@ -327,7 +307,6 @@ mod tests {
             "Default rate field should be absent from JSON"
         );
         assert!(json.get("storage_quota_mb").is_none());
-        assert!(json.get("max_sessions").is_none());
     }
 
     /// PATCH only updates the fields present in the body; absent fields are left unchanged.
@@ -348,10 +327,9 @@ mod tests {
 
         let url = format!("/users/{}/quota", pubkey.z32());
 
-        // 1) PUT all four fields
+        // 1) Set all fields
         let body = serde_json::json!({
             "storage_quota_mb": 500,
-            "max_sessions": 10,
             "rate_read": "100mb/m",
             "rate_write": "50mb/m"
         });
@@ -383,7 +361,6 @@ mod tests {
             .await;
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 200);
-        assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
         assert_eq!(json["rate_write"], "50mb/m");
 
@@ -406,7 +383,6 @@ mod tests {
             .await;
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 200);
-        assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
         assert_eq!(
             json["rate_write"], "unlimited",
@@ -430,7 +406,6 @@ mod tests {
             .await;
         let json: serde_json::Value = response.json();
         assert_eq!(json["storage_quota_mb"], 200);
-        assert_eq!(json["max_sessions"], 10);
         assert_eq!(json["rate_read"], "100mb/m");
         assert_eq!(json["rate_write"], "unlimited");
     }

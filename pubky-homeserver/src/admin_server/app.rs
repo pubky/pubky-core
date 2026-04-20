@@ -569,7 +569,6 @@ mod tests {
         // POST with custom limits: null = Default, absent = Default, value = Value(T)
         let body = serde_json::json!({
             "storage_quota_mb": 1024,
-            "max_sessions": 5,
             "rate_read": "200mb/m"
         });
         let response = server
@@ -589,7 +588,6 @@ mod tests {
             .unwrap();
         let limits = code.quota();
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(1024));
-        assert_eq!(limits.max_sessions, QuotaOverride::Value(5));
         assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(limits.rate_write, QuotaOverride::Default);
     }

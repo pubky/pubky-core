@@ -35,7 +35,6 @@ impl SignupCodeRepository {
             .columns([
                 SignupCodeIden::Id,
                 SignupCodeIden::QuotaStorageMb,
-                SignupCodeIden::QuotaMaxSessions,
                 SignupCodeIden::QuotaRateRead,
                 SignupCodeIden::QuotaRateWrite,
                 SignupCodeIden::QuotaRateReadBurst,
@@ -44,7 +43,6 @@ impl SignupCodeRepository {
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
                 SimpleExpr::Value(limits.storage_quota_mb_i64().into()),
-                SimpleExpr::Value(limits.max_sessions_i32().into()),
                 SimpleExpr::Value(limits.rate_read_str().into()),
                 SimpleExpr::Value(limits.rate_write_str().into()),
                 SimpleExpr::Value(limits.rate_read_burst_i32().into()),
@@ -73,7 +71,6 @@ impl SignupCodeRepository {
                 SignupCodeIden::CreatedAt,
                 SignupCodeIden::UsedBy,
                 SignupCodeIden::QuotaStorageMb,
-                SignupCodeIden::QuotaMaxSessions,
                 SignupCodeIden::QuotaRateRead,
                 SignupCodeIden::QuotaRateWrite,
                 SignupCodeIden::QuotaRateReadBurst,
@@ -154,7 +151,6 @@ pub enum SignupCodeIden {
     CreatedAt,
     UsedBy,
     QuotaStorageMb,
-    QuotaMaxSessions,
     QuotaRateRead,
     QuotaRateWrite,
     QuotaRateReadBurst,
@@ -230,8 +226,6 @@ pub struct SignupCodeEntity {
     pub used_by: Option<PublicKey>,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
     pub quota_storage_mb: Option<i64>,
-    /// Per-user max sessions. `None` = Default (resolved from system config at enforcement time).
-    pub quota_max_sessions: Option<i32>,
     /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
@@ -247,7 +241,6 @@ impl SignupCodeEntity {
     pub fn quota(&self) -> UserQuota {
         UserQuota::from_nullable_columns(
             self.quota_storage_mb,
-            self.quota_max_sessions,
             self.quota_rate_read.clone(),
             self.quota_rate_write.clone(),
             self.quota_rate_read_burst,
@@ -277,8 +270,6 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
 
         let quota_storage_mb: Option<i64> =
             row.try_get(SignupCodeIden::QuotaStorageMb.to_string().as_str())?;
-        let quota_max_sessions: Option<i32> =
-            row.try_get(SignupCodeIden::QuotaMaxSessions.to_string().as_str())?;
         let quota_rate_read: Option<String> =
             row.try_get(SignupCodeIden::QuotaRateRead.to_string().as_str())?;
         let quota_rate_write: Option<String> =
@@ -293,7 +284,6 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             created_at,
             used_by,
             quota_storage_mb,
-            quota_max_sessions,
             quota_rate_read,
             quota_rate_write,
             quota_rate_read_burst,
@@ -349,7 +339,6 @@ mod tests {
 
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Default,
             ..Default::default()
@@ -472,7 +461,6 @@ mod tests {
         // 1) Create a signup code with custom limits
         let user_quota = UserQuota {
             storage_quota_mb: QuotaOverride::Value(1024),
-            max_sessions: QuotaOverride::Value(5),
             rate_read: QuotaOverride::Value(bw("200mb/m")),
             rate_write: QuotaOverride::Default,
             ..Default::default()
@@ -504,7 +492,6 @@ mod tests {
             .unwrap();
         let user_quota = user.quota();
         assert_eq!(user_quota.storage_quota_mb, QuotaOverride::Value(1024));
-        assert_eq!(user_quota.max_sessions, QuotaOverride::Value(5));
         assert_eq!(user_quota.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(user_quota.rate_write, QuotaOverride::Default);
     }

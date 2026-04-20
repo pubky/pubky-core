@@ -47,7 +47,6 @@ impl UserRepository {
                 UserIden::Disabled,
                 UserIden::UsedBytes,
                 UserIden::QuotaStorageMb,
-                UserIden::QuotaMaxSessions,
                 UserIden::QuotaRateRead,
                 UserIden::QuotaRateWrite,
                 UserIden::QuotaRateReadBurst,
@@ -77,7 +76,6 @@ impl UserRepository {
                 UserIden::Disabled,
                 UserIden::UsedBytes,
                 UserIden::QuotaStorageMb,
-                UserIden::QuotaMaxSessions,
                 UserIden::QuotaRateRead,
                 UserIden::QuotaRateWrite,
                 UserIden::QuotaRateReadBurst,
@@ -124,7 +122,6 @@ impl UserRepository {
                 UserIden::Disabled,
                 UserIden::UsedBytes,
                 UserIden::QuotaStorageMb,
-                UserIden::QuotaMaxSessions,
                 UserIden::QuotaRateRead,
                 UserIden::QuotaRateWrite,
                 UserIden::QuotaRateReadBurst,
@@ -231,10 +228,6 @@ impl UserRepository {
                     SimpleExpr::Value(config.storage_quota_mb_i64().into()),
                 ),
                 (
-                    UserIden::QuotaMaxSessions,
-                    SimpleExpr::Value(config.max_sessions_i32().into()),
-                ),
-                (
                     UserIden::QuotaRateRead,
                     SimpleExpr::Value(config.rate_read_str().into()),
                 ),
@@ -332,7 +325,6 @@ pub enum UserIden {
     Disabled,
     UsedBytes,
     QuotaStorageMb,
-    QuotaMaxSessions,
     QuotaRateRead,
     QuotaRateWrite,
     QuotaRateReadBurst,
@@ -348,8 +340,6 @@ pub struct UserEntity {
     pub used_bytes: u64,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
     pub quota_storage_mb: Option<i64>,
-    /// Per-user max sessions. `None` = Default (resolved from system config at enforcement time).
-    pub quota_max_sessions: Option<i32>,
     /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
@@ -367,7 +357,6 @@ impl UserEntity {
     pub fn quota(&self) -> UserQuota {
         UserQuota::from_nullable_columns(
             self.quota_storage_mb,
-            self.quota_max_sessions,
             self.quota_rate_read.clone(),
             self.quota_rate_write.clone(),
             self.quota_rate_read_burst,
@@ -396,8 +385,6 @@ impl FromRow<'_, PgRow> for UserEntity {
             row.try_get(UserIden::CreatedAt.to_string().as_str())?;
         let quota_storage_mb: Option<i64> =
             row.try_get(UserIden::QuotaStorageMb.to_string().as_str())?;
-        let quota_max_sessions: Option<i32> =
-            row.try_get(UserIden::QuotaMaxSessions.to_string().as_str())?;
         let quota_rate_read: Option<String> =
             row.try_get(UserIden::QuotaRateRead.to_string().as_str())?;
         let quota_rate_write: Option<String> =
@@ -413,7 +400,6 @@ impl FromRow<'_, PgRow> for UserEntity {
             disabled,
             used_bytes,
             quota_storage_mb,
-            quota_max_sessions,
             quota_rate_read,
             quota_rate_write,
             quota_rate_read_burst,
@@ -597,7 +583,6 @@ mod tests {
         // Set custom limits
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
             ..Default::default()
@@ -632,7 +617,6 @@ mod tests {
             disabled: false,
             used_bytes: 0,
             quota_storage_mb: None,
-            quota_max_sessions: None,
             quota_rate_read: None,
             quota_rate_write: None,
             quota_rate_read_burst: None,
@@ -642,7 +626,6 @@ mod tests {
         let limits = user.quota();
         assert_eq!(limits, UserQuota::default());
         assert!(limits.storage_quota_mb.is_default());
-        assert!(limits.max_sessions.is_default());
         assert!(limits.rate_read.is_default());
         assert!(limits.rate_write.is_default());
     }
@@ -660,7 +643,6 @@ mod tests {
             disabled: false,
             used_bytes: 0,
             quota_storage_mb: Some(500),
-            quota_max_sessions: None,
             quota_rate_read: Some("100mb/m".to_string()),
             quota_rate_write: None,
             quota_rate_read_burst: None,
@@ -669,7 +651,6 @@ mod tests {
 
         let limits = user.quota();
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(500));
-        assert!(limits.max_sessions.is_default());
         assert_eq!(
             limits.rate_read,
             QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
@@ -688,7 +669,6 @@ mod tests {
             disabled: false,
             used_bytes: 0,
             quota_storage_mb: Some(-1),
-            quota_max_sessions: Some(-1),
             quota_rate_read: Some("unlimited".to_string()),
             quota_rate_write: Some("unlimited".to_string()),
             quota_rate_read_burst: None,
@@ -697,7 +677,6 @@ mod tests {
 
         let limits = user.quota();
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Unlimited);
-        assert_eq!(limits.max_sessions, QuotaOverride::Unlimited);
         assert_eq!(limits.rate_read, QuotaOverride::Unlimited);
         assert_eq!(limits.rate_write, QuotaOverride::Unlimited);
     }
@@ -713,7 +692,6 @@ mod tests {
             disabled: false,
             used_bytes: 0,
             quota_storage_mb: None,
-            quota_max_sessions: None,
             quota_rate_read: Some("rubbish".to_string()),
             quota_rate_write: Some("also_rubbish".to_string()),
             quota_rate_read_burst: None,

@@ -147,30 +147,6 @@ impl QuotaOverride<u64> {
     }
 }
 
-impl QuotaOverride<u32> {
-    /// Encode to DB INTEGER column: Default → NULL, Unlimited → -1, Value → positive.
-    pub fn to_db_int(&self) -> Option<i32> {
-        match self {
-            QuotaOverride::Default => None,
-            QuotaOverride::Unlimited => Some(-1),
-            QuotaOverride::Value(v) => Some(i32::try_from(*v).unwrap_or(i32::MAX)),
-        }
-    }
-
-    /// Decode from DB INTEGER column: NULL → Default, -1 → Unlimited, positive → Value.
-    pub fn from_db_int(column: &str, val: Option<i32>) -> Self {
-        match val {
-            None => QuotaOverride::Default,
-            Some(-1) => QuotaOverride::Unlimited,
-            Some(v) if v >= 0 => QuotaOverride::Value(v as u32),
-            Some(v) => {
-                tracing::warn!("Unexpected {column} ({v}) in DB; treating as Default");
-                QuotaOverride::Default
-            }
-        }
-    }
-}
-
 impl QuotaOverride<BandwidthRate> {
     /// Encode to DB VARCHAR column: Default → NULL, Unlimited → "unlimited", Value → rate string.
     pub fn to_db_varchar(&self) -> Option<String> {
@@ -277,7 +253,6 @@ fn validate_burst(
 /// | Field | Default means | Example Value |
 /// |---|---|---|
 /// | `storage_quota_mb` | use `user_storage_quota_mb` from config | `Value(500)` = 500 MB |
-/// | `max_sessions` | unlimited (no built-in cap) | `Value(10)` = 10 sessions |
 /// | `rate_read` | use path-based rate limit from config | `Value(BandwidthRate)` |
 /// | `rate_write` | use path-based rate limit from config | `Value(BandwidthRate)` |
 /// | `rate_read_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
@@ -287,9 +262,6 @@ pub struct UserQuota {
     /// Storage quota in MB.
     #[serde(default, skip_serializing_if = "QuotaOverride::is_default")]
     pub storage_quota_mb: QuotaOverride<u64>,
-    /// Maximum concurrent sessions.
-    #[serde(default, skip_serializing_if = "QuotaOverride::is_default")]
-    pub max_sessions: QuotaOverride<u32>,
     /// Per-user read speed limit override (e.g. "10mb/s").
     #[serde(default, skip_serializing_if = "QuotaOverride::is_default")]
     pub rate_read: QuotaOverride<BandwidthRate>,
@@ -313,7 +285,6 @@ impl UserQuota {
     /// - VARCHAR columns: NULL → Default, "unlimited" → Unlimited, value → Value.
     pub fn from_nullable_columns(
         storage_quota_mb: Option<i64>,
-        max_sessions: Option<i32>,
         rate_read: Option<String>,
         rate_write: Option<String>,
         rate_read_burst: Option<i32>,
@@ -324,7 +295,6 @@ impl UserQuota {
                 "quota_storage_mb",
                 storage_quota_mb,
             ),
-            max_sessions: QuotaOverride::<u32>::from_db_int("quota_max_sessions", max_sessions),
             rate_read: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_read", rate_read),
             rate_write: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_write", rate_write),
             rate_read_burst: rate_read_burst.and_then(|v| u32::try_from(v).ok()),
@@ -335,11 +305,6 @@ impl UserQuota {
     /// Storage quota as the DB-column type (`BIGINT`).
     pub fn storage_quota_mb_i64(&self) -> Option<i64> {
         self.storage_quota_mb.to_db_bigint()
-    }
-
-    /// Max sessions as the DB-column type (`INTEGER`).
-    pub fn max_sessions_i32(&self) -> Option<i32> {
-        self.max_sessions.to_db_int()
     }
 
     /// Rate-read as the DB-column type (`VARCHAR`).
@@ -376,9 +341,6 @@ impl UserQuota {
     pub fn merge(&mut self, patch: &UserQuotaPatch) {
         if let Some(ref v) = patch.storage_quota_mb {
             self.storage_quota_mb = v.clone();
-        }
-        if let Some(ref v) = patch.max_sessions {
-            self.max_sessions = v.clone();
         }
         if let Some(ref v) = patch.rate_read {
             self.rate_read = v.clone();
@@ -433,9 +395,6 @@ pub struct UserQuotaPatch {
     /// Storage quota in MB.
     #[serde(default, deserialize_with = "deserialize_patch_override")]
     pub storage_quota_mb: Option<QuotaOverride<u64>>,
-    /// Maximum concurrent sessions.
-    #[serde(default, deserialize_with = "deserialize_patch_override")]
-    pub max_sessions: Option<QuotaOverride<u32>>,
     /// Per-user read rate limit.
     #[serde(default, deserialize_with = "deserialize_patch_override")]
     pub rate_read: Option<QuotaOverride<BandwidthRate>>,
@@ -567,25 +526,6 @@ mod tests {
     }
 
     #[test]
-    fn test_int_roundtrip() {
-        assert_eq!(
-            QuotaOverride::<u32>::from_db_int("quota_max_sessions", None),
-            QuotaOverride::Default
-        );
-        assert_eq!(
-            QuotaOverride::<u32>::from_db_int("quota_max_sessions", Some(-1)),
-            QuotaOverride::Unlimited
-        );
-        assert_eq!(
-            QuotaOverride::<u32>::from_db_int("quota_max_sessions", Some(10)),
-            QuotaOverride::Value(10)
-        );
-        assert_eq!(QuotaOverride::<u32>::Default.to_db_int(), None);
-        assert_eq!(QuotaOverride::<u32>::Unlimited.to_db_int(), Some(-1));
-        assert_eq!(QuotaOverride::Value(10u32).to_db_int(), Some(10));
-    }
-
-    #[test]
     fn test_resolve_with_default() {
         assert_eq!(
             QuotaOverride::<u64>::Default.resolve_with_default(Some(500)),
@@ -607,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_all_null() {
-        let q = UserQuota::from_nullable_columns(None, None, None, None, None, None);
+        let q = UserQuota::from_nullable_columns(None, None, None, None, None);
         assert_eq!(q, UserQuota::default());
     }
 
@@ -615,14 +555,12 @@ mod tests {
     fn test_from_nullable_columns_with_values() {
         let q = UserQuota::from_nullable_columns(
             Some(500),
-            Some(10),
             Some("100mb/m".to_string()),
             None,
             None,
             None,
         );
         assert_eq!(q.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(q.max_sessions, QuotaOverride::Value(10));
         assert_eq!(
             q.rate_read,
             QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
@@ -634,31 +572,31 @@ mod tests {
     fn test_from_nullable_columns_unlimited_values() {
         let q = UserQuota::from_nullable_columns(
             Some(-1),
-            Some(-1),
             Some("unlimited".to_string()),
             Some("unlimited".to_string()),
             None,
             None,
         );
         assert_eq!(q.storage_quota_mb, QuotaOverride::Unlimited);
-        assert_eq!(q.max_sessions, QuotaOverride::Unlimited);
         assert_eq!(q.rate_read, QuotaOverride::Unlimited);
         assert_eq!(q.rate_write, QuotaOverride::Unlimited);
     }
 
     #[test]
     fn test_from_nullable_columns_mixed() {
-        let q = UserQuota::from_nullable_columns(None, Some(10), None, None, None, None);
+        let q =
+            UserQuota::from_nullable_columns(None, Some("10mb/s".to_string()), None, None, None);
         assert_eq!(q.storage_quota_mb, QuotaOverride::Default);
-        assert_eq!(q.max_sessions, QuotaOverride::Value(10));
-        assert_eq!(q.rate_read, QuotaOverride::Default);
+        assert_eq!(
+            q.rate_read,
+            QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap())
+        );
         assert_eq!(q.rate_write, QuotaOverride::Default);
     }
 
     #[test]
     fn test_from_nullable_columns_invalid_rate_string() {
         let q = UserQuota::from_nullable_columns(
-            None,
             None,
             Some("rubbish".to_string()),
             Some("100mb/m".to_string()),
@@ -676,7 +614,6 @@ mod tests {
     fn test_from_nullable_columns_legacy_request_units() {
         let q = UserQuota::from_nullable_columns(
             None,
-            None,
             Some("100r/m".to_string()),
             Some("50r/s".to_string()),
             None,
@@ -690,7 +627,6 @@ mod tests {
     fn test_serde_roundtrip() {
         let q = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
@@ -708,7 +644,6 @@ mod tests {
         };
         let json = serde_json::to_string(&q).unwrap();
         assert!(json.contains("storage_quota_mb"));
-        assert!(!json.contains("max_sessions"));
         assert!(!json.contains("rate_read"));
         assert!(!json.contains("rate_write"));
     }
@@ -721,17 +656,16 @@ mod tests {
 
     #[test]
     fn test_serde_null_is_default_for_all() {
-        let json = r#"{"storage_quota_mb": null, "max_sessions": null, "rate_read": null, "rate_write": null}"#;
+        let json = r#"{"storage_quota_mb": null, "rate_read": null, "rate_write": null}"#;
         let q: UserQuota = serde_json::from_str(json).unwrap();
         assert_eq!(q, UserQuota::default());
     }
 
     #[test]
     fn test_serde_unlimited_string() {
-        let json = r#"{"storage_quota_mb": "unlimited", "max_sessions": "unlimited", "rate_read": "unlimited", "rate_write": "unlimited"}"#;
+        let json = r#"{"storage_quota_mb": "unlimited", "rate_read": "unlimited", "rate_write": "unlimited"}"#;
         let q: UserQuota = serde_json::from_str(json).unwrap();
         assert_eq!(q.storage_quota_mb, QuotaOverride::Unlimited);
-        assert_eq!(q.max_sessions, QuotaOverride::Unlimited);
         assert_eq!(q.rate_read, QuotaOverride::Unlimited);
         assert_eq!(q.rate_write, QuotaOverride::Unlimited);
     }
@@ -754,7 +688,6 @@ mod tests {
         let json = r#"{"storage_quota_mb": 500}"#;
         let q: UserQuota = serde_json::from_str(json).unwrap();
         assert_eq!(q.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(q.max_sessions, QuotaOverride::Default);
         assert_eq!(q.rate_read, QuotaOverride::Default);
     }
 
@@ -806,7 +739,6 @@ mod tests {
     fn test_patch_empty_body_changes_nothing() {
         let patch: UserQuotaPatch = serde_json::from_str("{}").unwrap();
         assert!(patch.storage_quota_mb.is_none());
-        assert!(patch.max_sessions.is_none());
         assert!(patch.rate_read.is_none());
         assert!(patch.rate_write.is_none());
     }
@@ -818,7 +750,6 @@ mod tests {
         assert_eq!(patch.storage_quota_mb, Some(QuotaOverride::Default));
         assert_eq!(patch.rate_read, Some(QuotaOverride::Default));
         // absent → None (keep)
-        assert!(patch.max_sessions.is_none());
         assert!(patch.rate_write.is_none());
     }
 
@@ -841,7 +772,6 @@ mod tests {
                 BandwidthRate::from_str("10mb/s").unwrap()
             ))
         );
-        assert!(patch.max_sessions.is_none());
         assert!(patch.rate_read.is_none());
     }
 
@@ -849,7 +779,6 @@ mod tests {
     fn test_merge_applies_only_present_fields() {
         let mut base = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
             ..Default::default()
@@ -862,7 +791,6 @@ mod tests {
         base.merge(&patch);
 
         assert_eq!(base.storage_quota_mb, QuotaOverride::Value(200));
-        assert_eq!(base.max_sessions, QuotaOverride::Value(10)); // unchanged
         assert_eq!(
             base.rate_read,
             QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
@@ -890,7 +818,6 @@ mod tests {
     fn test_merge_empty_patch_is_noop() {
         let original = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            max_sessions: QuotaOverride::Value(10),
             rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
@@ -1011,7 +938,6 @@ mod tests {
         // Simulate DB write/read cycle
         let reconstructed = UserQuota::from_nullable_columns(
             q.storage_quota_mb_i64(),
-            q.max_sessions_i32(),
             q.rate_read_str(),
             q.rate_write_str(),
             q.rate_read_burst_i32(),
