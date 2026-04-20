@@ -1,10 +1,7 @@
 use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
-use std::sync::Arc;
-
-use crate::persistence::user_quota::UserQuotaCache;
-use crate::persistence::{files::FileService, sql::SqlDb};
+use crate::persistence::{files::FileService, sql::SqlDb, user_quota::UserQuotaCache};
 use crate::ConfigToml;
 
 #[derive(Clone, Default)]
@@ -35,13 +32,14 @@ impl AppState {
             .strip_prefix("/dav")
             .autoindex(true)
             .build_handler();
+        let user_quota_cache = UserQuotaCache::new(sql_db.clone());
         Self {
             sql_db,
             file_service,
             admin_password: admin_password.to_string(),
             inner_dav_handler,
             metadata: AdminMetadata::default(),
-            user_quota_cache: Arc::new(dashmap::DashMap::new()),
+            user_quota_cache,
         }
     }
 

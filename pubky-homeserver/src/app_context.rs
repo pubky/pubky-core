@@ -125,6 +125,8 @@ impl AppContext {
                 .map_err(AppContextConversionError::Storage)?;
         let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
+        let user_quota_cache = UserQuotaCache::new(sql_db.clone());
+
         Ok(Self {
             sql_db,
             pkarr_client: pkarr_builder
@@ -139,7 +141,7 @@ impl AppContext {
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),
-            user_quota_cache: Arc::new(dashmap::DashMap::new()),
+            user_quota_cache,
         })
     }
 }

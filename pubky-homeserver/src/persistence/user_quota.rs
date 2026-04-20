@@ -207,8 +207,115 @@ impl CachedUserQuota {
     }
 }
 
-/// Shared cache for resolved per-user limits.
-pub type UserQuotaCache = Arc<DashMap<PublicKey, CachedUserQuota>>;
+/// Shared cache for resolved per-user quota overrides.
+///
+/// Wraps a `DashMap` plus a `SqlDb` reference so that cache misses can
+/// be resolved from the database. Also manages its own periodic
+/// cleanup task (expires stale entries).
+#[derive(Debug, Clone)]
+pub struct UserQuotaCache {
+    entries: Arc<DashMap<PublicKey, CachedUserQuota>>,
+    sql_db: crate::persistence::sql::SqlDb,
+}
+
+impl UserQuotaCache {
+    /// Create a new cache and spawn a background cleanup task.
+    /// The cleanup task self-terminates when the cache is dropped (Weak::upgrade fails).
+    pub fn new(sql_db: crate::persistence::sql::SqlDb) -> Self {
+        let entries: Arc<DashMap<PublicKey, CachedUserQuota>> = Arc::new(DashMap::new());
+
+        let weak = Arc::downgrade(&entries);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
+            interval.tick().await; // skip first immediate tick
+            loop {
+                interval.tick().await;
+                let Some(map) = weak.upgrade() else {
+                    break;
+                };
+                map.retain(|_, entry| !entry.is_expired());
+            }
+        });
+
+        Self { entries, sql_db }
+    }
+
+    /// Resolve the effective quota for a user, checking the cache first and
+    /// falling back to the database on a miss.
+    ///
+    /// Returns `Ok(Some(config))` for known users, `Ok(None)` for unknown users,
+    /// or `Err` if the DB query fails.
+    ///
+    /// ## Cache capacity behaviour
+    ///
+    /// The cache is bounded by [`MAX_CACHED_USER_QUOTAS`]. When a miss
+    /// occurs at capacity, expired entries are evicted first. If the cache is
+    /// still full after eviction, 10% of entries are evicted (arbitrary order)
+    /// to make room in bulk and avoid per-request churn.
+    pub async fn resolve(&self, pubkey: &PublicKey) -> Result<Option<UserQuota>, sqlx::Error> {
+        use crate::persistence::sql::user::UserRepository;
+
+        // Check cache: use entry if present and not expired.
+        let cached = self
+            .entries
+            .get(pubkey)
+            .filter(|entry| !entry.is_expired())
+            .map(|entry| entry.config.clone());
+
+        if let Some(maybe_config) = cached {
+            return Ok(maybe_config);
+        }
+
+        // Cache miss or expired — query DB.
+        self.entries.remove(pubkey);
+
+        // Make room if at capacity.
+        if self.entries.len() >= MAX_CACHED_USER_QUOTAS {
+            self.entries.retain(|_, entry| !entry.is_expired());
+
+            if self.entries.len() >= MAX_CACHED_USER_QUOTAS {
+                let to_evict = MAX_CACHED_USER_QUOTAS / 10;
+                let keys: Vec<_> = self
+                    .entries
+                    .iter()
+                    .take(to_evict.max(1))
+                    .map(|entry| entry.key().clone())
+                    .collect();
+                for key in keys {
+                    self.entries.remove(&key);
+                }
+            }
+        }
+
+        match UserRepository::get(pubkey, &mut self.sql_db.pool().into()).await {
+            Ok(user) => {
+                let resolved = user.quota();
+                self.entries
+                    .insert(pubkey.clone(), CachedUserQuota::new(resolved.clone()));
+                Ok(Some(resolved))
+            }
+            Err(sqlx::Error::RowNotFound) => {
+                self.entries
+                    .insert(pubkey.clone(), CachedUserQuota::not_found());
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Insert or replace a cache entry for a user (e.g. after signup).
+    pub fn insert(&self, pubkey: PublicKey, entry: CachedUserQuota) {
+        self.entries.insert(pubkey, entry);
+    }
+
+    /// Evict a specific user's entry from the cache (e.g. after an admin update).
+    pub fn remove(&self, pubkey: &PublicKey) {
+        self.entries.remove(pubkey);
+    }
+}
+
+/// How often the background task runs to evict expired cache entries.
+const CLEANUP_INTERVAL_SECS: u64 = 60;
 
 /// Validate that a `BandwidthRate` value survives a Display → FromStr roundtrip
 /// and fits in the DB column.

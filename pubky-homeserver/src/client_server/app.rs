@@ -227,7 +227,6 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
             context.user_quota_cache.clone(),
-            context.sql_db.clone(),
         ))
         .layer(PubkyHostLayer)
         .with_state(state);

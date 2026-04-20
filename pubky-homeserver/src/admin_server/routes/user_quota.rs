@@ -8,7 +8,7 @@ use axum::{
 use crate::{
     persistence::sql::user::UserRepository,
     persistence::user_quota::UserQuotaPatch,
-    shared::{pubkey_path_validator::Z32Pubkey, HttpError, HttpResult},
+    shared::{HttpError, HttpResult, Z32Pubkey},
 };
 
 use super::super::app_state::AppState;
@@ -64,15 +64,11 @@ pub async fn patch_user_quota(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use axum_test::TestServer;
 
     use super::*;
     use crate::admin_server::app::create_app;
-    use crate::data_directory::quota_config::BandwidthRate;
     use crate::persistence::files::FileService;
-    use crate::persistence::user_quota::{QuotaOverride, UserQuota};
     use crate::AppContext;
 
     fn create_test_server(context: &AppContext) -> TestServer {
@@ -85,50 +81,6 @@ mod tests {
             "test",
         ))
         .unwrap()
-    }
-
-    #[test]
-    fn test_partial_body_absent_fields_are_default() {
-        let json = r#"{"storage_quota_mb": 500}"#;
-        let config: UserQuota = serde_json::from_str(json).unwrap();
-        assert_eq!(config.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(config.rate_read, QuotaOverride::Default);
-        assert_eq!(config.rate_write, QuotaOverride::Default);
-    }
-
-    #[test]
-    fn test_null_fields() {
-        let json = r#"{
-            "storage_quota_mb": null,
-            "rate_read": null,
-            "rate_write": null
-        }"#;
-        let config: UserQuota = serde_json::from_str(json).unwrap();
-        // null maps to Default for all fields
-        assert_eq!(config.storage_quota_mb, QuotaOverride::Default);
-        assert_eq!(config.rate_read, QuotaOverride::Default);
-        assert_eq!(config.rate_write, QuotaOverride::Default);
-    }
-
-    #[test]
-    fn test_empty_body_is_all_default() {
-        let config: UserQuota = serde_json::from_str("{}").unwrap();
-        assert_eq!(config, UserQuota::default());
-    }
-
-    #[test]
-    fn test_mixed_fields() {
-        let json = r#"{
-            "storage_quota_mb": 500,
-            "rate_read": "100mb/m"
-        }"#;
-        let config: UserQuota = serde_json::from_str(json).unwrap();
-        assert_eq!(config.storage_quota_mb, QuotaOverride::Value(500));
-        assert_eq!(
-            config.rate_read,
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
-        );
-        assert_eq!(config.rate_write, QuotaOverride::Default);
     }
 
     #[tokio::test]
