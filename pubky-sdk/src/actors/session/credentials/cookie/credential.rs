@@ -25,18 +25,14 @@
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use pubky_common::{crypto::PublicKey, session::CookieSessionRecord};
+use pubky_common::{auth::AuthToken, crypto::PublicKey, session::CookieSessionRecord};
 
 use reqwest::{Method, RequestBuilder, Response};
 
 use super::super::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient,
-    actors::session::SessionInfo,
-    actors::storage::resource::resolve_pubky,
-    cross_log,
-    errors::Result,
-    util::check_http_status,
+    PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
+    cross_log, errors::Result, util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,6 +103,39 @@ impl CookieCredential {
 
         cross_log!(info, "Hydrated cookie credential for {}", user);
         Ok(Self::new(user, cookie, record))
+    }
+
+
+    /// Establish a session from a signed [`AuthToken`] (legacy cookie flow).
+    ///
+    /// POSTs the token to the homeserver's `/session` endpoint and constructs a
+    /// cookie-based [`PubkySession`].
+    pub(crate) async fn from_auth_token(
+        token: &AuthToken,
+        client: &PubkyHttpClient,
+    ) -> Result<Arc<dyn SessionCredential>> {
+        let url = format!("pubky{}/session", token.public_key().z32());
+        cross_log!(
+            info,
+            "Establishing new session exchange for {}",
+            token.public_key()
+        );
+        let resolved = resolve_pubky(&url)?;
+        let response = client
+            .cross_request(Method::POST, resolved)
+            .await?
+            .body(token.serialize())
+            .send()
+            .await?;
+
+        let response = check_http_status(response).await?;
+        cross_log!(
+            info,
+            "Session exchange for {} succeeded; constructing credential",
+            token.public_key()
+        );
+        let credential = Self::from_response(response).await?;
+        Ok(Arc::new(credential))
     }
 
     /// Cookie secret accessor — used by [`super::view::CookieSessionView`]

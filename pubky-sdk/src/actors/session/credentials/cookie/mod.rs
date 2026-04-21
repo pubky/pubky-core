@@ -4,7 +4,6 @@
 //! cookie arm in [`crate::actors::session::bootstrap`], and remove the
 //! cookie re-export in [`crate::actors::session::mod@crate::actors::session`].
 
-pub(crate) mod auth_token;
 pub(crate) mod credential;
 mod legacy_api;
 pub(crate) mod secret;

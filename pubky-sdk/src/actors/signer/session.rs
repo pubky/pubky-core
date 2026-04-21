@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use pubky_common::auth::AuthToken;
 use reqwest::Method;
 use url::Url;
 
 use super::PubkySigner;
 use crate::{
-    Capabilities, Capability, PubkySession, PublicKey, Result, cross_log, util::check_http_status,
+    Capabilities, Capability, PubkySession, PublicKey, Result, actors::session::credentials::{CookieCredential, cookie::credential}, cross_log, util::check_http_status
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -40,11 +42,9 @@ impl PubkySigner {
             .await?;
 
         self.publish_signup_homeserver(homeserver).await?;
-        crate::actors::session::credentials::cookie::auth_token::session_from_cookie_response(
-            self.client.clone(),
-            response,
-        )
-        .await
+        let cookie_credential = CookieCredential::from_response(response).await?;
+        Ok(PubkySession::from_credential(self.client.clone(), Arc::new(cookie_credential)))
+
     }
 
     // All of these methods use root capabilities
@@ -80,11 +80,8 @@ impl PubkySigner {
     async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
-        let session = crate::actors::session::credentials::cookie::auth_token::session_from_auth_token(
-            &token,
-            self.client.clone(),
-        )
-        .await?;
+        let credential = CookieCredential::from_auth_token(&token, &self.client).await?;
+        let session = PubkySession::from_credential(self.client.clone(), credential);
         cross_log!(
             info,
             "Signin completed for {}; mode {:?}",

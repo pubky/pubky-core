@@ -13,6 +13,7 @@ use pubky_common::crypto::{Keypair, PublicKey};
 use super::core::PubkySession;
 use super::credentials::SessionCredential;
 use crate::actors::auth::approval::AuthApproval;
+use crate::actors::session::credentials::CookieCredential;
 use crate::errors::{AuthError, Result};
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::{PubkyHttpClient, actors::Pkdns};
@@ -48,7 +49,7 @@ pub(crate) async fn credential_from_auth_approval(
 ) -> Result<Arc<dyn SessionCredential>> {
     match approval {
         AuthApproval::Legacy(token) => {
-            crate::actors::session::credentials::cookie::auth_token::credential_from_auth_token(
+            CookieCredential::from_auth_token(
                 &token, client,
             )
             .await
