@@ -18,13 +18,13 @@ use pubky_common::{
     crypto::{Keypair, PublicKey},
 };
 
-use super::super::SessionInfo;
 use reqwest::{Method, RequestBuilder};
 use tokio::sync::Mutex;
 
-use super::SessionCredential;
+use super::super::{SessionCredential, credential_session_missing};
 use crate::{
     PubkyHttpClient,
+    actors::session::SessionInfo,
     actors::storage::resource::resolve_pubky,
     cross_log,
     errors::{AuthError, RequestError, Result},
@@ -159,7 +159,8 @@ impl JwtCredential {
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
 // for tokio, WASM uses `?Send` because `wasm-bindgen-futures` are not
-// `Send`. See `super::SessionCredential` for the full rationale.
+// `Send`. See `super::super::credential::SessionCredential` for the full
+// rationale.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for JwtCredential {
@@ -206,7 +207,7 @@ impl SessionCredential for JwtCredential {
             .send()
             .await
             .map_err(crate::Error::from)?;
-        if super::credential_session_missing(&response) {
+        if credential_session_missing(&response) {
             return Ok(None);
         }
         let response = check_http_status(response).await?;

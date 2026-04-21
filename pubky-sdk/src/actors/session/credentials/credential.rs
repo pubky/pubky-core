@@ -1,18 +1,18 @@
-//! Credential abstraction for [`PubkySession`](super::core::PubkySession).
+//! The session credential port.
 //!
 //! A credential is the per-identity material that authenticates one user
 //! against one homeserver. The SDK supports two credential types:
 //!
-//! - **JWT** ([`jwt::JwtCredential`]) — the default. Long-lived user-signed
+//! - **JWT** ([`super::JwtCredential`]) — the default. Long-lived user-signed
 //!   grant + short-lived homeserver-minted access JWT, refreshed transparently.
-//! - **Cookie** ([`cookie::CookieCredential`]) — legacy flow. A single opaque
+//! - **Cookie** ([`super::CookieCredential`]) — legacy flow. A single opaque
 //!   secret returned by `POST /session` and replayed via the `Cookie` header.
 //!
 //! [`SessionCredential`] is the port (Clean Architecture sense). All
 //! session-aware code (`PubkySession`, `SessionStorage`) talks to the trait
-//! and never matches on a credential variant. The cookie implementation is
-//! isolated so retirement is a small, localized delete (credential module +
-//! cookie view + legacy cookie API shim).
+//! and never matches on a credential variant. The cookie adapter lives in
+//! its own folder so retirement is a `rm -rf credentials/cookie/` plus a
+//! two-line edit in [`super::super::bootstrap`].
 //!
 //! ## Why a trait, not an enum
 //!
@@ -20,19 +20,17 @@
 //! method on `PubkySession` and `SessionStorage`. Adding a third credential
 //! shape (or — more importantly — *removing* the cookie one) meant editing
 //! every match. With a trait, those call sites become single virtual
-//! dispatches and removing cookies becomes a one-file deletion.
-
-pub(crate) mod cookie;
-pub(crate) mod jwt;
+//! dispatches and removing cookies becomes a one-folder deletion.
 
 use std::fmt::Debug;
 
 use async_trait::async_trait;
 use pubky_common::crypto::PublicKey;
 
-use super::SessionInfo;
+use super::super::SessionInfo;
 use reqwest::{RequestBuilder, Response, StatusCode};
 
+use super::{CookieCredential, JwtCredential};
 use crate::{PubkyHttpClient, errors::Result};
 
 /// Shared `revalidate` helper: a `404` or `401` from the homeserver means
@@ -44,14 +42,11 @@ pub(crate) fn credential_session_missing(response: &Response) -> bool {
     )
 }
 
-pub(crate) use cookie::CookieCredential;
-pub(crate) use jwt::JwtCredential;
-
 /// Behavior shared by every session credential type.
 ///
-/// Implementations live in sibling modules:
-/// - [`jwt::JwtCredential`] — grant + JWT (default)
-/// - [`cookie::CookieCredential`] — legacy cookie flow
+/// Implementations live in sibling folders:
+/// - [`super::jwt::credential::JwtCredential`] — grant + JWT (default)
+/// - [`super::cookie::credential::CookieCredential`] — legacy cookie flow
 ///
 /// On native targets the boxed futures are `Send` so the trait is usable
 /// behind `Arc<dyn SessionCredential>` from multi-threaded async runtimes.

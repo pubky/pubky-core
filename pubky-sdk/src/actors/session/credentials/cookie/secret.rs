@@ -1,85 +1,22 @@
-//! Cookie-specific session construction functions.
+//! Cookie session rehydration from exports and secret tokens.
 //!
-//! This module is the cookie counterpart of [`super::jwt`]. It contains every
-//! factory function that depends on the legacy cookie flow:
-//! construction from an [`AuthToken`], `Set-Cookie` header parsing, browser
-//! WASM rehydration (`import`), and native secret persistence
-//! (`import_session_secret` / `session_from_secret_file`).
-//!
-//! **Retirement plan:** When the cookie credential is retired, delete this
-//! file alongside [`super::credential::cookie`],
-//! [`super::view::CookieSessionView`], and [`super::cookie_legacy_api`] (plus the
-//! module entry). No edits to `core.rs` are required.
+//! - [`import_session`] — browser WASM rehydration from an `export()` string.
+//! - [`import_session_secret`] — native/Node.js WASM rehydration from a
+//!   `<pubkey>:<cookie_secret>` token.
+//! - [`session_from_secret_file`] — native-only file-backed variant of
+//!   [`import_session_secret`].
 
 use std::sync::Arc;
 
 #[cfg(target_arch = "wasm32")]
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::{capabilities::Capabilities, crypto::PublicKey, session::CookieSessionRecord};
-use reqwest::Method;
 
-use super::core::PubkySession;
-use super::credential::{CookieCredential, SessionCredential};
-use crate::actors::storage::resource::resolve_pubky;
+use super::credential::CookieCredential;
+use super::super::SessionCredential;
+use crate::actors::session::core::PubkySession;
 use crate::errors::{AuthError, RequestError};
-use crate::{AuthToken, PubkyHttpClient, Result, cross_log, util::check_http_status};
-
-// =====================================================================
-// Construction from AuthToken (legacy sign-in / sign-up)
-// =====================================================================
-
-/// Establish a session from a signed [`AuthToken`] (legacy cookie flow).
-///
-/// POSTs the token to the homeserver's `/session` endpoint and constructs a
-/// cookie-based [`PubkySession`].
-pub(crate) async fn credential_from_auth_token(
-    token: &AuthToken,
-    client: &PubkyHttpClient,
-) -> Result<Arc<dyn SessionCredential>> {
-    let url = format!("pubky{}/session", token.public_key().z32());
-    cross_log!(
-        info,
-        "Establishing new session exchange for {}",
-        token.public_key()
-    );
-    let resolved = resolve_pubky(&url)?;
-    let response = client
-        .cross_request(Method::POST, resolved)
-        .await?
-        .body(token.serialize())
-        .send()
-        .await?;
-
-    let response = check_http_status(response).await?;
-    cross_log!(
-        info,
-        "Session exchange for {} succeeded; constructing credential",
-        token.public_key()
-    );
-    let credential = CookieCredential::from_response(response).await?;
-    Ok(Arc::new(credential))
-}
-
-pub(crate) async fn session_from_auth_token(
-    token: &AuthToken,
-    client: PubkyHttpClient,
-) -> Result<PubkySession> {
-    let credential = credential_from_auth_token(token, &client).await?;
-    Ok(PubkySession::from_credential(client, credential))
-}
-
-pub(crate) async fn session_from_cookie_response(
-    client: PubkyHttpClient,
-    response: reqwest::Response,
-) -> Result<PubkySession> {
-    let credential: Arc<dyn SessionCredential> =
-        Arc::new(CookieCredential::from_response(response).await?);
-    Ok(PubkySession::from_credential(client, credential))
-}
-
-// =====================================================================
-// Browser WASM rehydration (import)
-// =====================================================================
+use crate::{PubkyHttpClient, Result, cross_log};
 
 /// Restore a session from an `export()` string. No secrets are read or written;
 /// the HTTP-only cookie jar must still contain the session cookie.
@@ -143,10 +80,6 @@ pub(crate) async fn import_session(
     }
     .into())
 }
-
-// =====================================================================
-// Native secret persistence (import_secret / from_secret_file)
-// =====================================================================
 
 /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
 ///

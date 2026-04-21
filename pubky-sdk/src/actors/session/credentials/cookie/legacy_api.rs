@@ -1,18 +1,13 @@
-//! Legacy cookie-session API shim on [`PubkySession`](super::core::PubkySession).
+//! Legacy cookie-session API shim on
+//! [`PubkySession`](crate::actors::session::core::PubkySession).
 //!
-//! This module exists only to preserve the older convenience methods on
-//! `PubkySession` itself, such as `export`, `import`, `import_secret`,
-//! `from_secret_file`, and `write_secret_file`.
-//!
-//! It does **not** implement cookie-session mechanics. The actual cookie
-//! session construction and rehydration logic lives in [`super::cookie`], and
-//! the underlying credential type lives in [`super::credential::cookie`].
-//!
-//! In short:
-//! - [`super::cookie`] = cookie session implementation/bootstrap
-//! - [`super::cookie_legacy_api`] = legacy `PubkySession` compatibility surface
+//! Preserves the older convenience methods (`export`, `import`,
+//! `import_secret`, `from_secret_file`, `write_secret_file`) that live
+//! directly on [`PubkySession`]. This module does not implement cookie
+//! mechanics itself — it delegates to [`super::auth_token`], [`super::secret`],
+//! and [`super::view::CookieSessionView`].
 
-use super::core::PubkySession;
+use crate::actors::session::core::PubkySession;
 use crate::{PubkyHttpClient, Result};
 
 impl PubkySession {
@@ -29,29 +24,29 @@ impl PubkySession {
 
     /// Restore a session from an `export()` string.
     ///
-    /// Delegates to [`super::cookie::import_session`].
+    /// Delegates to [`super::secret::import_session`].
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
     /// - On native, returns an error because exports are only supported on WASM.
     pub async fn import(export: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        super::cookie::import_session(export, client).await
+        super::secret::import_session(export, client).await
     }
 
     /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
     ///
-    /// Delegates to [`super::cookie::import_session_secret`].
+    /// Delegates to [`super::secret::import_session_secret`].
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] if the token is malformed.
     /// - Propagates transport failures while validating the session.
     pub async fn import_secret(token: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        super::cookie::import_session_secret(token, client).await
+        super::secret::import_session_secret(token, client).await
     }
 
     /// Restore a session from a secret token stored in a file.
     ///
-    /// Delegates to [`super::cookie::session_from_secret_file`].
+    /// Delegates to [`super::secret::session_from_secret_file`].
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] when the file extension is not `.sess`.
@@ -61,7 +56,7 @@ impl PubkySession {
         path: &std::path::Path,
         client: Option<PubkyHttpClient>,
     ) -> Result<Self> {
-        super::cookie::session_from_secret_file(path, client).await
+        super::secret::session_from_secret_file(path, client).await
     }
 
     /// Write the session secret token to disk. Ensures a `.sess` extension.

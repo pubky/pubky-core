@@ -11,7 +11,7 @@ use std::sync::Arc;
 use pubky_common::crypto::{Keypair, PublicKey};
 
 use super::core::PubkySession;
-use super::credential::SessionCredential;
+use super::credentials::SessionCredential;
 use crate::actors::auth::approval::AuthApproval;
 use crate::errors::{AuthError, Result};
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
@@ -48,7 +48,10 @@ pub(crate) async fn credential_from_auth_approval(
 ) -> Result<Arc<dyn SessionCredential>> {
     match approval {
         AuthApproval::Legacy(token) => {
-            crate::actors::session::cookie::credential_from_auth_token(&token, client).await
+            crate::actors::session::credentials::cookie::auth_token::credential_from_auth_token(
+                &token, client,
+            )
+            .await
         }
         AuthApproval::Grant { jws, claims } => {
             let ctx = session_bootstrap_ctx.ok_or_else(|| {
@@ -58,7 +61,7 @@ pub(crate) async fn credential_from_auth_approval(
             })?;
             let claims = *claims;
             if let Some((hs_pk, signup_token)) = ctx.signup_homeserver {
-                crate::actors::session::jwt::credential_from_grant_signup(
+                crate::actors::session::credentials::jwt::grant_exchange::credential_from_grant_signup(
                     client,
                     jws,
                     claims,
@@ -75,7 +78,7 @@ pub(crate) async fn credential_from_auth_approval(
                         claims.iss.z32()
                     ))
                 })?;
-                crate::actors::session::jwt::credential_from_grant_exchange(
+                crate::actors::session::credentials::jwt::grant_exchange::credential_from_grant_exchange(
                     client,
                     jws,
                     claims,

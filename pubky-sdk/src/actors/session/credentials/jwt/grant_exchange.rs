@@ -9,7 +9,8 @@
 //! All grant-management operations (`list_grants`, `revoke_grant`,
 //! `current_jwt`, `force_refresh`, `grant_id`) live on
 //! [`super::view::JwtSessionView`] — they are reachable via
-//! [`PubkySession::as_jwt`] and only compile when the credential is JWT.
+//! [`PubkySession::as_jwt`](crate::actors::session::core::PubkySession::as_jwt)
+//! and only compile when the credential is JWT.
 
 use std::sync::Arc;
 
@@ -19,7 +20,8 @@ use pubky_common::{
 };
 use reqwest::Method;
 
-use super::credential::{JwtCredential, SessionCredential, jwt::sign_pop_for_grant};
+use super::credential::{JwtCredential, sign_pop_for_grant};
+use super::super::SessionCredential;
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
 use crate::util::check_http_status;

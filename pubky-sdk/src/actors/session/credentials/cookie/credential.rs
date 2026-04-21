@@ -1,10 +1,10 @@
 //! Cookie credential — legacy auth flow.
 //!
 //! This is the **legacy** session credential. It will be removed once all
-//! ecosystem clients have migrated to the JWT flow. Until then it lives in
-//! this single file: deleting it (plus the corresponding line in
-//! [`super::mod`](super)) is the only file change required to retire the
-//! cookie code path.
+//! ecosystem clients have migrated to the JWT flow. Retirement is a folder
+//! delete: `rm -rf credentials/cookie/` plus dropping the cookie arm in
+//! [`crate::actors::session::bootstrap`] and the `as_cookie` re-export in
+//! [`super::super::super::mod@crate::actors::session`].
 //!
 //! ## Cross-target behavior
 //!
@@ -27,12 +27,15 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use pubky_common::{crypto::PublicKey, session::CookieSessionRecord};
 
-use super::super::SessionInfo;
 use reqwest::{Method, RequestBuilder, Response};
 
-use super::{SessionCredential, credential_session_missing};
+use super::super::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient, actors::storage::resource::resolve_pubky, cross_log, errors::Result,
+    PubkyHttpClient,
+    actors::session::SessionInfo,
+    actors::storage::resource::resolve_pubky,
+    cross_log,
+    errors::Result,
     util::check_http_status,
 };
 
@@ -106,7 +109,7 @@ impl CookieCredential {
         Ok(Self::new(user, cookie, record))
     }
 
-    /// Cookie secret accessor — used by [`super::super::view::CookieSessionView`]
+    /// Cookie secret accessor — used by [`super::view::CookieSessionView`]
     /// to export sessions for later restore. Returns `None` on browser WASM.
     pub(crate) fn cookie_secret(&self) -> Option<&str> {
         self.cookie.as_deref()
@@ -141,7 +144,8 @@ fn collect_set_cookies(response: &Response) -> Vec<String> {
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
 // for tokio, WASM uses `?Send` because `wasm-bindgen-futures` are not
-// `Send`. See `super::SessionCredential` for the full rationale.
+// `Send`. See `super::super::credential::SessionCredential` for the full
+// rationale.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for CookieCredential {

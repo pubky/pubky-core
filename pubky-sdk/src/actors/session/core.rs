@@ -5,8 +5,11 @@ use pubky_common::crypto::PublicKey;
 use super::SessionInfo;
 use reqwest::Method;
 
-use super::credential::SessionCredential;
-use super::view::{CookieSessionView, JwtSessionView};
+use super::credentials::{
+    SessionCredential,
+    cookie::CookieSessionView,
+    jwt::JwtSessionView,
+};
 use crate::errors::Error;
 use crate::{PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status};
 
@@ -29,11 +32,12 @@ use crate::{PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http
 /// [`Self::as_cookie`].
 ///
 /// Credential-specific factory functions live in dedicated modules:
-/// - Cookie: [`super::cookie`] — `credential_from_auth_token`,
-///   `session_from_auth_token`, `session_from_cookie_response`, `import_session`,
-///   `import_session_secret`, `session_from_secret_file`
-/// - JWT: [`super::jwt`] — `credential_from_grant_exchange`,
-///   `credential_from_grant_signup`
+/// - Cookie: [`super::credentials::cookie`] — `auth_token::credential_from_auth_token`,
+///   `auth_token::session_from_auth_token`, `auth_token::session_from_cookie_response`,
+///   `secret::import_session`, `secret::import_session_secret`,
+///   `secret::session_from_secret_file`
+/// - JWT: [`super::credentials::jwt::grant_exchange`] —
+///   `credential_from_grant_exchange`, `credential_from_grant_signup`
 ///
 /// Thin delegations on `PubkySession` (`export`, `import`, `import_secret`,
 /// `from_secret_file`) preserve the public API surface.
@@ -49,8 +53,8 @@ pub struct PubkySession {
 
 impl PubkySession {
     /// Build a session from a fully-formed credential. Used by the JWT-mode
-    /// constructors in [`super::jwt`] and the cookie constructors in
-    /// [`super::cookie`].
+    /// constructors in [`super::credentials::jwt::grant_exchange`] and the
+    /// cookie constructors in [`super::credentials::cookie::auth_token`].
     pub(crate) fn from_credential(
         client: PubkyHttpClient,
         credential: Arc<dyn SessionCredential>,

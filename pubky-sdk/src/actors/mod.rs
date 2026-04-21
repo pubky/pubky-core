@@ -19,6 +19,7 @@ pub use event_stream::{Event, EventCursor, EventStreamBuilder, EventType};
 pub use pkdns::Pkdns;
 pub use session::SessionInfo;
 pub use session::core::PubkySession;
-pub use session::view::{CookieSessionView, JwtSessionView};
+pub use session::credentials::cookie::CookieSessionView;
+pub use session::credentials::jwt::JwtSessionView;
 pub use signer::PubkySigner;
 pub use storage::core::{PublicStorage, SessionStorage};
