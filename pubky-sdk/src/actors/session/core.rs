@@ -3,7 +3,6 @@ use std::sync::Arc;
 use pubky_common::crypto::PublicKey;
 
 use super::SessionInfo;
-use reqwest::Method;
 
 use super::credentials::{
     SessionCredential,
@@ -11,7 +10,7 @@ use super::credentials::{
     jwt::JwtSessionView,
 };
 use crate::errors::Error;
-use crate::{PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status};
+use crate::{PubkyHttpClient, Result, SessionStorage, cross_log};
 
 /// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
 ///
@@ -119,15 +118,7 @@ impl PubkySession {
     ///   request fails or the homeserver responds with a non-success status.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
         cross_log!(info, "Signing out session for {}", self.info().public_key());
-        let path = self.credential.signout_path();
-        let resp = match self.storage().request(Method::DELETE, path).await {
-            Ok(rb) => match rb.send().await {
-                Ok(r) => r,
-                Err(e) => return Err((Error::from(e), self)),
-            },
-            Err(e) => return Err((e, self)),
-        };
-        if let Err(e) = check_http_status(resp).await {
+        if let Err(e) = self.credential.signout(&self.client).await {
             cross_log!(error, "Signout failed: {}", e);
             return Err((e, self));
         }

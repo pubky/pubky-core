@@ -168,8 +168,22 @@ impl SessionCredential for JwtCredential {
         self.info.clone()
     }
 
-    fn signout_path(&self) -> &'static str {
-        "/auth/jwt/session"
+    async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
+        // Hit the auth endpoint directly and attach the bearer ourselves —
+        // `/auth/jwt/session` is not a storage URL.
+        let user_pk = self.state.lock().await.grant_claims.iss.clone();
+        let url = format!("pubky{}/auth/jwt/session", user_pk.z32());
+        let resolved = resolve_pubky(&url)?;
+        let bearer = self.current_jwt().await;
+        let response = client
+            .cross_request(Method::DELETE, resolved)
+            .await?
+            .bearer_auth(&bearer)
+            .send()
+            .await
+            .map_err(crate::Error::from)?;
+        check_http_status(response).await?;
+        Ok(())
     }
 
     async fn attach(&self, rb: RequestBuilder, client: &PubkyHttpClient) -> Result<RequestBuilder> {

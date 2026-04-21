@@ -186,8 +186,14 @@ impl SessionCredential for CookieCredential {
         SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec())
     }
 
-    fn signout_path(&self) -> &'static str {
-        "/session"
+    async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
+        let url = format!("pubky{}/session", self.user.z32());
+        let resolved = resolve_pubky(&url)?;
+        let rb = client.cross_request(Method::DELETE, resolved).await?;
+        let rb = self.attach(rb, client).await?;
+        let response = rb.send().await.map_err(crate::Error::from)?;
+        check_http_status(response).await?;
+        Ok(())
     }
 
     async fn attach(

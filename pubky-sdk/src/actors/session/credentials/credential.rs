@@ -64,8 +64,13 @@ pub(crate) trait SessionCredential: Debug + Send + Sync {
     /// Session metadata. Cheap clone; never blocks on network or refresh state.
     fn info(&self) -> SessionInfo;
 
-    /// Path used by `PubkySession::signout` against the user's homeserver.
-    fn signout_path(&self) -> &'static str;
+    /// Sign out and invalidate this credential server-side.
+    ///
+    /// Each implementation knows its own session resource on the homeserver
+    /// (cookie: `/session`; JWT: `/auth/jwt/session`) and the exact wire
+    /// shape needed to delete it. Mirrors [`Self::revalidate`] in being a
+    /// full operation rather than exposing a fragment of one.
+    async fn signout(&self, client: &PubkyHttpClient) -> Result<()>;
 
     /// Attach this credential's authentication to an in-flight request.
     ///
