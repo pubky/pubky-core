@@ -771,13 +771,16 @@ async fn authz_jwt_happy_path() {
         .read("/pub/foo.bar/file")
         .finish();
     let app_kp = Keypair::random();
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
-        .relay(http_relay_url)
-        .client(pubky.client().clone())
-        .client_id(ClientId::new("test.app").unwrap())
-        .client_keypair(app_kp.clone())
-        .start()
-        .unwrap();
+    let auth = PubkyAuthFlow::jwt_builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new("test.app").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .client_keypair(app_kp.clone())
+    .start()
+    .unwrap();
 
     // The deep link should advertise both `cid` and `cpk`.
     let url = auth.authorization_url();
@@ -841,12 +844,15 @@ async fn jwt_proactive_refresh_produces_fresh_token() {
     signer.signup(&server.public_key(), None).await.unwrap();
 
     let caps = Capabilities::builder().cap(Capability::root()).finish();
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
-        .relay(http_relay_url)
-        .client(pubky.client().clone())
-        .client_id(ClientId::new("refresh.test").unwrap())
-        .start()
-        .unwrap();
+    let auth = PubkyAuthFlow::jwt_builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new("refresh.test").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
     signer
         .approve_auth(&auth.authorization_url())
         .await
@@ -1041,12 +1047,15 @@ async fn jwt_signup_grant_flow() {
     let caps = Capabilities::builder()
         .read_write("/pub/signup.app/")
         .finish();
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signup(server.public_key(), None))
-        .relay(http_relay_url)
-        .client(pubky.client().clone())
-        .client_id(ClientId::new("signup.app").unwrap())
-        .start()
-        .unwrap();
+    let auth = PubkyAuthFlow::jwt_builder(
+        &caps,
+        AuthFlowKind::signup(server.public_key(), None),
+        ClientId::new("signup.app").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
 
     // Signer approves — same flow as signin, but the session call hits
     // /auth/jwt/signup which creates the user.
@@ -1086,12 +1095,15 @@ async fn jwt_signin_helper(
     client_id: &'static str,
     caps: Capabilities,
 ) -> PubkySession {
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
-        .relay(relay)
-        .client(pubky.client().clone())
-        .client_id(ClientId::new(client_id).unwrap())
-        .start()
-        .unwrap();
+    let auth = PubkyAuthFlow::jwt_builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new(client_id).unwrap(),
+    )
+    .relay(relay)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
     signer
         .approve_auth(&auth.authorization_url())
         .await

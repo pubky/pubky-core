@@ -53,8 +53,8 @@
 use crate::PublicKey;
 
 use crate::{
-    Capabilities, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient,
-    PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
+    Capabilities, ClientId, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow,
+    PubkyHttpClient, PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -100,13 +100,15 @@ impl Pubky {
         Self { client }
     }
 
-    /// Start an end-to-end auth flow (QR/deeplink).
+    /// Start an end-to-end **legacy (cookie)** auth flow (QR/deeplink).
     /// Depending on the auth kind, the flow will be different.
     /// - `AuthFlowKind::SignIn` - Sign in to an existing account.
     /// - `AuthFlowKind::SignUp` - Sign up for a new account.
     ///
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
     /// or `try_poll_once()` (non-blocking UI loops).
+    ///
+    /// For long-lived, mirror-friendly sessions prefer [`Self::start_jwt_auth_flow`].
     ///
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
@@ -117,6 +119,26 @@ impl Pubky {
         auth_kind: AuthFlowKind,
     ) -> Result<PubkyAuthFlow> {
         PubkyAuthFlow::builder(caps, auth_kind)
+            .client(self.client.clone())
+            .start()
+    }
+
+    /// Start an end-to-end **JWT (grant + `PoP`)** auth flow (QR/deeplink).
+    ///
+    /// The resulting [`PubkyAuthFlow`] emits a deep link with `cid` and `cpk`
+    /// query params; the signer signs a `pubky-grant` JWS and the SDK exchanges
+    /// it for a self-refreshing JWT-backed session.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
+    ///   fails (e.g., malformed relay URL when configured via the builder).
+    pub fn start_jwt_auth_flow(
+        &self,
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+        client_id: ClientId,
+    ) -> Result<PubkyAuthFlow> {
+        PubkyAuthFlow::jwt_builder(caps, auth_kind, client_id)
             .client(self.client.clone())
             .start()
     }

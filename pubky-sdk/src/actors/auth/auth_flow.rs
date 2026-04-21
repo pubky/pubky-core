@@ -2,7 +2,7 @@
 //!
 //! ## TL;DR (happy path)
 //!
-//! ### Sign in
+//! ### Sign in (legacy / cookie)
 //! ```no_run
 //! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind};
 //! # async fn run() -> pubky::Result<()> {
@@ -16,7 +16,7 @@
 //! # Ok(()) }
 //! ```
 //!
-//! ### Sign up
+//! ### Sign up (legacy / cookie)
 //! ```no_run
 //! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind, PublicKey};
 //! # async fn run() -> pubky::Result<()> {
@@ -27,6 +27,21 @@
 //! println!("Scan to sign up: {}", flow.authorization_url());
 //!
 //! // Blocks until the signer (e.g., Pubky Ring) approves and server issues a session.
+//! let session = flow.await_approval().await?;
+//! println!("Signed in as {}", session.info().public_key());
+//! # Ok(()) }
+//! ```
+//!
+//! ### Sign in (JWT — grant + `PoP`)
+//! ```no_run
+//! # use pubky::{Capabilities, PubkyAuthFlow, AuthFlowKind, ClientId};
+//! # async fn run() -> pubky::Result<()> {
+//! let caps = Capabilities::default();
+//! let client_id = ClientId::new("my.app").unwrap();
+//! let flow = PubkyAuthFlow::start_jwt(&caps, AuthFlowKind::signin(), client_id)?;
+//! println!("Scan to sign in: {}", flow.authorization_url());
+//!
+//! // Resolves to a JWT-backed session that self-refreshes.
 //! let session = flow.await_approval().await?;
 //! println!("Signed in as {}", session.info().public_key());
 //! # Ok(()) }
@@ -88,8 +103,9 @@ use crate::{
 /// Supports both sign in and sign up flows.
 ///
 /// Use it like this:
-/// 1. Construct with [`PubkyAuthFlow::start`] (happy path) or the builder
-///    [`PubkyAuthFlow::builder`] to override relay/client.
+/// 1. Construct with one of:
+///    - [`PubkyAuthFlow::start`] / [`PubkyAuthFlow::builder`] for the legacy (cookie) flow.
+///    - [`PubkyAuthFlow::start_jwt`] / [`PubkyAuthFlow::jwt_builder`] for the grant + `PoP` (JWT) flow.
 /// 2. Display [`authorization_url`](Self::authorization_url) (QR/deeplink) to the signer.
 /// 3. Complete the flow with [`await_approval`](Self::await_approval) **or**
 ///    poll with [`try_poll_once`](Self::try_poll_once) / [`try_token`](Self::try_token).
@@ -106,7 +122,7 @@ pub struct PubkyAuthFlow {
 }
 
 impl PubkyAuthFlow {
-    /// Start a flow with the default HTTP relay.
+    /// Start a legacy (cookie) flow with the default HTTP relay.
     ///
     /// Spawns the background poller immediately and returns a handle.
     ///
@@ -114,13 +130,40 @@ impl PubkyAuthFlow {
     /// - Returns [`crate::errors::Error`] if constructing the backing [`PubkyHttpClient`]
     ///   or generating the relay URL fails.
     pub fn start(caps: &Capabilities, auth_kind: AuthFlowKind) -> Result<Self> {
-        PubkyAuthFlowBuilder::new(caps.clone(), auth_kind).start()
+        LegacyAuthFlowBuilder::new(caps.clone(), auth_kind).start()
     }
 
-    /// Create a builder to override **relay** and/or provide a custom **client**.
+    /// Create a builder for the legacy (cookie) flow to override the **relay** and/or
+    /// provide a custom **client**.
     #[must_use]
-    pub fn builder(caps: &Capabilities, auth_kind: AuthFlowKind) -> PubkyAuthFlowBuilder {
-        PubkyAuthFlowBuilder::new(caps.clone(), auth_kind)
+    pub fn builder(caps: &Capabilities, auth_kind: AuthFlowKind) -> LegacyAuthFlowBuilder {
+        LegacyAuthFlowBuilder::new(caps.clone(), auth_kind)
+    }
+
+    /// Start a JWT (grant + `PoP`) flow with the default HTTP relay.
+    ///
+    /// The resulting [`PubkySession`] is JWT-backed and self-refreshes.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error`] if constructing the backing [`PubkyHttpClient`]
+    ///   or generating the relay URL fails.
+    pub fn start_jwt(
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+        client_id: ClientId,
+    ) -> Result<Self> {
+        JwtAuthFlowBuilder::new(caps.clone(), auth_kind, client_id).start()
+    }
+
+    /// Create a builder for the JWT (grant + `PoP`) flow to override the **relay**,
+    /// provide a custom **client**, or pin a specific **`PoP` keypair**.
+    #[must_use]
+    pub fn jwt_builder(
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+        client_id: ClientId,
+    ) -> JwtAuthFlowBuilder {
+        JwtAuthFlowBuilder::new(caps.clone(), auth_kind, client_id)
     }
 
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
@@ -279,31 +322,21 @@ impl AuthFlowKind {
     }
 }
 
-/// Builder for [`PubkyAuthFlow`].
+/// Builder for the **legacy (cookie)** [`PubkyAuthFlow`].
 ///
-/// Use to override the HTTP relay, the `PubkyHttpClient`, or to enable
-/// grant-based authentication via [`Self::client_id`].
+/// The signer returns a [`pubky_common::auth::AuthToken`] which the SDK exchanges for
+/// a session cookie. For long-lived, mirror-friendly sessions, prefer
+/// [`JwtAuthFlowBuilder`] instead.
 #[derive(Debug, Clone)]
-pub struct PubkyAuthFlowBuilder {
+pub struct LegacyAuthFlowBuilder {
     caps: Capabilities,
     base_relay: Url,
     client: Option<PubkyHttpClient>,
     auth_kind: AuthFlowKind,
     client_secret: [u8; 32],
-    /// Application identifier — when set, the flow uses the grant + `PoP` path.
-    client_id: Option<ClientId>,
-    /// Optional pre-generated `PoP` keypair. When `client_id` is set and this
-    /// is `None`, a fresh keypair is generated at [`start`](Self::start).
-    client_keypair: Option<Keypair>,
 }
 
-impl PubkyAuthFlowBuilder {
-    /// Create a new builder for the auth flow.
-    /// # Arguments
-    /// * `caps` - The capabilities to use for the auth flow.
-    /// * `auth_kind` - The kind of auth flow to perform.
-    /// # Returns
-    /// A new builder for the auth flow.
+impl LegacyAuthFlowBuilder {
     pub(crate) fn new(caps: Capabilities, auth_kind: AuthFlowKind) -> Self {
         Self {
             caps,
@@ -312,47 +345,106 @@ impl PubkyAuthFlowBuilder {
             client: None,
             auth_kind,
             client_secret: random_bytes::<32>(),
-            client_id: None,
-            client_keypair: None,
         }
     }
 
     /// Set a custom relay base URL. Trailing slash optional.
+    #[must_use]
     pub fn relay(mut self, url: Url) -> Self {
         self.base_relay = url;
         self
     }
 
     /// Provide a custom `PubkyHttpClient` (e.g., with custom TLS, roots, or test wiring).
+    #[must_use]
     pub fn client(mut self, client: PubkyHttpClient) -> Self {
         self.client = Some(client);
         self
     }
 
-    /// Set the client secret to use for the auth flow.
-    /// By default, a random client secret is generated.
+    /// Override the random `client_secret`. By default, a fresh 32-byte secret is generated.
+    #[must_use]
     pub fn client_secret(mut self, client_secret: [u8; 32]) -> Self {
         self.client_secret = client_secret;
         self
     }
 
-    /// Set the application identifier — switches the flow to **grant + `PoP`** mode.
+    /// Finalize: derive channel, compute the `pubkyauth://` deep link, spawn the background poller,
+    /// and return the flow handle.
     ///
-    /// When `client_id` is set:
-    /// - The deep link gains `cid=<client_id>` and `cpk=<client_pk_z32>` params.
-    /// - The signer (Ring) signs a `pubky-grant` JWS instead of a legacy
-    ///   [`AuthToken`](pubky_common::auth::AuthToken).
-    /// - The resulting [`PubkySession`] is JWT-backed and self-refreshes.
-    ///
-    /// Apps that want a long-lived, mirror-friendly session should always set this.
-    pub fn client_id(mut self, id: ClientId) -> Self {
-        self.client_id = Some(id);
+    /// # Errors
+    /// - Propagates failures from constructing the default [`PubkyHttpClient`] or starting
+    ///   the [`AuthRelayListener`].
+    pub fn start(self) -> Result<PubkyAuthFlow> {
+        finalize(
+            &self.caps,
+            &self.auth_kind,
+            self.base_relay,
+            self.client,
+            self.client_secret,
+            None,
+        )
+    }
+}
+
+/// Builder for the **JWT (grant + `PoP`)** [`PubkyAuthFlow`].
+///
+/// When this builder is used:
+/// - The deep link gains `cid=<client_id>` and `cpk=<client_pk_z32>` params.
+/// - The signer (Ring) signs a `pubky-grant` JWS instead of a legacy
+///   [`AuthToken`](pubky_common::auth::AuthToken).
+/// - The resulting [`PubkySession`] is JWT-backed and self-refreshes.
+///
+/// Apps that want a long-lived, mirror-friendly session should use this builder.
+#[derive(Debug, Clone)]
+pub struct JwtAuthFlowBuilder {
+    caps: Capabilities,
+    base_relay: Url,
+    client: Option<PubkyHttpClient>,
+    auth_kind: AuthFlowKind,
+    client_secret: [u8; 32],
+    client_id: ClientId,
+    client_keypair: Option<Keypair>,
+}
+
+impl JwtAuthFlowBuilder {
+    pub(crate) fn new(caps: Capabilities, auth_kind: AuthFlowKind, client_id: ClientId) -> Self {
+        Self {
+            caps,
+            base_relay: Url::parse(DEFAULT_HTTP_RELAY_INBOX)
+                .expect("Should be able to parse the default HTTP relay"),
+            client: None,
+            auth_kind,
+            client_secret: random_bytes::<32>(),
+            client_id,
+            client_keypair: None,
+        }
+    }
+
+    /// Set a custom relay base URL. Trailing slash optional.
+    #[must_use]
+    pub fn relay(mut self, url: Url) -> Self {
+        self.base_relay = url;
         self
     }
 
-    /// Pre-generated Ed25519 keypair used as the grant's `cnf` claim and to sign
-    /// `PoP` proofs. Only meaningful when [`Self::client_id`] is set. If
-    /// omitted, a fresh random keypair is generated at [`Self::start`].
+    /// Provide a custom `PubkyHttpClient` (e.g., with custom TLS, roots, or test wiring).
+    #[must_use]
+    pub fn client(mut self, client: PubkyHttpClient) -> Self {
+        self.client = Some(client);
+        self
+    }
+
+    /// Override the random `client_secret`. By default, a fresh 32-byte secret is generated.
+    #[must_use]
+    pub fn client_secret(mut self, client_secret: [u8; 32]) -> Self {
+        self.client_secret = client_secret;
+        self
+    }
+
+    /// Pin a specific Ed25519 keypair as the grant's `cnf` claim and `PoP` signer.
+    /// If omitted, a fresh random keypair is generated at [`Self::start`].
+    #[must_use]
     pub fn client_keypair(mut self, keypair: Keypair) -> Self {
         self.client_keypair = Some(keypair);
         self
@@ -362,120 +454,133 @@ impl PubkyAuthFlowBuilder {
     /// and return the flow handle.
     ///
     /// # Errors
-    /// - Returns [`AuthError::Validation`] if [`Self::client_keypair`] was set
-    ///   without a corresponding [`Self::client_id`]. In grant + JWT mode both
-    ///   must be supplied (or neither, for the legacy flow).
+    /// - Propagates failures from constructing the default [`PubkyHttpClient`] or starting
+    ///   the [`AuthRelayListener`].
     pub fn start(self) -> Result<PubkyAuthFlow> {
-        let client = match &self.client {
-            Some(c) => c.clone(),
-            None => PubkyHttpClient::new()?,
-        };
+        let keypair = self.client_keypair.unwrap_or_else(Keypair::random);
+        finalize(
+            &self.caps,
+            &self.auth_kind,
+            self.base_relay,
+            self.client,
+            self.client_secret,
+            Some((self.client_id, keypair)),
+        )
+    }
+}
 
-        // Resolve the optional grant binding. `client_id` and the PoP keypair
-        // travel together; a bare keypair without a client_id would otherwise
-        // be silently dropped, so we reject it explicitly.
-        let grant_binding = match (self.client_id.clone(), self.client_keypair.clone()) {
-            (Some(cid), Some(kp)) => Some((cid, kp)),
-            (Some(cid), None) => Some((cid, Keypair::random())),
-            (None, None) => None,
-            (None, Some(_)) => {
-                return Err(AuthError::Validation(
-                    "client_keypair is set without client_id; pass both for grant + JWT mode or neither for the legacy flow".into(),
-                )
-                .into());
-            }
-        };
+/// Shared finalization for both builders. Resolves the default client, assembles the
+/// deep link, chooses the approval mode, wires the session bootstrap context, and
+/// spawns the relay listener.
+fn finalize(
+    caps: &Capabilities,
+    auth_kind: &AuthFlowKind,
+    base_relay: Url,
+    client: Option<PubkyHttpClient>,
+    client_secret: [u8; 32],
+    grant_binding: Option<(ClientId, Keypair)>,
+) -> Result<PubkyAuthFlow> {
+    let client = match client {
+        Some(c) => c,
+        None => PubkyHttpClient::new()?,
+    };
 
-        let auth_url = self.create_url(
-            grant_binding
-                .as_ref()
-                .map(|(cid, kp)| (cid.clone(), kp.public_key())),
-        );
+    let auth_url = create_url(
+        caps,
+        auth_kind,
+        &base_relay,
+        client_secret,
+        grant_binding
+            .as_ref()
+            .map(|(cid, kp)| (cid.clone(), kp.public_key())),
+    );
 
-        // For the SignUp grant flow, the homeserver public key is taken from
-        // the AuthFlowKind. For the SignIn grant flow, the homeserver pubkey is
-        // resolved from PKARR after we receive the grant — see AuthRelayListener.
-        let signup_homeserver = match &self.auth_kind {
+    // For the SignUp grant flow, the homeserver public key is taken from
+    // the AuthFlowKind. For the SignIn grant flow, the homeserver pubkey is
+    // resolved from PKARR after we receive the grant — see AuthRelayListener.
+    let signup_homeserver = match auth_kind {
+        AuthFlowKind::SignUp {
+            homeserver_public_key,
+            signup_token,
+        } => Some((*homeserver_public_key.clone(), signup_token.clone())),
+        AuthFlowKind::SignIn => None,
+    };
+
+    let approval_mode = if grant_binding.is_some() {
+        AuthApprovalMode::GrantJwt
+    } else {
+        AuthApprovalMode::LegacyToken
+    };
+
+    let session_bootstrap_ctx = grant_binding.map(|(_, client_keypair)| SessionBootstrapContext {
+        client_keypair,
+        signup_homeserver,
+    });
+
+    let relay_listener = AuthRelayListener::builder(client_secret)
+        .relay_base_url(base_relay)
+        .client(client.clone())
+        .start()?;
+
+    Ok(PubkyAuthFlow {
+        relay_listener,
+        client,
+        approval_mode,
+        session_bootstrap_ctx,
+        auth_url,
+    })
+}
+
+/// Build the typed deep link for the flow. The variant chosen depends on the
+/// [`AuthFlowKind`] (signin vs signup) and whether a grant binding is present
+/// (legacy cookie vs JWT grant + `PoP`).
+fn create_url(
+    caps: &Capabilities,
+    auth_kind: &AuthFlowKind,
+    base_relay: &Url,
+    client_secret: [u8; 32],
+    grant_binding: Option<(ClientId, PublicKey)>,
+) -> DeepLink {
+    match (auth_kind, grant_binding) {
+        (AuthFlowKind::SignIn, Some((cid, cpk))) => DeepLink::SigninJwt(SigninJwtDeepLink::new(
+            caps.clone(),
+            base_relay.clone(),
+            client_secret,
+            cid,
+            cpk,
+        )),
+        (AuthFlowKind::SignIn, None) => DeepLink::Signin(SigninDeepLink::new(
+            caps.clone(),
+            base_relay.clone(),
+            client_secret,
+        )),
+        (
             AuthFlowKind::SignUp {
                 homeserver_public_key,
                 signup_token,
-            } => Some((*homeserver_public_key.clone(), signup_token.clone())),
-            AuthFlowKind::SignIn => None,
-        };
-
-        let approval_mode = if grant_binding.is_some() {
-            AuthApprovalMode::GrantJwt
-        } else {
-            AuthApprovalMode::LegacyToken
-        };
-
-        let session_bootstrap_ctx =
-            grant_binding.map(|(_, client_keypair)| SessionBootstrapContext {
-                client_keypair,
-                signup_homeserver,
-            });
-
-        let relay_listener = AuthRelayListener::builder(self.client_secret)
-            .relay_base_url(self.base_relay)
-            .client(client.clone())
-            .start()?;
-
-        Ok(PubkyAuthFlow {
-            relay_listener,
-            client,
-            approval_mode,
-            session_bootstrap_ctx,
-            auth_url,
-        })
-    }
-
-    /// Create the auth URL for the auth flow.
-    /// Depending on the auth kind and whether grant binding is set,
-    /// the typed deep link variant differs.
-    fn create_url(&self, grant_binding: Option<(ClientId, PublicKey)>) -> DeepLink {
-        match (&self.auth_kind, grant_binding) {
-            (AuthFlowKind::SignIn, Some((cid, cpk))) => {
-                DeepLink::SigninJwt(SigninJwtDeepLink::new(
-                    self.caps.clone(),
-                    self.base_relay.clone(),
-                    self.client_secret,
-                    cid,
-                    cpk,
-                ))
-            }
-            (AuthFlowKind::SignIn, None) => DeepLink::Signin(SigninDeepLink::new(
-                self.caps.clone(),
-                self.base_relay.clone(),
-                self.client_secret,
-            )),
-            (
-                AuthFlowKind::SignUp {
-                    homeserver_public_key,
-                    signup_token,
-                },
-                Some((cid, cpk)),
-            ) => DeepLink::SignupJwt(SignupJwtDeepLink::new(
-                self.caps.clone(),
-                self.base_relay.clone(),
-                self.client_secret,
-                *homeserver_public_key.clone(),
-                signup_token.clone(),
-                cid,
-                cpk,
-            )),
-            (
-                AuthFlowKind::SignUp {
-                    homeserver_public_key,
-                    signup_token,
-                },
-                None,
-            ) => DeepLink::Signup(SignupDeepLink::new(
-                self.caps.clone(),
-                self.base_relay.clone(),
-                self.client_secret,
-                *homeserver_public_key.clone(),
-                signup_token.clone(),
-            )),
-        }
+            },
+            Some((cid, cpk)),
+        ) => DeepLink::SignupJwt(SignupJwtDeepLink::new(
+            caps.clone(),
+            base_relay.clone(),
+            client_secret,
+            *homeserver_public_key.clone(),
+            signup_token.clone(),
+            cid,
+            cpk,
+        )),
+        (
+            AuthFlowKind::SignUp {
+                homeserver_public_key,
+                signup_token,
+            },
+            None,
+        ) => DeepLink::Signup(SignupDeepLink::new(
+            caps.clone(),
+            base_relay.clone(),
+            client_secret,
+            *homeserver_public_key.clone(),
+            signup_token.clone(),
+        )),
     }
 }
