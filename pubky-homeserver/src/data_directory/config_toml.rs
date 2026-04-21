@@ -68,15 +68,10 @@ pub struct DriveToml {
     pub rate_limits: Vec<PathLimit>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 /// Admin server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AdminToml {
     /// Enable or disable the admin server
-    #[serde(default = "default_true")]
     pub enabled: bool,
     /// Socket address for the admin HTTP server
     pub listen_socket: SocketAddr,
@@ -90,7 +85,6 @@ pub struct GeneralToml {
     /// Deprecated: use `[storage].default_quota_mb` instead.
     /// Kept for backwards compatibility: `0` means unlimited.
     /// Ignored when `[storage].default_quota_mb` is set.
-    #[serde(default)]
     #[deprecated(
         since = "0.7.0",
         note = "use `storage.default_quota_mb` instead; this field is only resolved at TOML parse time"
@@ -108,15 +102,10 @@ pub struct LoggingToml {
     pub module_levels: Vec<TargetLevel>,
 }
 
-fn default_false() -> bool {
-    false
-}
-
 /// Metrics server configuration
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct MetricsToml {
-    /// Enable or disable the metrics server. Default: false
-    #[serde(default = "default_false")]
+    /// Enable or disable the metrics server
     pub enabled: bool,
     /// Socket address for Prometheus metrics endpoint. Should be isolated from public network.
     pub listen_socket: SocketAddr,
