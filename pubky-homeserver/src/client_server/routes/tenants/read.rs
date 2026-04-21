@@ -2,7 +2,6 @@ use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error,
         extractors::{ListQueryParams, PubkyHost},
         AppState,
     },
@@ -24,7 +23,10 @@ pub async fn head(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+    state
+        .user_service
+        .get_or_http_error(pubky.public_key(), false)
+        .await?;
 
     let entry_path = EntryPath::new(pubky.public_key().clone(), path.inner().clone());
 

@@ -53,8 +53,9 @@ use tower::{Layer, Service};
 
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::quota_config::BandwidthRate;
-use crate::persistence::user_quota::{QuotaOverride, UserQuotaCache};
 use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
+use crate::services::user_service::UserService;
+use crate::shared::user_quota::QuotaOverride;
 use crate::shared::HttpError;
 use futures_util::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
@@ -80,13 +81,13 @@ const CLEANUP_INTERVAL_SECS: u64 = 60;
 #[derive(Debug, Clone)]
 pub struct RateLimiterLayer {
     limits: Vec<PathLimit>,
-    cache: UserQuotaCache,
+    user_service: UserService,
 }
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with the given path limits and per-user
     /// quota resolution dependencies.
-    pub fn new(limits: Vec<PathLimit>, cache: UserQuotaCache) -> Self {
+    pub fn new(limits: Vec<PathLimit>, user_service: UserService) -> Self {
         if limits.is_empty() {
             tracing::info!("General rate limiting is disabled.");
         } else {
@@ -97,7 +98,10 @@ impl RateLimiterLayer {
             tracing::info!("Rate limits configured: {}", limits_str.join(", "));
         }
 
-        Self { limits, cache }
+        Self {
+            limits,
+            user_service,
+        }
     }
 }
 
@@ -117,7 +121,7 @@ impl<S> Layer<S> for RateLimiterLayer {
         RateLimiterMiddleware {
             inner,
             limits: tuples,
-            cache: self.cache.clone(),
+            user_service: self.user_service.clone(),
             user_read_limiters,
             user_write_limiters,
         }
@@ -233,7 +237,7 @@ impl LimiterPool {
 pub struct RateLimiterMiddleware<S> {
     inner: S,
     limits: Vec<LimitTuple>,
-    cache: UserQuotaCache,
+    user_service: UserService,
     user_read_limiters: LimiterPool,
     user_write_limiters: LimiterPool,
 }
@@ -422,7 +426,7 @@ fn apply_ip_speed_limits<S>(
 fn apply_user_speed_limits<S>(
     mut req: Request<Body>,
     user_pubkey: &LimitKey,
-    quota: &crate::persistence::user_quota::UserQuota,
+    quota: &crate::shared::user_quota::UserQuota,
     path_limits: &[LimitTuple],
     limiter_pool: &LimiterPool,
     download_throttlers: &mut Vec<(LimitKey, Arc<KeyedRateLimiter>)>,
@@ -494,7 +498,7 @@ where
             return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
         }
 
-        let cache = self.cache.clone();
+        let user_service = self.user_service.clone();
         let path_limits_owned: Vec<LimitTuple> = path_limits.into_iter().cloned().collect();
         let user_read_limiters = self.user_read_limiters.clone();
         let user_write_limiters = self.user_write_limiters.clone();
@@ -502,7 +506,7 @@ where
         Box::pin(async move {
             // Resolve per-user quota when a user pubkey is present (cache makes this cheap).
             let user_quota = if let Some(ref pubkey) = user_pubkey {
-                match cache.resolve(pubkey).await {
+                match user_service.resolve_quota(pubkey).await {
                     Ok(quota) => quota,
                     Err(e) => {
                         tracing::error!("Failed to resolve user limits for {}: {e}", pubkey.z32());
@@ -583,7 +587,7 @@ mod tests {
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
 
-    use crate::persistence::user_quota::UserQuota;
+    use crate::shared::user_quota::UserQuota;
     use crate::shared::HttpResult;
     use crate::{client_server::layers::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
 
@@ -610,16 +614,19 @@ mod tests {
     // Start a server with the given quota config on a random port.
     async fn start_server(config: Vec<PathLimit>) -> SocketAddr {
         let db = SqlDb::test().await;
-        let cache = UserQuotaCache::new(db);
-        start_server_with_cache(config, cache).await
+        let user_service = UserService::new(db, None);
+        start_server_with_user_service(config, user_service).await
     }
 
-    // Start a server with the given config and cache on a random port.
-    async fn start_server_with_cache(config: Vec<PathLimit>, cache: UserQuotaCache) -> SocketAddr {
+    // Start a server with the given config and user service on a random port.
+    async fn start_server_with_user_service(
+        config: Vec<PathLimit>,
+        user_service: UserService,
+    ) -> SocketAddr {
         let app = Router::new()
             .route("/upload", post(upload_handler))
             .route("/download", get(download_handler))
-            .layer(RateLimiterLayer::new(config, cache))
+            .layer(RateLimiterLayer::new(config, user_service))
             .layer(PubkyHostLayer);
 
         // Create a TCP listener to bind to the socket first
@@ -811,7 +818,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_direction_detection() {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let write_rate: BandwidthRate = "5mb/s".parse().unwrap();
         let read_rate: BandwidthRate = "10mb/s".parse().unwrap();
@@ -834,7 +841,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_unlimited_bypass() {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let quota = UserQuota {
             rate_write: QuotaOverride::Unlimited,

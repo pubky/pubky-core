@@ -11,10 +11,7 @@ use crate::persistence::sql::{
     user::{UserEntity, UserRepository},
 };
 use crate::shared::{HttpError, HttpResult};
-use crate::{
-    client_server::{err_if_user_is_invalid::get_user_or_http_error, AppState},
-    SignupMode,
-};
+use crate::{client_server::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -33,31 +30,10 @@ use tower_cookies::{
     Cookie, Cookies,
 };
 
-use crate::persistence::user_quota::{CachedUserQuota, UserQuota};
+use crate::shared::user_quota::UserQuota;
 
 /// How long a session cookie is valid before expiring.
 const SESSION_EXPIRY_DAYS: i64 = 365;
-
-/// Create a user record with explicit limits, commit the transaction, and
-/// populate the shared rate-limiter cache so the new user is seen immediately.
-async fn create_user_with_quota(
-    state: &AppState,
-    public_key: &PublicKey,
-    limits: &UserQuota,
-    mut tx: sqlx::Transaction<'static, sqlx::Postgres>,
-) -> HttpResult<UserEntity> {
-    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    let user = UserRepository::set_quota(user.id, limits, uexecutor!(tx)).await?;
-    tx.commit().await?;
-
-    // Populate cache so the rate limiter sees the new user immediately
-    // (evicts any negative cache entry from pre-signup lookups).
-    state
-        .user_quota_cache
-        .insert(public_key.clone(), CachedUserQuota::new(user.quota()));
-
-    Ok(user)
-}
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
 ///
@@ -136,13 +112,19 @@ pub async fn signup(
 
         // 4) Create the new user record with the token's limits.
         let limits = code.quota();
-        let user = create_user_with_quota(&state, public_key, &limits, tx).await?;
+        let user = state
+            .user_service
+            .create_user(public_key, &limits, tx)
+            .await?;
         return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
             .await;
     }
 
     // 4) Create the new user record (open signup, no token).
-    let user = create_user_with_quota(&state, public_key, &UserQuota::default(), tx).await?;
+    let user = state
+        .user_service
+        .create_user(public_key, &UserQuota::default(), tx)
+        .await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
@@ -160,7 +142,10 @@ pub async fn signin(
     let public_key = token.public_key();
 
     // 2) Ensure user *does* exist
-    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
+    let user = state
+        .user_service
+        .get_or_http_error(public_key, false)
+        .await?;
 
     // 3) Create the session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await

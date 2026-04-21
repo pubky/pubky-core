@@ -5,32 +5,19 @@ use axum::{
     Json,
 };
 
-use crate::{
-    persistence::sql::user::UserRepository,
-    persistence::user_quota::UserQuotaPatch,
-    shared::{HttpError, HttpResult, Z32Pubkey},
-};
+use crate::shared::{user_quota::UserQuotaPatch, HttpError, HttpResult, Z32Pubkey};
 
 use super::super::app_state::AppState;
-
-/// Map a sqlx error to an HTTP error, turning `RowNotFound` into 404.
-fn map_user_not_found(e: sqlx::Error) -> HttpError {
-    match e {
-        sqlx::Error::RowNotFound => {
-            HttpError::new_with_message(StatusCode::NOT_FOUND, "User not found")
-        }
-        other => other.into(),
-    }
-}
 
 /// GET /users/{pubkey}/quota — return the user's effective limits.
 pub async fn get_user_quota(
     State(state): State<AppState>,
     Path(pubkey): Path<Z32Pubkey>,
 ) -> HttpResult<impl IntoResponse> {
-    let user = UserRepository::get(&pubkey.0, &mut state.sql_db.pool().into())
-        .await
-        .map_err(map_user_not_found)?;
+    let user = state
+        .user_service
+        .get_or_http_error(&pubkey.0, false)
+        .await?;
 
     Ok(Json(user.quota()))
 }
@@ -49,15 +36,10 @@ pub async fn patch_user_quota(
     Json(patch): Json<UserQuotaPatch>,
 ) -> HttpResult<impl IntoResponse> {
     patch
-        .validate_rate_roundtrips()
+        .validate()
         .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
-    UserRepository::patch_quota(&pubkey.0, &patch, state.sql_db.pool())
-        .await
-        .map_err(map_user_not_found)?;
-
-    // Evict from shared cache so the next request re-resolves from DB
-    state.user_quota_cache.remove(&pubkey.0);
+    state.user_service.patch_quota(&pubkey.0, &patch).await?;
 
     Ok(StatusCode::OK)
 }
@@ -77,6 +59,7 @@ mod tests {
                 context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
+                context.user_service.clone(),
             ),
             "test",
         ))

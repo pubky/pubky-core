@@ -2,8 +2,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
 use crate::{
     persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository},
-    persistence::user_quota::UserQuota,
-    shared::{HttpError, HttpResult},
+    shared::{user_quota::UserQuota, HttpError, HttpResult},
 };
 
 use super::super::app_state::AppState;
@@ -38,7 +37,7 @@ pub async fn generate_signup_token_with_limits(
     Json(config): Json<UserQuota>,
 ) -> HttpResult<impl IntoResponse> {
     config
-        .validate_rate_roundtrips()
+        .validate()
         .map_err(|e| HttpError::new_with_message(StatusCode::UNPROCESSABLE_ENTITY, e))?;
     create_signup_code(&state, &config).await
 }

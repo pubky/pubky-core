@@ -4,7 +4,7 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::persistence::sql::UnifiedExecutor;
-use crate::persistence::user_quota::{UserQuota, UserQuotaPatch};
+use crate::shared::user_quota::UserQuota;
 
 pub const USER_TABLE: &str = "users";
 
@@ -216,9 +216,7 @@ impl UserRepository {
         config: &UserQuota,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<UserEntity, sqlx::Error> {
-        config
-            .validate_rate_roundtrips()
-            .map_err(sqlx::Error::InvalidArgument)?;
+        config.validate().map_err(sqlx::Error::InvalidArgument)?;
 
         let statement = Query::update()
             .table(USER_TABLE)
@@ -254,27 +252,6 @@ impl UserRepository {
         Ok(user)
     }
 
-    /// Atomically apply a partial quota update to a user.
-    ///
-    /// Opens a transaction, locks the row with `FOR UPDATE`, merges the patch
-    /// into the current quota, and writes the result back.
-    pub async fn patch_quota(
-        public_key: &PublicKey,
-        patch: &UserQuotaPatch,
-        pool: &sqlx::PgPool,
-    ) -> Result<UserEntity, sqlx::Error> {
-        let mut tx = pool.begin().await?;
-
-        let user = Self::get_for_update(public_key, &mut (&mut tx).into()).await?;
-
-        let mut config = user.quota();
-        config.merge(patch);
-
-        let updated = Self::set_quota(user.id, &config, &mut (&mut tx).into()).await?;
-        tx.commit().await?;
-        Ok(updated)
-    }
-
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     #[cfg(test)]
@@ -302,7 +279,7 @@ impl UserRepository {
         pubkey: &pubky_common::crypto::PublicKey,
         quota_mb: u64,
     ) -> UserEntity {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
         let user = Self::create(pubkey, &mut db.pool().into()).await.unwrap();
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Value(quota_mb),
@@ -568,7 +545,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_set_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -633,7 +610,7 @@ mod tests {
     #[test]
     fn test_limits_mixed_null_and_values() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let user = UserEntity {
@@ -660,7 +637,7 @@ mod tests {
 
     #[test]
     fn test_limits_unlimited_values() {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let user = UserEntity {
             id: 1,
@@ -683,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_limits_invalid_rate_string_treated_as_default() {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let user = UserEntity {
             id: 1,

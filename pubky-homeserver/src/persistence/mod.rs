@@ -7,5 +7,3 @@
 
 pub mod files;
 pub mod sql;
-/// Per-user quota domain type, cache, and encoding.
-pub mod user_quota;

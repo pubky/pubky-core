@@ -42,9 +42,15 @@ impl FileService {
         data_directory: &Path,
         db: SqlDb,
         events_service: EventsService,
+        user_service: crate::services::user_service::UserService,
     ) -> Result<Self, FileIoError> {
-        let opendal_service =
-            OpendalService::new_from_config(&config.storage, data_directory, &db, events_service)?;
+        let opendal_service = OpendalService::new_from_config(
+            &config.storage,
+            data_directory,
+            &db,
+            events_service,
+            user_service,
+        )?;
         Ok(Self::new(opendal_service, db))
     }
 
@@ -125,7 +131,7 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository},
+        persistence::sql::user::UserRepository, services::user_service::FILE_METADATA_SIZE,
         shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;

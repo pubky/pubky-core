@@ -5,7 +5,7 @@
 //! Create with a `DataDir` instance: `AppContext::try_from(data_dir)`
 //!
 
-use crate::persistence::user_quota::UserQuotaCache;
+use crate::services::user_service::UserService;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
@@ -81,8 +81,8 @@ pub struct AppContext {
     /// Enables cross-instance event propagation for /events-stream's SSE functionality.
     /// Kept alive for the background task, not for direct access.
     _pg_event_listener: Arc<PgEventListener>,
-    /// Shared cache for resolved per-user limits (used by both admin and client servers).
-    pub(crate) user_quota_cache: UserQuotaCache,
+    /// User service for quota resolution and user creation with defaults.
+    pub(crate) user_service: UserService,
 }
 
 impl AppContext {
@@ -120,12 +120,17 @@ impl AppContext {
             .await
             .map_err(AppContextConversionError::PgEventListener)?;
 
-        let file_service =
-            FileService::new_from_config(&conf, dir.path(), sql_db.clone(), events_service.clone())
-                .map_err(AppContextConversionError::Storage)?;
-        let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
+        let user_service = UserService::new(sql_db.clone(), conf.storage.default_quota_mb);
 
-        let user_quota_cache = UserQuotaCache::new(sql_db.clone());
+        let file_service = FileService::new_from_config(
+            &conf,
+            dir.path(),
+            sql_db.clone(),
+            events_service.clone(),
+            user_service.clone(),
+        )
+        .map_err(AppContextConversionError::Storage)?;
+        let pkarr_builder = Self::build_pkarr_builder_from_config(&conf);
 
         Ok(Self {
             sql_db,
@@ -141,7 +146,7 @@ impl AppContext {
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),
-            user_quota_cache,
+            user_service,
         })
     }
 }

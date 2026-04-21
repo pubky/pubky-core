@@ -116,8 +116,8 @@ impl AdminServer {
             context.sql_db.clone(),
             context.file_service.clone(),
             &password,
+            context.user_service.clone(),
         )
-        .with_user_quota_cache(context.user_quota_cache.clone())
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
             &context.config_toml,
@@ -203,6 +203,7 @@ mod tests {
                 context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
+                context.user_service.clone(),
             ),
             "test",
         ))
@@ -561,7 +562,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_generate_signup_token_with_limits() {
         use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let context = AppContext::test().await;
         let server = create_test_server(&context);

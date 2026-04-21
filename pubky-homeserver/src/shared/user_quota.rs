@@ -1,26 +1,22 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+//! Per-user quota domain types.
+//!
+//! These types model the per-user overrides for storage and bandwidth limits.
+//! They are shared across the codebase: persistence entities use them to
+//! convert raw DB columns into typed values, the service layer uses them for
+//! enforcement and caching, and route handlers use them for API serialization.
+//!
+//! Key types:
+//! - [`QuotaOverride<T>`] — three-state enum: Default / Unlimited / Value(T).
+//! - [`UserQuota`] — the full set of per-user quota fields.
+//! - [`UserQuotaPatch`] — partial update for PATCH semantics (absent = keep).
 
-use dashmap::DashMap;
-use pubky_common::crypto::PublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::data_directory::quota_config::BandwidthRate;
 
-/// How long a cached limit entry is considered fresh before re-resolving from DB.
-const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
-
-/// How long a negative (user-not-found) cache entry lives before re-checking the DB.
-/// Short TTL so that a subsequent signup populates limits promptly.
-const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(30);
-
 /// Maximum length of the VARCHAR column used for rate strings in the DB.
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_quota_columns` migration.
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
-
-/// Maximum number of entries in the user limits cache. Prevents unbounded memory
-/// growth from requests for many distinct users between periodic cleanup sweeps.
-pub const MAX_CACHED_USER_QUOTAS: usize = 100_000;
 
 /// A three-state override for per-user quota fields.
 ///
@@ -173,152 +169,8 @@ impl QuotaOverride<BandwidthRate> {
     }
 }
 
-/// A cached user limit config with an expiry timestamp.
-#[derive(Debug, Clone)]
-pub struct CachedUserQuota {
-    /// The resolved limit configuration, or `None` for a negative (user-not-found) entry.
-    pub config: Option<UserQuota>,
-    cached_at: Instant,
-    ttl: Duration,
-}
-
-impl CachedUserQuota {
-    /// Wrap a resolved config with a fresh timestamp.
-    pub fn new(config: UserQuota) -> Self {
-        Self {
-            config: Some(config),
-            cached_at: Instant::now(),
-            ttl: CACHE_TTL,
-        }
-    }
-
-    /// Create a negative cache entry (user not found) with a shorter TTL.
-    pub fn not_found() -> Self {
-        Self {
-            config: None,
-            cached_at: Instant::now(),
-            ttl: NEGATIVE_CACHE_TTL,
-        }
-    }
-
-    /// Returns true if this entry has exceeded its TTL.
-    pub fn is_expired(&self) -> bool {
-        self.cached_at.elapsed() > self.ttl
-    }
-}
-
-/// Shared cache for resolved per-user quota overrides.
-///
-/// Wraps a `DashMap` plus a `SqlDb` reference so that cache misses can
-/// be resolved from the database. Also manages its own periodic
-/// cleanup task (expires stale entries).
-#[derive(Debug, Clone)]
-pub struct UserQuotaCache {
-    entries: Arc<DashMap<PublicKey, CachedUserQuota>>,
-    sql_db: crate::persistence::sql::SqlDb,
-}
-
-impl UserQuotaCache {
-    /// Create a new cache and spawn a background cleanup task.
-    /// The cleanup task self-terminates when the cache is dropped (Weak::upgrade fails).
-    pub fn new(sql_db: crate::persistence::sql::SqlDb) -> Self {
-        let entries: Arc<DashMap<PublicKey, CachedUserQuota>> = Arc::new(DashMap::new());
-
-        let weak = Arc::downgrade(&entries);
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
-            interval.tick().await; // skip first immediate tick
-            loop {
-                interval.tick().await;
-                let Some(map) = weak.upgrade() else {
-                    break;
-                };
-                map.retain(|_, entry| !entry.is_expired());
-            }
-        });
-
-        Self { entries, sql_db }
-    }
-
-    /// Resolve the effective quota for a user, checking the cache first and
-    /// falling back to the database on a miss.
-    ///
-    /// Returns `Ok(Some(config))` for known users, `Ok(None)` for unknown users,
-    /// or `Err` if the DB query fails.
-    ///
-    /// ## Cache capacity behaviour
-    ///
-    /// The cache is bounded by [`MAX_CACHED_USER_QUOTAS`]. When a miss
-    /// occurs at capacity, expired entries are evicted first. If the cache is
-    /// still full after eviction, 10% of entries are evicted (arbitrary order)
-    /// to make room in bulk and avoid per-request churn.
-    pub async fn resolve(&self, pubkey: &PublicKey) -> Result<Option<UserQuota>, sqlx::Error> {
-        use crate::persistence::sql::user::UserRepository;
-
-        // Check cache: use entry if present and not expired.
-        let cached = self
-            .entries
-            .get(pubkey)
-            .filter(|entry| !entry.is_expired())
-            .map(|entry| entry.config.clone());
-
-        if let Some(maybe_config) = cached {
-            return Ok(maybe_config);
-        }
-
-        // Cache miss or expired — query DB.
-        self.entries.remove(pubkey);
-
-        // Make room if at capacity.
-        if self.entries.len() >= MAX_CACHED_USER_QUOTAS {
-            self.entries.retain(|_, entry| !entry.is_expired());
-
-            if self.entries.len() >= MAX_CACHED_USER_QUOTAS {
-                let to_evict = MAX_CACHED_USER_QUOTAS / 10;
-                let keys: Vec<_> = self
-                    .entries
-                    .iter()
-                    .take(to_evict.max(1))
-                    .map(|entry| entry.key().clone())
-                    .collect();
-                for key in keys {
-                    self.entries.remove(&key);
-                }
-            }
-        }
-
-        match UserRepository::get(pubkey, &mut self.sql_db.pool().into()).await {
-            Ok(user) => {
-                let resolved = user.quota();
-                self.entries
-                    .insert(pubkey.clone(), CachedUserQuota::new(resolved.clone()));
-                Ok(Some(resolved))
-            }
-            Err(sqlx::Error::RowNotFound) => {
-                self.entries
-                    .insert(pubkey.clone(), CachedUserQuota::not_found());
-                Ok(None)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Insert or replace a cache entry for a user (e.g. after signup).
-    pub fn insert(&self, pubkey: PublicKey, entry: CachedUserQuota) {
-        self.entries.insert(pubkey, entry);
-    }
-
-    /// Evict a specific user's entry from the cache (e.g. after an admin update).
-    pub fn remove(&self, pubkey: &PublicKey) {
-        self.entries.remove(pubkey);
-    }
-}
-
-/// How often the background task runs to evict expired cache entries.
-const CLEANUP_INTERVAL_SECS: u64 = 60;
-
-/// Validate that a `BandwidthRate` value survives a Display → FromStr roundtrip
-/// and fits in the DB column.
+/// Validate that a `BandwidthRate` value can be persisted: its string form
+/// must fit the DB column and parse back to the same rate.
 fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthRate>) -> Result<(), String> {
     if let QuotaOverride::Value(ref b) = field {
         let s = b.to_string();
@@ -434,9 +286,11 @@ impl UserQuota {
         self.rate_write_burst.map(|v| v as i32)
     }
 
-    /// Validate that rate fields survive a Display → FromStr roundtrip,
-    /// and that burst fields are only set when a corresponding rate is present.
-    pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
+    /// Check that the quota fields are internally consistent:
+    /// - Rate values can be persisted (fit in the DB column).
+    /// - Burst overrides have a corresponding rate `Value`.
+    /// - Burst values are > 0.
+    pub fn validate(&self) -> Result<(), String> {
         validate_rate_value("rate_read", &self.rate_read)?;
         validate_rate_value("rate_write", &self.rate_write)?;
         validate_burst("rate_read_burst", self.rate_read_burst, &self.rate_read)?;
@@ -517,8 +371,13 @@ pub struct UserQuotaPatch {
 }
 
 impl UserQuotaPatch {
-    /// Validate that any rate fields with values survive a roundtrip.
-    pub fn validate_rate_roundtrips(&self) -> Result<(), String> {
+    /// Check that the patch fields are individually valid:
+    /// - Rate values can be persisted (fit in the DB column).
+    /// - Burst values are > 0.
+    ///
+    /// Note: does not check cross-field constraints (e.g. burst requires a
+    /// corresponding rate). Use [`UserQuota::validate`] on the merged config.
+    pub fn validate(&self) -> Result<(), String> {
         if let Some(ref field) = self.rate_read {
             validate_rate_value("rate_read", field)?;
         }
@@ -816,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rate_roundtrips_valid_budgets() {
+    fn test_validate_valid_rates() {
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
             let q = UserQuota {
@@ -824,20 +683,20 @@ mod tests {
                 rate_write: QuotaOverride::Value(BandwidthRate::from_str(s).unwrap()),
                 ..Default::default()
             };
-            q.validate_rate_roundtrips().unwrap_or_else(|e| {
+            q.validate().unwrap_or_else(|e| {
                 panic!("Budget \"{s}\" should pass validation but got: {e}");
             });
         }
     }
 
     #[test]
-    fn test_validate_rate_roundtrips_skips_non_value() {
+    fn test_validate_skips_non_value() {
         let q = UserQuota {
             rate_read: QuotaOverride::Default,
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
-        assert!(q.validate_rate_roundtrips().is_ok());
+        assert!(q.validate().is_ok());
     }
 
     // ── Patch tests ──
@@ -942,7 +801,7 @@ mod tests {
             rate_read_burst: Some(50),
             ..Default::default()
         };
-        assert!(q.validate_rate_roundtrips().is_ok());
+        assert!(q.validate().is_ok());
     }
 
     #[test]
@@ -952,7 +811,7 @@ mod tests {
             rate_read_burst: Some(0),
             ..Default::default()
         };
-        let err = q.validate_rate_roundtrips().unwrap_err();
+        let err = q.validate().unwrap_err();
         assert!(err.contains("rate_read_burst"), "error: {err}");
         assert!(err.contains("greater than 0"), "error: {err}");
     }
@@ -964,7 +823,7 @@ mod tests {
             rate_read_burst: Some(50),
             ..Default::default()
         };
-        let err = q.validate_rate_roundtrips().unwrap_err();
+        let err = q.validate().unwrap_err();
         assert!(err.contains("rate_read_burst"), "error: {err}");
     }
 
@@ -975,7 +834,7 @@ mod tests {
             rate_write_burst: Some(50),
             ..Default::default()
         };
-        let err = q.validate_rate_roundtrips().unwrap_err();
+        let err = q.validate().unwrap_err();
         assert!(err.contains("rate_write_burst"), "error: {err}");
     }
 
@@ -992,14 +851,14 @@ mod tests {
                 rate_read_burst: None,
                 ..Default::default()
             };
-            assert!(q.validate_rate_roundtrips().is_ok());
+            assert!(q.validate().is_ok());
         }
     }
 
     #[test]
     fn test_patch_burst_zero_rejected() {
         let patch: UserQuotaPatch = serde_json::from_str(r#"{"rate_read_burst": 0}"#).unwrap();
-        let err = patch.validate_rate_roundtrips().unwrap_err();
+        let err = patch.validate().unwrap_err();
         assert!(err.contains("rate_read_burst"), "error: {err}");
         assert!(err.contains("greater than 0"), "error: {err}");
     }
@@ -1008,13 +867,13 @@ mod tests {
     fn test_patch_burst_null_valid() {
         // null → Some(None) → reset to default, always valid
         let patch: UserQuotaPatch = serde_json::from_str(r#"{"rate_read_burst": null}"#).unwrap();
-        assert!(patch.validate_rate_roundtrips().is_ok());
+        assert!(patch.validate().is_ok());
     }
 
     #[test]
     fn test_patch_burst_positive_valid() {
         let patch: UserQuotaPatch = serde_json::from_str(r#"{"rate_read_burst": 50}"#).unwrap();
-        assert!(patch.validate_rate_roundtrips().is_ok());
+        assert!(patch.validate().is_ok());
     }
 
     #[test]

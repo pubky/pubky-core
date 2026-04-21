@@ -8,7 +8,7 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::persistence::sql::UnifiedExecutor;
-use crate::persistence::user_quota::UserQuota;
+use crate::shared::user_quota::UserQuota;
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
@@ -26,9 +26,7 @@ impl SignupCodeRepository {
         limits: &UserQuota,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
-        limits
-            .validate_rate_roundtrips()
-            .map_err(sqlx::Error::InvalidArgument)?;
+        limits.validate().map_err(sqlx::Error::InvalidArgument)?;
 
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
@@ -331,7 +329,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_create_with_quota() {
         use crate::data_directory::quota_config::BandwidthRate;
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
@@ -449,7 +447,7 @@ mod tests {
     async fn test_signup_token_limits_applied_to_user() {
         use crate::data_directory::quota_config::BandwidthRate;
         use crate::persistence::sql::user::UserRepository;
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
         let db = SqlDb::test().await;

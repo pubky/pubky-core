@@ -4,42 +4,11 @@ use std::sync::Arc;
 use pubky_common::crypto::PublicKey;
 
 use crate::persistence::files::utils::ensure_valid_path;
-use crate::persistence::sql::SqlDb;
-use crate::persistence::sql::{
-    uexecutor,
-    user::{UserEntity, UserRepository},
-};
+use crate::persistence::sql::uexecutor;
+use crate::services::user_service::{UserService, FILE_METADATA_SIZE};
 use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
-
-/// A rough estimate of the size of the file metadata.
-/// This is added to every file.
-/// This prevents the user from writing zero byte files that don't count against the quota.
-pub(crate) const FILE_METADATA_SIZE: u64 = 256;
-
-/// Check that adding `bytes_delta` to the current usage would not exceed the
-/// per-user storage quota.
-///
-/// - `None` → no limit, skip check (Ok)
-/// - `Some(mb)` → enforce limit
-fn check_quota_not_exceeded(
-    current_bytes: u64,
-    bytes_delta: i64,
-    quota: Option<u64>,
-) -> opendal::Result<()> {
-    if let Some(mb) = quota {
-        let quota_bytes = mb.saturating_mul(1024 * 1024);
-        let new_total = current_bytes as i128 + bytes_delta as i128;
-        if new_total > 0 && (new_total as u64) > quota_bytes {
-            return Err(opendal::Error::new(
-                opendal::ErrorKind::RateLimited,
-                "User quota exceeded",
-            ));
-        }
-    }
-    Ok(())
-}
 
 /// The user quota layer wraps the operator and updates the user quota when a file is written or deleted.
 /// It is used to limit the amount of data that a user can store in the homeserver.
@@ -50,20 +19,12 @@ fn check_quota_not_exceeded(
 /// (from config), `Unlimited` means no limit, and `Value(n)` means n MB.
 #[derive(Clone)]
 pub struct UserQuotaLayer {
-    pub(crate) db: SqlDb,
-    /// System-wide default storage quota (MB) from config
-    pub(crate) default_storage_quota_mb: Option<u64>,
+    user_service: UserService,
 }
 
 impl UserQuotaLayer {
-    /// Create a new quota layer.
-    ///
-    /// `default_storage_quota_mb`: the global default from config (`None` = unlimited).
-    pub fn new(db: SqlDb, default_storage_quota_mb: Option<u64>) -> Self {
-        Self {
-            db,
-            default_storage_quota_mb,
-        }
+    pub fn new(user_service: UserService) -> Self {
+        Self { user_service }
     }
 }
 
@@ -73,8 +34,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
     fn layer(&self, inner: A) -> Self::LayeredAccess {
         UserQuotaAccessor {
             inner: Arc::new(inner),
-            db: self.db.clone(),
-            default_storage_quota_mb: self.default_storage_quota_mb,
+            user_service: self.user_service.clone(),
         }
     }
 }
@@ -82,8 +42,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
 #[derive(Debug, Clone)]
 pub struct UserQuotaAccessor<A: Access> {
     inner: Arc<A>,
-    db: SqlDb,
-    default_storage_quota_mb: Option<u64>,
+    user_service: UserService,
 }
 
 impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
@@ -114,11 +73,10 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
             rp,
             WriterWrapper {
                 inner: writer,
-                db: self.db.clone(),
+                user_service: self.user_service.clone(),
                 bytes_count: 0,
                 entry_path,
                 inner_accessor: self.inner.clone(),
-                default_storage_quota_mb: self.default_storage_quota_mb,
             },
         ))
     }
@@ -145,7 +103,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
             rp,
             DeleterWrapper {
                 inner: deleter,
-                db: self.db.clone(),
+                user_service: self.user_service.clone(),
                 inner_accessor: self.inner.clone(),
                 path_queue: Vec::new(),
             },
@@ -165,11 +123,10 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
 /// Wrapper around the writer that updates the user quota when the file is closed.
 pub struct WriterWrapper<R, A: Access> {
     inner: R,
-    db: SqlDb,
+    user_service: UserService,
     bytes_count: u64,
     entry_path: EntryPath,
     inner_accessor: Arc<A>,
-    default_storage_quota_mb: Option<u64>,
 }
 
 impl<R, A: Access> WriterWrapper<R, A> {
@@ -207,21 +164,22 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
 
     async fn close(&mut self) -> Result<opendal::Metadata> {
         let mut tx = self
-            .db
+            .user_service
             .pool()
             .begin()
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         // Lock the user row to serialize concurrent writes and prevent quota bypass.
-        let mut user: UserEntity =
-            UserRepository::get_for_update(self.entry_path.pubkey(), &mut (&mut tx).into())
-                .await
-                .map_err(|e| {
-                    opendal::Error::new(
-                        opendal::ErrorKind::Unexpected,
-                        format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
-                    )
-                })?;
+        let mut user = self
+            .user_service
+            .get_for_update(self.entry_path.pubkey(), uexecutor!(tx))
+            .await
+            .map_err(|e| {
+                opendal::Error::new(
+                    opendal::ErrorKind::Unexpected,
+                    format!("Failed to get user {}: {}", self.entry_path.pubkey(), e),
+                )
+            })?;
 
         let (current_file_size, file_already_exists) = self.get_current_file_size().await?;
         let bytes_delta = if file_already_exists {
@@ -230,17 +188,20 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             self.bytes_count as i64 - current_file_size as i64 + FILE_METADATA_SIZE as i64
         };
 
-        check_quota_not_exceeded(
-            user.used_bytes,
-            bytes_delta,
-            user.quota()
-                .storage_quota_mb
-                .resolve_with_default(self.default_storage_quota_mb),
-        )?;
+        if self
+            .user_service
+            .would_exceed_storage_quota(&user, bytes_delta)
+        {
+            return Err(opendal::Error::new(
+                opendal::ErrorKind::RateLimited,
+                "User quota exceeded",
+            ));
+        }
 
         let metadata = self.inner.close().await?;
         user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
-        UserRepository::update(&user, uexecutor!(tx))
+        self.user_service
+            .update(&user, uexecutor!(tx))
             .await
             .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
         tx.commit()
@@ -303,7 +264,7 @@ impl DeletePath {
 /// or batched (GCS does 100 paths per batch).
 pub struct DeleterWrapper<R, A: Access> {
     inner: R,
-    db: SqlDb,
+    user_service: UserService,
     inner_accessor: Arc<A>,
     path_queue: Vec<DeletePath>,
 }
@@ -319,13 +280,16 @@ impl<R, A: Access> DeleterWrapper<R, A> {
                 .push(path);
         }
 
-        // TODO: Update user quota for each user
         for (user_pubkey, paths) in user_paths {
             let mut tx =
-                self.db.pool().begin().await.map_err(|e| {
+                self.user_service.pool().begin().await.map_err(|e| {
                     opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string())
                 })?;
-            let mut user = match UserRepository::get(&user_pubkey, uexecutor!(tx)).await {
+            let mut user = match self
+                .user_service
+                .get_for_update(&user_pubkey, uexecutor!(tx))
+                .await
+            {
                 Ok(user) => user,
                 Err(sqlx::Error::RowNotFound) => {
                     // User does not exist in the database, so we don't update the quota.
@@ -347,7 +311,8 @@ impl<R, A: Access> DeleterWrapper<R, A> {
             let bytes_delta = (total_bytes + files_deleted_count * FILE_METADATA_SIZE) as i64;
 
             user.used_bytes = user.used_bytes.saturating_add_signed(-bytes_delta);
-            UserRepository::update(&user, uexecutor!(tx))
+            self.user_service
+                .update(&user, uexecutor!(tx))
                 .await
                 .map_err(|e| opendal::Error::new(opendal::ErrorKind::Unexpected, e.to_string()))?;
             tx.commit()
@@ -401,9 +366,15 @@ mod tests {
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_memory_operator, OpendalTestOperators,
     };
-    use crate::persistence::user_quota::UserQuota;
+    use crate::persistence::sql::user::UserRepository;
+    use crate::persistence::sql::SqlDb;
+    use crate::shared::user_quota::UserQuota;
 
     use super::*;
+
+    fn test_user_service(db: &SqlDb, default_quota_mb: Option<u64>) -> UserService {
+        UserService::new(db.clone(), default_quota_mb)
+    }
 
     async fn get_user_data_usage(db: &SqlDb, user_pubkey: &PublicKey) -> anyhow::Result<u64> {
         let user = UserRepository::get(user_pubkey, &mut db.pool().into())
@@ -417,7 +388,7 @@ mod tests {
     async fn test_ensure_valid_path() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let layer = UserQuotaLayer::new(db.clone(), None);
+            let layer = UserQuotaLayer::new(test_user_service(&db, None));
             let operator = operator.layer(layer);
 
             operator
@@ -459,7 +430,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_quota_updated_write_delete() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), None);
+        let layer = UserQuotaLayer::new(test_user_service(&db, None));
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
@@ -527,7 +498,7 @@ mod tests {
 
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
-        let user_quota_layer = UserQuotaLayer::new(db.clone(), None);
+        let user_quota_layer = UserQuotaLayer::new(test_user_service(&db, None));
         let entry_layer = EntryLayer::new(db.clone());
         let events_layer = EventsLayer::new(db.clone(), events_service);
         let operator = get_memory_operator()
@@ -617,11 +588,11 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_override_variants() {
-        use crate::persistence::user_quota::QuotaOverride;
+        use crate::shared::user_quota::QuotaOverride;
 
         let db = SqlDb::test().await;
         // System default: 1 MB
-        let layer = UserQuotaLayer::new(db.clone(), Some(1));
+        let layer = UserQuotaLayer::new(test_user_service(&db, Some(1)));
         let operator = get_memory_operator().layer(layer);
 
         // ── Value(1) — explicit 1 MB limit ──
@@ -673,7 +644,7 @@ mod tests {
 
         // ── Default with no system default — unlimited ──
         let db2 = SqlDb::test().await;
-        let layer_no_default = UserQuotaLayer::new(db2.clone(), None);
+        let layer_no_default = UserQuotaLayer::new(test_user_service(&db2, None));
         let op_no_default = get_memory_operator().layer(layer_no_default);
 
         let pk_no_default = pubky_common::crypto::Keypair::random().public_key();
@@ -718,7 +689,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_storage_quota_change_takes_effect() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(db.clone(), None);
+        let layer = UserQuotaLayer::new(test_user_service(&db, None));
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
@@ -735,7 +706,7 @@ mod tests {
 
         // Admin raises quota to 1 MB
         let config = UserQuota {
-            storage_quota_mb: crate::persistence::user_quota::QuotaOverride::Value(1),
+            storage_quota_mb: crate::shared::user_quota::QuotaOverride::Value(1),
             ..Default::default()
         };
         UserRepository::set_quota(user.id, &config, &mut db.pool().into())

@@ -2,7 +2,7 @@ use crate::metrics_server::routes::metrics::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
-use crate::persistence::user_quota::UserQuotaCache;
+use crate::services::user_service::UserService;
 use crate::SignupMode;
 use pubky_common::auth::AuthVerifier;
 
@@ -15,6 +15,6 @@ pub(crate) struct AppState {
     pub(crate) signup_mode: SignupMode,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
-    /// Shared cache for resolved per-user limits (used by rate limiter).
-    pub(crate) user_quota_cache: UserQuotaCache,
+    /// User service for quota resolution, user creation, and cache access.
+    pub(crate) user_service: UserService,
 }

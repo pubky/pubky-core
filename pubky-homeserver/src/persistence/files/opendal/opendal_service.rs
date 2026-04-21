@@ -11,6 +11,7 @@ use crate::{
         },
         sql::SqlDb,
     },
+    services::user_service::UserService,
     shared::webdav::EntryPath,
     storage_config::{StorageConfigToml, StorageToml},
 };
@@ -29,8 +30,9 @@ pub fn build_storage_operator(
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
+    user_service: UserService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone(), storage_config.default_quota_mb);
+    let user_quota_layer = UserQuotaLayer::new(user_service);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
@@ -89,6 +91,7 @@ pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Opera
         context.data_dir.path(),
         &context.sql_db,
         context.events_service.clone(),
+        context.user_service.clone(),
     )
 }
 
@@ -111,8 +114,15 @@ impl OpendalService {
         data_directory: &Path,
         db: &SqlDb,
         events_service: EventsService,
+        user_service: UserService,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(storage_config, data_directory, db, events_service)?;
+        let operator = build_storage_operator(
+            storage_config,
+            data_directory,
+            db,
+            events_service,
+            user_service,
+        )?;
         Ok(Self { operator })
     }
 

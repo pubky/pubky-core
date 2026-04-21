@@ -1,7 +1,8 @@
 use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
-use crate::persistence::{files::FileService, sql::SqlDb, user_quota::UserQuotaCache};
+use crate::persistence::{files::FileService, sql::SqlDb};
+use crate::services::user_service::UserService;
 use crate::ConfigToml;
 
 #[derive(Clone, Default)]
@@ -19,12 +20,17 @@ pub(crate) struct AppState {
     pub(crate) admin_password: String,
     pub(crate) inner_dav_handler: DavHandler,
     pub(crate) metadata: AdminMetadata,
-    /// Shared cache for resolved user limits
-    pub(crate) user_quota_cache: UserQuotaCache,
+    /// User service for quota cache eviction on admin updates.
+    pub(crate) user_service: UserService,
 }
 
 impl AppState {
-    pub fn new(sql_db: SqlDb, file_service: FileService, admin_password: &str) -> Self {
+    pub fn new(
+        sql_db: SqlDb,
+        file_service: FileService,
+        admin_password: &str,
+        user_service: UserService,
+    ) -> Self {
         let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
@@ -32,20 +38,14 @@ impl AppState {
             .strip_prefix("/dav")
             .autoindex(true)
             .build_handler();
-        let user_quota_cache = UserQuotaCache::new(sql_db.clone());
         Self {
             sql_db,
             file_service,
             admin_password: admin_password.to_string(),
             inner_dav_handler,
             metadata: AdminMetadata::default(),
-            user_quota_cache,
+            user_service,
         }
-    }
-
-    pub fn with_user_quota_cache(mut self, cache: UserQuotaCache) -> Self {
-        self.user_quota_cache = cache;
-        self
     }
 
     pub fn with_metadata_from_config(
