@@ -5,6 +5,7 @@
 //! record. The SDK refreshes the JWT transparently using the stored grant
 //! and a fresh `PoP` proof.
 
+use std::any::Any;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -21,7 +22,8 @@ use pubky_common::{
 use reqwest::{Method, RequestBuilder};
 use tokio::sync::Mutex;
 
-use super::super::{SessionCredential, credential_session_missing};
+use crate::actors::session::core::PubkySession;
+use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
     PubkyHttpClient,
     actors::session::SessionInfo,
@@ -69,7 +71,7 @@ pub(crate) struct JwtState {
 /// same refreshes. Session info is derived from the immutable grant and
 /// never changes.
 #[derive(Clone, Debug)]
-pub(crate) struct JwtCredential {
+pub struct JwtCredential {
     pub(crate) state: Arc<Mutex<JwtState>>,
     pub(crate) info: SessionInfo,
 }
@@ -159,8 +161,8 @@ impl JwtCredential {
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
 // for tokio, WASM uses `?Send` because `wasm-bindgen-futures` are not
-// `Send`. See `super::super::credential::SessionCredential` for the full
-// rationale.
+// `Send`. See [`crate::actors::session::credential::SessionCredential`] for
+// the full rationale.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for JwtCredential {
@@ -235,8 +237,21 @@ impl SessionCredential for JwtCredential {
         Ok(Some(to_session_info(&session)))
     }
 
-    fn as_jwt(&self) -> Option<&JwtCredential> {
-        Some(self)
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl PubkySession {
+    /// Build a JWT-backed [`PubkySession`] from a [`JwtCredential`].
+    ///
+    /// Typical use: after
+    /// [`PubkyJwtAuthFlow::await_credential`](crate::PubkyJwtAuthFlow::await_credential)
+    /// returns a credential you want to hold separately, this lifts it into
+    /// a full session bound to the given HTTP client.
+    #[must_use]
+    pub fn from_jwt_credential(client: PubkyHttpClient, credential: JwtCredential) -> Self {
+        Self::from_credential(client, Arc::new(credential))
     }
 }
 

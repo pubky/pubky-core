@@ -12,8 +12,6 @@
 //! [`PubkySession::as_jwt`](crate::actors::session::core::PubkySession::as_jwt)
 //! and only compile when the credential is JWT.
 
-use std::sync::Arc;
-
 use pubky_common::{
     auth::{grant::GrantClaims, grant_session::GrantSessionResponse},
     crypto::{Keypair, PublicKey},
@@ -21,7 +19,6 @@ use pubky_common::{
 use reqwest::Method;
 
 use super::credential::{JwtCredential, sign_pop_for_grant};
-use super::super::SessionCredential;
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
 use crate::util::check_http_status;
@@ -42,7 +39,7 @@ pub(crate) enum GrantExchangeMode {
 /// Establish a JWT-backed session by exchanging a user-signed grant for
 /// an access JWT at the user's homeserver.
 ///
-/// Used by [`PubkyAuthFlow`](crate::PubkyAuthFlow) once the signer (Ring)
+/// Used by [`PubkyJwtAuthFlow`](crate::PubkyJwtAuthFlow) once the signer (Ring)
 /// has delivered an encrypted grant via the relay channel.
 ///
 /// # Errors
@@ -55,7 +52,7 @@ pub(crate) async fn credential_from_grant_exchange(
     grant_claims: GrantClaims,
     client_keypair: Keypair,
     homeserver_pubkey: PublicKey,
-) -> Result<Arc<dyn SessionCredential>> {
+) -> Result<JwtCredential> {
     cross_log!(
         info,
         "Exchanging grant for JWT credential (user={}, hs={})",
@@ -71,7 +68,7 @@ pub(crate) async fn credential_from_grant_exchange(
         &GrantExchangeMode::Signin,
     )
     .await?;
-    credential_from_grant_response(
+    JwtCredential::from_response(
         response,
         grant_jws,
         grant_claims,
@@ -90,7 +87,7 @@ pub(crate) async fn credential_from_grant_signup(
     client_keypair: Keypair,
     homeserver_pk: PublicKey,
     signup_token: Option<&str>,
-) -> Result<Arc<dyn SessionCredential>> {
+) -> Result<JwtCredential> {
     cross_log!(
         info,
         "Signup grant for JWT credential (user={}, hs={})",
@@ -108,31 +105,13 @@ pub(crate) async fn credential_from_grant_signup(
         },
     )
     .await?;
-    credential_from_grant_response(
+    JwtCredential::from_response(
         response,
         grant_jws,
         grant_claims,
         client_keypair,
         homeserver_pk,
     )
-}
-
-fn credential_from_grant_response(
-    response: GrantSessionResponse,
-    grant_jws: String,
-    grant_claims: GrantClaims,
-    client_keypair: Keypair,
-    homeserver_pk: PublicKey,
-) -> Result<Arc<dyn SessionCredential>> {
-    let credential = JwtCredential::from_response(
-        response,
-        grant_jws,
-        grant_claims,
-        client_keypair,
-        homeserver_pk,
-    )?;
-    let credential: Arc<dyn SessionCredential> = Arc::new(credential);
-    Ok(credential)
 }
 
 /// `POST` a grant + `PoP` proof to either `/auth/jwt/session` or

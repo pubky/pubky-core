@@ -13,8 +13,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pubky_common::{capabilities::Capabilities, crypto::PublicKey, session::CookieSessionRecord};
 
 use super::credential::CookieCredential;
-use super::super::SessionCredential;
 use crate::actors::session::core::PubkySession;
+use crate::actors::session::credential::SessionCredential;
 use crate::errors::{AuthError, RequestError};
 use crate::{PubkyHttpClient, Result, cross_log};
 

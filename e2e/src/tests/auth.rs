@@ -1,6 +1,8 @@
 use pubky_testnet::pubky::deep_links::DeepLink;
+#[allow(deprecated, reason = "E2E tests cover the deprecated cookie flow")]
+use pubky_testnet::pubky::PubkyCookieAuthFlow;
 use pubky_testnet::pubky::{
-    AuthFlowKind, ClientId, Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession,
+    AuthFlowKind, ClientId, Keypair, Method, PubkyHttpClient, PubkyJwtAuthFlow, PubkySession,
     StatusCode,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
@@ -112,6 +114,7 @@ async fn disabled_user() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn authz() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -126,7 +129,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
+    let auth = PubkyCookieAuthFlow::builder(&caps, AuthFlowKind::signin())
         .relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
@@ -190,6 +193,7 @@ async fn authz() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn signup_authz() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -204,7 +208,7 @@ async fn signup_authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(
+    let auth = PubkyCookieAuthFlow::builder(
         &caps,
         AuthFlowKind::signup(server.public_key(), Some("1234567890".to_string())),
     )
@@ -341,6 +345,7 @@ async fn multiple_users() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn authz_timeout_reconnect() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -362,7 +367,7 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::signin())
+    let auth = PubkyCookieAuthFlow::builder(&capabilities, AuthFlowKind::signin())
         .client(client)
         .relay(http_relay_url)
         .start()
@@ -746,7 +751,7 @@ async fn test_republish_homeserver() {
 // JWT (grant + Proof-of-Possession) auth flow tests
 // =====================================================================
 //
-// These exercise the full client_id / cpk pipeline: PubkyAuthFlow generates a client keypair, the signer
+// These exercise the full client_id / cpk pipeline: PubkyJwtAuthFlow generates a client keypair, the signer
 // (Ring) signs a `pubky-grant` JWS, the homeserver mints an Access JWT, and
 // the SDK transparently attaches `Authorization: Bearer ...` on every
 // subsequent request.
@@ -764,14 +769,14 @@ async fn authz_jwt_happy_path() {
     signer.signup(&server.public_key(), None).await.unwrap();
 
     // 2. Third-party app starts an auth flow with a `client_id` — this
-    //    switches PubkyAuthFlow into grant + JWT mode and emits a deep link
+    //    uses PubkyJwtAuthFlow (grant + JWT mode) which emits a deep link
     //    with `cid` and `cpk` query params.
     let caps = Capabilities::builder()
         .read_write("/pub/pubky.app/")
         .read("/pub/foo.bar/file")
         .finish();
     let app_kp = Keypair::random();
-    let auth = PubkyAuthFlow::jwt_builder(
+    let auth = PubkyJwtAuthFlow::builder(
         &caps,
         AuthFlowKind::signin(),
         ClientId::new("test.app").unwrap(),
@@ -844,7 +849,7 @@ async fn jwt_proactive_refresh_produces_fresh_token() {
     signer.signup(&server.public_key(), None).await.unwrap();
 
     let caps = Capabilities::builder().cap(Capability::root()).finish();
-    let auth = PubkyAuthFlow::jwt_builder(
+    let auth = PubkyJwtAuthFlow::builder(
         &caps,
         AuthFlowKind::signin(),
         ClientId::new("refresh.test").unwrap(),
@@ -1047,7 +1052,7 @@ async fn jwt_signup_grant_flow() {
     let caps = Capabilities::builder()
         .read_write("/pub/signup.app/")
         .finish();
-    let auth = PubkyAuthFlow::jwt_builder(
+    let auth = PubkyJwtAuthFlow::builder(
         &caps,
         AuthFlowKind::signup(server.public_key(), None),
         ClientId::new("signup.app").unwrap(),
@@ -1095,7 +1100,7 @@ async fn jwt_signin_helper(
     client_id: &'static str,
     caps: Capabilities,
 ) -> PubkySession {
-    let auth = PubkyAuthFlow::jwt_builder(
+    let auth = PubkyJwtAuthFlow::builder(
         &caps,
         AuthFlowKind::signin(),
         ClientId::new(client_id).unwrap(),

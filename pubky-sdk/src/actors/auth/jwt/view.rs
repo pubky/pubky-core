@@ -24,6 +24,19 @@ pub struct JwtSessionView<'a> {
     credential: &'a JwtCredential,
 }
 
+impl PubkySession {
+    /// Returns a [`JwtSessionView`] if this session is JWT-backed.
+    ///
+    /// JWT-only operations (`list_grants`, `revoke_grant`, `current_jwt`,
+    /// `force_refresh`, `grant_id`) live on the view. Cookie-backed sessions
+    /// return `None`.
+    #[must_use]
+    pub fn as_jwt(&self) -> Option<JwtSessionView<'_>> {
+        self.try_downcast_credential::<JwtCredential>()
+            .map(|c| JwtSessionView::new(self, c))
+    }
+}
+
 impl<'a> JwtSessionView<'a> {
     pub(crate) const fn new(session: &'a PubkySession, credential: &'a JwtCredential) -> Self {
         Self {

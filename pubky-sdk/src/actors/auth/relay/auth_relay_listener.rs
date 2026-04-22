@@ -6,7 +6,7 @@ use url::Url;
 
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use super::{
-    super::approval::AuthRelayMessage, http_relay_inbox_channel::EncryptedHttpRelayInboxChannel,
+    AuthRelayMessage, http_relay_inbox_channel::EncryptedHttpRelayInboxChannel,
     http_relay_link_channel::EncryptedHttpRelayLinkChannel,
 };
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
@@ -348,20 +348,9 @@ mod tests {
             .unwrap();
         let poll_handle = tokio::spawn(async move {
             let response = listener.await_message().await.unwrap();
-            let approval = crate::actors::auth::approval::AuthApproval::decode(
-                &response,
-                crate::actors::auth::approval::AuthApprovalMode::LegacyToken,
-            )
-            .unwrap();
-
-            match approval {
-                crate::actors::auth::approval::AuthApproval::Legacy(decoded) => {
-                    assert_eq!(*decoded, token)
-                }
-                crate::actors::auth::approval::AuthApproval::Grant { .. } => {
-                    panic!("expected legacy approval")
-                }
-            }
+            let approval = crate::actors::auth::cookie::approval::CookieApproval::decode(&response)
+                .unwrap();
+            assert_eq!(approval.0, token);
         });
 
         let (producer_result, poll_result) = tokio::join!(producer_handle, poll_handle);

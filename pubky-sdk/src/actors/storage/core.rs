@@ -1,5 +1,5 @@
 use crate::PublicKey;
-use crate::actors::session::credentials::SessionCredential;
+use crate::actors::session::credential::SessionCredential;
 use reqwest::{Method, RequestBuilder};
 use std::sync::Arc;
 

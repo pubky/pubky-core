@@ -40,9 +40,14 @@ pub use actors::SessionInfo;
 #[doc(inline)]
 pub use actors::deep_links;
 #[doc(inline)]
-pub use actors::{AuthFlowKind, PubkyAuthFlow};
+pub use actors::AuthFlowKind;
 #[doc(inline)]
-pub use actors::{CookieSessionView, JwtSessionView};
+#[allow(deprecated, reason = "Re-exporting deprecated public API")]
+pub use actors::PubkyCookieAuthFlow;
+#[doc(inline)]
+pub use actors::PubkyJwtAuthFlow;
+#[doc(inline)]
+pub use actors::{CookieCredential, CookieSessionView, JwtCredential, JwtSessionView};
 #[doc(inline)]
 pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
 #[doc(inline)]

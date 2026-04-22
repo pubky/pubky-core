@@ -23,6 +23,20 @@ pub struct CookieSessionView<'a> {
     credential: &'a CookieCredential,
 }
 
+impl PubkySession {
+    /// Returns a [`CookieSessionView`] if this session is cookie-backed.
+    ///
+    /// Cookie-only operations live on the view. JWT-backed sessions return
+    /// `None`. The view is available on every target — what differs by
+    /// runtime is whether the cookie secret is *capturable*: see
+    /// [`CookieSessionView::export_secret`].
+    #[must_use]
+    pub fn as_cookie(&self) -> Option<CookieSessionView<'_>> {
+        self.try_downcast_credential::<CookieCredential>()
+            .map(|c| CookieSessionView::new(self, c))
+    }
+}
+
 impl<'a> CookieSessionView<'a> {
     pub(crate) const fn new(session: &'a PubkySession, credential: &'a CookieCredential) -> Self {
         Self {

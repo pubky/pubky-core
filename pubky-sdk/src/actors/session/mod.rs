@@ -1,6 +1,5 @@
-pub(crate) mod bootstrap;
 pub(crate) mod core;
-pub(crate) mod credentials;
+pub(crate) mod credential;
 mod info;
 
 pub use info::SessionInfo;

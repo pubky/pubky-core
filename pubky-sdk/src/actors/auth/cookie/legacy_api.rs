@@ -4,8 +4,8 @@
 //! Preserves the older convenience methods (`export`, `import`,
 //! `import_secret`, `from_secret_file`, `write_secret_file`) that live
 //! directly on [`PubkySession`]. This module does not implement cookie
-//! mechanics itself — it delegates to [`super::auth_token`], [`super::secret`],
-//! and [`super::view::CookieSessionView`].
+//! mechanics itself — it delegates to [`super::secret`] and
+//! [`super::view::CookieSessionView`].
 
 use crate::actors::session::core::PubkySession;
 use crate::{PubkyHttpClient, Result};

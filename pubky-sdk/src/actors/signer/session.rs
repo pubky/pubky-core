@@ -6,7 +6,7 @@ use url::Url;
 
 use super::PubkySigner;
 use crate::{
-    Capabilities, Capability, PubkySession, PublicKey, Result, actors::session::credentials::{CookieCredential, cookie::credential}, cross_log, util::check_http_status
+    Capabilities, Capability, PubkySession, PublicKey, Result, actors::auth::cookie::CookieCredential, cross_log, util::check_http_status
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -81,7 +81,7 @@ impl PubkySigner {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         let token = AuthToken::sign(&self.keypair, capabilities);
         let credential = CookieCredential::from_auth_token(&token, &self.client).await?;
-        let session = PubkySession::from_credential(self.client.clone(), credential);
+        let session = PubkySession::from_cookie_credential(self.client.clone(), credential);
         cross_log!(
             info,
             "Signin completed for {}; mode {:?}",

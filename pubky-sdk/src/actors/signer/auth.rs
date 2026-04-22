@@ -30,7 +30,7 @@ impl PubkySigner {
     /// flow) to the relay channel encoded in a `pubkyauth://` URL.
     ///
     /// Typical usage:
-    /// - App constructs `PubkyAuthFlow` and subscribe, shows QR/deeplink.
+    /// - App constructs `PubkyCookieAuthFlow` or `PubkyJwtAuthFlow` and subscribes, shows QR/deeplink.
     /// - Signer calls `send_auth_token` with that URL.
     ///
     /// Requirements:

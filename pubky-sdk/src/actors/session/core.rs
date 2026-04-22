@@ -4,11 +4,7 @@ use pubky_common::crypto::PublicKey;
 
 use super::SessionInfo;
 
-use super::credentials::{
-    SessionCredential,
-    cookie::CookieSessionView,
-    jwt::JwtSessionView,
-};
+use super::credential::SessionCredential;
 use crate::errors::Error;
 use crate::{PubkyHttpClient, Result, SessionStorage, cross_log};
 
@@ -30,13 +26,11 @@ use crate::{PubkyHttpClient, Result, SessionStorage, cross_log};
 /// export), use the capability-view accessors [`Self::as_jwt`] and
 /// [`Self::as_cookie`].
 ///
-/// Credential-specific factory functions live in dedicated modules:
-/// - Cookie: [`super::credentials::cookie`] — `auth_token::credential_from_auth_token`,
-///   `auth_token::session_from_auth_token`, `auth_token::session_from_cookie_response`,
-///   `secret::import_session`, `secret::import_session_secret`,
-///   `secret::session_from_secret_file`
-/// - JWT: [`super::credentials::jwt::grant_exchange`] —
-///   `credential_from_grant_exchange`, `credential_from_grant_signup`
+/// Credential-specific factory functions live alongside each auth flow:
+/// - Cookie: [`crate::actors::auth::cookie`] — `CookieCredential::from_auth_token`
+///   and the `secret` module for rehydration helpers.
+/// - JWT: [`crate::actors::auth::jwt::grant_exchange`] —
+///   `credential_from_grant_exchange`, `credential_from_grant_signup`.
 ///
 /// Thin delegations on `PubkySession` (`export`, `import`, `import_secret`,
 /// `from_secret_file`) preserve the public API surface.
@@ -52,8 +46,8 @@ pub struct PubkySession {
 
 impl PubkySession {
     /// Build a session from a fully-formed credential. Used by the JWT-mode
-    /// constructors in [`super::credentials::jwt::grant_exchange`] and the
-    /// cookie constructors in [`super::credentials::cookie::auth_token`].
+    /// constructors in [`crate::actors::auth::jwt::grant_exchange`] and the
+    /// cookie constructors in [`crate::actors::auth::cookie`].
     pub(crate) fn from_credential(
         client: PubkyHttpClient,
         credential: Arc<dyn SessionCredential>,
@@ -82,6 +76,14 @@ impl PubkySession {
     /// Internal accessor for the credential.
     pub(crate) fn credential(&self) -> &Arc<dyn SessionCredential> {
         &self.credential
+    }
+
+    /// Generic downcast of the active credential to a concrete adapter type.
+    ///
+    /// Auth-side view accessors use this to reach a concrete credential
+    /// without the session layer naming it directly.
+    pub(crate) fn try_downcast_credential<T: SessionCredential + 'static>(&self) -> Option<&T> {
+        self.credential.as_any().downcast_ref::<T>()
     }
 
     /// User public key for this session (cheap clone of the cached snapshot).
@@ -126,30 +128,11 @@ impl PubkySession {
         Ok(())
     }
 
-    /// Returns a [`JwtSessionView`] if this session is JWT-backed.
-    ///
-    /// JWT-only operations (`list_grants`, `revoke_grant`, `current_jwt`,
-    /// `force_refresh`, `grant_id`) live on the view. Cookie-backed sessions
-    /// return `None`.
-    #[must_use]
-    pub fn as_jwt(&self) -> Option<JwtSessionView<'_>> {
-        self.credential
-            .as_jwt()
-            .map(|c| JwtSessionView::new(self, c))
-    }
-
-    /// Returns a [`CookieSessionView`] if this session is cookie-backed.
-    ///
-    /// Cookie-only operations live on the view. JWT-backed sessions return
-    /// `None`. The view is available on every target — what differs by
-    /// runtime is whether the cookie secret is *capturable*: see
-    /// [`CookieSessionView::export_secret`].
-    #[must_use]
-    pub fn as_cookie(&self) -> Option<CookieSessionView<'_>> {
-        self.credential
-            .as_cookie()
-            .map(|c| CookieSessionView::new(self, c))
-    }
+    // `as_jwt()` / `as_cookie()` view accessors are defined in
+    // `actors/auth/jwt/view.rs` and `actors/auth/cookie/view.rs` via inherent
+    // `impl PubkySession { … }` blocks. This keeps session/core.rs ignorant
+    // of concrete credential adapters while preserving the discoverable
+    // method syntax on `PubkySession`.
 
     /// Create a **session-mode** Storage bound to this user session.
     ///

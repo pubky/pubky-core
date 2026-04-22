@@ -2,9 +2,8 @@
 //!
 //! This is the **legacy** session credential. It will be removed once all
 //! ecosystem clients have migrated to the JWT flow. Retirement is a folder
-//! delete: `rm -rf credentials/cookie/` plus dropping the cookie arm in
-//! [`crate::actors::session::bootstrap`] and the `as_cookie` re-export in
-//! [`super::super::super::mod@crate::actors::session`].
+//! delete: `rm -rf actors/auth/cookie/` plus dropping the cookie arm in the
+//! facade.
 //!
 //! ## Cross-target behavior
 //!
@@ -22,6 +21,7 @@
 //! cookie jar is the only place the value lives. On every other runtime
 //! the SDK owns the secret and exports/imports just like on native.
 
+use std::any::Any;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -29,7 +29,8 @@ use pubky_common::{auth::AuthToken, crypto::PublicKey, session::CookieSessionRec
 
 use reqwest::{Method, RequestBuilder, Response};
 
-use super::super::{SessionCredential, credential_session_missing};
+use crate::actors::session::credential::{SessionCredential, credential_session_missing};
+use crate::actors::session::core::PubkySession;
 use crate::{
     PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
     cross_log, errors::Result, util::check_http_status,
@@ -45,7 +46,7 @@ use crate::errors::AuthError;
 /// inaccessible (the fetch spec hides `Set-Cookie`) and the browser cookie
 /// jar handles attachment automatically — `cookie` is `None`.
 #[derive(Clone, Debug)]
-pub(crate) struct CookieCredential {
+pub struct CookieCredential {
     /// User public key — used to name the `Cookie` header.
     user: PublicKey,
     /// Full cookie session record for cookie-specific view access.
@@ -106,14 +107,15 @@ impl CookieCredential {
     }
 
 
-    /// Establish a session from a signed [`AuthToken`] (legacy cookie flow).
+    /// Establish a cookie credential from a signed [`AuthToken`] (legacy flow).
     ///
-    /// POSTs the token to the homeserver's `/session` endpoint and constructs a
-    /// cookie-based [`PubkySession`].
+    /// POSTs the token to the homeserver's `/session` endpoint and constructs
+    /// a [`CookieCredential`] ready to be lifted into a [`PubkySession`] via
+    /// [`PubkySession::from_cookie_credential`].
     pub(crate) async fn from_auth_token(
         token: &AuthToken,
         client: &PubkyHttpClient,
-    ) -> Result<Arc<dyn SessionCredential>> {
+    ) -> Result<Self> {
         let url = format!("pubky{}/session", token.public_key().z32());
         cross_log!(
             info,
@@ -134,8 +136,7 @@ impl CookieCredential {
             "Session exchange for {} succeeded; constructing credential",
             token.public_key()
         );
-        let credential = Self::from_response(response).await?;
-        Ok(Arc::new(credential))
+        Self::from_response(response).await
     }
 
     /// Cookie secret accessor — used by [`super::view::CookieSessionView`]
@@ -173,8 +174,8 @@ fn collect_set_cookies(response: &Response) -> Vec<String> {
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
 // for tokio, WASM uses `?Send` because `wasm-bindgen-futures` are not
-// `Send`. See `super::super::credential::SessionCredential` for the full
-// rationale.
+// `Send`. See [`crate::actors::session::credential::SessionCredential`] for
+// the full rationale.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl SessionCredential for CookieCredential {
@@ -235,7 +236,23 @@ impl SessionCredential for CookieCredential {
         Ok(Some(info))
     }
 
-    fn as_cookie(&self) -> Option<&CookieCredential> {
-        Some(self)
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl PubkySession {
+    /// Build a cookie-backed [`PubkySession`] from a [`CookieCredential`].
+    ///
+    /// Typical use: after
+    /// [`PubkyCookieAuthFlow::await_credential`](crate::PubkyCookieAuthFlow::await_credential)
+    /// returns a credential you want to hold separately, this lifts it into
+    /// a full session bound to the given HTTP client.
+    #[must_use]
+    pub fn from_cookie_credential(
+        client: PubkyHttpClient,
+        credential: CookieCredential,
+    ) -> Self {
+        Self::from_credential(client, Arc::new(credential))
     }
 }
