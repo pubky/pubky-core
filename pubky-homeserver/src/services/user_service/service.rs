@@ -161,8 +161,11 @@ impl UserService {
         Ok(user)
     }
 
-    /// Apply a partial quota update and evict the cached entry so downstream
-    /// layers (rate limiter, etc.) re-resolve from the database.
+    /// Apply a partial quota update.
+    ///
+    /// The cached entry is **not** actively invalidated — downstream layers
+    /// (rate limiter, etc.) will pick up the new values once the cache TTL
+    /// expires (≤ 2 minutes).
     pub async fn patch_quota(
         &self,
         pubkey: &PublicKey,
@@ -170,7 +173,7 @@ impl UserService {
     ) -> HttpResult<UserEntity> {
         let mut tx = self.sql_db.pool().begin().await?;
 
-        let user = match UserRepository::get_for_update(pubkey, uexecutor!(tx)).await {
+        let user = match self.get_for_update(pubkey, uexecutor!(tx)).await {
             Ok(user) => user,
             Err(sqlx::Error::RowNotFound) => return Err(HttpError::not_found()),
             Err(e) => return Err(e.into()),
@@ -187,7 +190,6 @@ impl UserService {
         let updated = UserRepository::set_quota(user.id, &config, uexecutor!(tx)).await?;
         tx.commit().await?;
 
-        self.quota_cache.remove(pubkey);
         Ok(updated)
     }
 }

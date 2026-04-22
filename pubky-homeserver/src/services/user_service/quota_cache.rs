@@ -12,7 +12,11 @@ use pubky_common::crypto::PublicKey;
 use crate::shared::user_quota::UserQuota;
 
 /// How long a cached limit entry is considered fresh before re-resolving from DB.
-const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
+///
+/// Quota changes made via the admin API are **not** actively invalidated in the
+/// cache — they take effect once this TTL expires.
+/// In an emergency there exists the option to use /users/{pubkey}/disable.
+const CACHE_TTL: Duration = Duration::from_secs(120); // 2 minutes
 
 /// How long a negative (user-not-found) cache entry lives before re-checking the DB.
 /// Short TTL so that a subsequent signup populates limits promptly.
