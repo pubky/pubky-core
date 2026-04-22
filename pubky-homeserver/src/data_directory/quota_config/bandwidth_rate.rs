@@ -40,7 +40,7 @@ impl BandwidthRate {
         match burst_override {
             Some(b) => {
                 let burst_cells =
-                    NonZeroU32::new(b * rate_unit_mult).expect("burst must be > 0 when provided");
+                    NonZeroU32::new(b.saturating_mul(rate_unit_mult)).unwrap_or(rate_cells);
                 base.allow_burst(burst_cells)
             }
             None => base.allow_burst(rate_cells),

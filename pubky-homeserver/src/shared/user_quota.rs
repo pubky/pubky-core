@@ -185,10 +185,15 @@ fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthRate>) -> Res
     Ok(())
 }
 
-/// Validate that a burst value (if present) is > 0.
+/// Validate that a burst value (if present) is > 0 and fits in the DB column (i32).
 fn validate_burst_value(label: &str, burst: Option<u32>) -> Result<(), String> {
-    if burst == Some(0) {
-        return Err(format!("{label} must be greater than 0"));
+    if let Some(b) = burst {
+        if b == 0 {
+            return Err(format!("{label} must be greater than 0"));
+        }
+        if b > i32::MAX as u32 {
+            return Err(format!("{label} value {b} exceeds maximum ({})", i32::MAX));
+        }
     }
     Ok(())
 }
@@ -278,12 +283,28 @@ impl UserQuota {
 
     /// Rate-read burst as DB-column type (`INTEGER`).
     pub fn rate_read_burst_i32(&self) -> Option<i32> {
-        self.rate_read_burst.map(|v| v as i32)
+        self.rate_read_burst.map(|v| {
+            i32::try_from(v).unwrap_or_else(|_| {
+                tracing::warn!(
+                    "rate_read_burst {v} exceeds i32::MAX, truncating to {}",
+                    i32::MAX
+                );
+                i32::MAX
+            })
+        })
     }
 
     /// Rate-write burst as DB-column type (`INTEGER`).
     pub fn rate_write_burst_i32(&self) -> Option<i32> {
-        self.rate_write_burst.map(|v| v as i32)
+        self.rate_write_burst.map(|v| {
+            i32::try_from(v).unwrap_or_else(|_| {
+                tracing::warn!(
+                    "rate_write_burst {v} exceeds i32::MAX, truncating to {}",
+                    i32::MAX
+                );
+                i32::MAX
+            })
+        })
     }
 
     /// Check that the quota fields are internally consistent:
@@ -814,6 +835,28 @@ mod tests {
         let err = q.validate().unwrap_err();
         assert!(err.contains("rate_read_burst"), "error: {err}");
         assert!(err.contains("greater than 0"), "error: {err}");
+    }
+
+    #[test]
+    fn test_burst_exceeds_i32_max_rejected() {
+        let q = UserQuota {
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read_burst: Some(i32::MAX as u32 + 1),
+            ..Default::default()
+        };
+        let err = q.validate().unwrap_err();
+        assert!(err.contains("rate_read_burst"), "error: {err}");
+        assert!(err.contains("exceeds maximum"), "error: {err}");
+    }
+
+    #[test]
+    fn test_burst_at_i32_max_accepted() {
+        let q = UserQuota {
+            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read_burst: Some(i32::MAX as u32),
+            ..Default::default()
+        };
+        assert!(q.validate().is_ok());
     }
 
     #[test]

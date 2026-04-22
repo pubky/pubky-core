@@ -105,3 +105,127 @@ async fn fail_if_size_hint_exceeds_quota<'a>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use pubky_common::crypto::Keypair;
+
+    use crate::persistence::sql::user::UserRepository;
+    use crate::persistence::sql::SqlDb;
+    use crate::services::user_service::UserService;
+    use crate::shared::webdav::WebDavPath;
+
+    use super::*;
+
+    /// Helper to build the function args and call `fail_if_size_hint_exceeds_quota`.
+    async fn check_hint(
+        db: &SqlDb,
+        user: &UserEntity,
+        user_service: &UserService,
+        path: &str,
+        size_hint: Option<u64>,
+    ) -> HttpResult<()> {
+        let entry_path = EntryPath::new(user.public_key.clone(), WebDavPath::new(path).unwrap());
+        fail_if_size_hint_exceeds_quota(
+            size_hint,
+            user,
+            user_service,
+            &entry_path,
+            &mut db.pool().into(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_no_size_hint_always_ok() {
+        let db = SqlDb::test().await;
+        let user_service = UserService::new(db.clone(), None);
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // No size hint → always OK regardless of quota
+        check_hint(&db, &user, &user_service, "/test.txt", None)
+            .await
+            .expect("no size hint should always pass");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_small_hint_within_quota() {
+        let db = SqlDb::test().await;
+        let user_service = UserService::new(db.clone(), None);
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // 100 bytes + FILE_METADATA_SIZE is well within 1 MB
+        check_hint(&db, &user, &user_service, "/test.txt", Some(100))
+            .await
+            .expect("small file should be within 1 MB quota");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_hint_exceeds_quota() {
+        let db = SqlDb::test().await;
+        let user_service = UserService::new(db.clone(), None);
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // 1 MB content + FILE_METADATA_SIZE > 1 MB quota
+        check_hint(&db, &user, &user_service, "/test.txt", Some(1024 * 1024))
+            .await
+            .expect_err("content + metadata should exceed 1 MB quota");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_new_file_accounts_for_metadata_overhead() {
+        let db = SqlDb::test().await;
+        let user_service = UserService::new(db.clone(), None);
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        let one_mb = 1024u64 * 1024;
+        let max_content = one_mb - FILE_METADATA_SIZE;
+
+        // Exactly at limit: content + metadata == quota → OK
+        check_hint(&db, &user, &user_service, "/test.txt", Some(max_content))
+            .await
+            .expect("content + metadata exactly at quota should pass");
+
+        // One byte over: content + metadata > quota → fail
+        check_hint(
+            &db,
+            &user,
+            &user_service,
+            "/test.txt",
+            Some(max_content + 1),
+        )
+        .await
+        .expect_err("content + metadata one byte over quota should fail");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_unlimited_quota_allows_anything() {
+        let db = SqlDb::test().await;
+        // No system default → unlimited for Default users
+        let user_service = UserService::new(db.clone(), None);
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create(&pk, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Even a huge hint should pass with unlimited quota
+        check_hint(
+            &db,
+            &user,
+            &user_service,
+            "/test.txt",
+            Some(10 * 1024 * 1024 * 1024),
+        )
+        .await
+        .expect("unlimited quota should accept any size");
+    }
+}
