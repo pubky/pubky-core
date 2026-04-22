@@ -116,7 +116,10 @@ impl Pubky {
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
     ///   fails (e.g., malformed relay URL when configured via the builder).
-    #[allow(deprecated, reason = "Cookie flow is intentionally exposed via this facade while deprecated")]
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
     pub fn start_auth_flow(
         &self,
         caps: &Capabilities,

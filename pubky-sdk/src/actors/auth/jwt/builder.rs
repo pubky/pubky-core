@@ -5,11 +5,11 @@ use pubky_common::{
     crypto::{Keypair, random_bytes},
 };
 
+use crate::actors::DEFAULT_HTTP_RELAY_INBOX;
 use crate::actors::auth::deep_links::{DeepLink, SigninJwtDeepLink, SignupJwtDeepLink};
 use crate::actors::auth::jwt::flow::PubkyJwtAuthFlow;
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
-use crate::actors::DEFAULT_HTTP_RELAY_INBOX;
 use crate::errors::Result;
 use crate::{Capabilities, PubkyHttpClient};
 

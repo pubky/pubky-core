@@ -286,9 +286,7 @@ impl PubkyJwtAuthFlow {
         }
     }
 
-    async fn await_decoded_approval(
-        relay_listener: AuthRelayListener,
-    ) -> Result<GrantApproval> {
+    async fn await_decoded_approval(relay_listener: AuthRelayListener) -> Result<GrantApproval> {
         let message = relay_listener.await_message().await?;
         GrantApproval::decode(&message)
     }

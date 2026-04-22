@@ -13,8 +13,10 @@ use crate::{PubkyHttpClient, Result};
 impl PubkySession {
     /// Export session metadata for rehydrating after a tab refresh or process restart.
     ///
-    /// Delegates to [`super::view::CookieSessionView::export`]. Panics if the
-    /// session is not cookie-backed.
+    /// Delegates to [`super::view::CookieSessionView::export`].
+    ///
+    /// # Panics
+    /// Panics if the session is not cookie-backed.
     #[must_use]
     pub fn export(&self) -> String {
         self.as_cookie()
@@ -62,6 +64,9 @@ impl PubkySession {
     /// Write the session secret token to disk. Ensures a `.sess` extension.
     ///
     /// Delegates to [`super::view::CookieSessionView::write_secret_file`].
+    ///
+    /// # Panics
+    /// Panics if the session is not cookie-backed.
     ///
     /// # Errors
     /// - Returns [`std::io::Error`] if the file cannot be written or

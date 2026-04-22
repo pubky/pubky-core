@@ -21,6 +21,7 @@ pub struct SessionInfo {
 
 impl SessionInfo {
     /// Create a new minimal session info.
+    #[must_use]
     pub fn new(public_key: PublicKey, capabilities: Vec<Capability>) -> Self {
         Self {
             public_key,
@@ -29,11 +30,13 @@ impl SessionInfo {
     }
 
     /// Returns the public key this session authorizes for.
+    #[must_use]
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
 
     /// Returns the capabilities this session provides.
+    #[must_use]
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }

@@ -6,7 +6,8 @@ use url::Url;
 
 use super::PubkySigner;
 use crate::{
-    Capabilities, Capability, PubkySession, PublicKey, Result, actors::auth::cookie::CookieCredential, cross_log, util::check_http_status
+    Capabilities, Capability, PubkySession, PublicKey, Result,
+    actors::auth::cookie::CookieCredential, cross_log, util::check_http_status,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -43,8 +44,10 @@ impl PubkySigner {
 
         self.publish_signup_homeserver(homeserver).await?;
         let cookie_credential = CookieCredential::from_response(response).await?;
-        Ok(PubkySession::from_credential(self.client.clone(), Arc::new(cookie_credential)))
-
+        Ok(PubkySession::from_credential(
+            self.client.clone(),
+            Arc::new(cookie_credential),
+        ))
     }
 
     // All of these methods use root capabilities

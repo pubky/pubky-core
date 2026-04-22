@@ -49,6 +49,8 @@
 
 use url::Url;
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
+use crate::AuthToken;
 use crate::actors::auth::cookie::approval::CookieApproval;
 use crate::actors::auth::cookie::builder::CookieAuthFlowBuilder;
 use crate::actors::auth::cookie::credential::CookieCredential;
@@ -56,8 +58,6 @@ use crate::actors::auth::deep_links::DeepLink;
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
 use crate::errors::Result;
-#[allow(deprecated, reason = "Internal use of deprecated public API")]
-use crate::AuthToken;
 use crate::{Capabilities, PubkyHttpClient, PubkySession};
 
 /// End-to-end **legacy (cookie) auth flow** handle.
@@ -222,9 +222,7 @@ impl PubkyCookieAuthFlow {
         }
     }
 
-    async fn await_decoded_approval(
-        relay_listener: AuthRelayListener,
-    ) -> Result<CookieApproval> {
+    async fn await_decoded_approval(relay_listener: AuthRelayListener) -> Result<CookieApproval> {
         let message = relay_listener.await_message().await?;
         CookieApproval::decode(&message)
     }

@@ -52,6 +52,7 @@ impl<'a> CookieSessionView<'a> {
     /// shared
     /// [`PubkySession::info`](crate::actors::session::core::PubkySession::info)
     /// accessor.
+    #[must_use]
     pub fn session_info(&self) -> CookieSessionRecord {
         self.credential.cookie_record()
     }

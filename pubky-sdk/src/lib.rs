@@ -30,7 +30,14 @@ pub use pubky::Pubky;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 // High level actors
 #[doc(inline)]
+pub use actors::AuthFlowKind;
+#[doc(inline)]
 pub use actors::Pkdns;
+#[doc(inline)]
+#[allow(deprecated, reason = "Re-exporting deprecated public API")]
+pub use actors::PubkyCookieAuthFlow;
+#[doc(inline)]
+pub use actors::PubkyJwtAuthFlow;
 #[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
@@ -39,13 +46,6 @@ pub use actors::PubkySigner;
 pub use actors::SessionInfo;
 #[doc(inline)]
 pub use actors::deep_links;
-#[doc(inline)]
-pub use actors::AuthFlowKind;
-#[doc(inline)]
-#[allow(deprecated, reason = "Re-exporting deprecated public API")]
-pub use actors::PubkyCookieAuthFlow;
-#[doc(inline)]
-pub use actors::PubkyJwtAuthFlow;
 #[doc(inline)]
 pub use actors::{CookieCredential, CookieSessionView, JwtCredential, JwtSessionView};
 #[doc(inline)]

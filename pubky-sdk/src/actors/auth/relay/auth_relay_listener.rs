@@ -124,10 +124,7 @@ impl AuthRelayListener {
     /// Non-blocking check for a ready relay message.
     #[must_use]
     pub(crate) fn try_message(&self) -> Option<Result<AuthRelayMessage>> {
-        let Some(message) = self.rx.try_recv().ok() else {
-            return None;
-        };
-        Some(message)
+        self.rx.try_recv().ok()
     }
 
     // -- internals --
@@ -218,7 +215,7 @@ impl AuthRelayListenerBuilder {
     // Spawn background polling (single-shot delivery)
     fn spawn_background_polling(
         encrypted_channel: EncryptedAuthChannel,
-        client: PubkyHttpClient,
+        client: &PubkyHttpClient,
     ) -> AuthRelayListener {
         let (tx, rx) = flume::bounded(1);
         let (abort_handle, abort_reg) = AbortHandle::new_pair();
@@ -266,7 +263,7 @@ impl AuthRelayListenerBuilder {
             )?)
         };
 
-        Ok(Self::spawn_background_polling(encrypted_channel, client))
+        Ok(Self::spawn_background_polling(encrypted_channel, &client))
     }
 }
 
@@ -348,8 +345,8 @@ mod tests {
             .unwrap();
         let poll_handle = tokio::spawn(async move {
             let response = listener.await_message().await.unwrap();
-            let approval = crate::actors::auth::cookie::approval::CookieApproval::decode(&response)
-                .unwrap();
+            let approval =
+                crate::actors::auth::cookie::approval::CookieApproval::decode(&response).unwrap();
             assert_eq!(approval.0, token);
         });
 

@@ -29,8 +29,8 @@ use pubky_common::{auth::AuthToken, crypto::PublicKey, session::CookieSessionRec
 
 use reqwest::{Method, RequestBuilder, Response};
 
-use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::actors::session::core::PubkySession;
+use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
     PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
     cross_log, errors::Result, util::check_http_status,
@@ -105,7 +105,6 @@ impl CookieCredential {
         cross_log!(info, "Hydrated cookie credential for {}", user);
         Ok(Self::new(user, cookie, record))
     }
-
 
     /// Establish a cookie credential from a signed [`AuthToken`] (legacy flow).
     ///
@@ -249,10 +248,7 @@ impl PubkySession {
     /// returns a credential you want to hold separately, this lifts it into
     /// a full session bound to the given HTTP client.
     #[must_use]
-    pub fn from_cookie_credential(
-        client: PubkyHttpClient,
-        credential: CookieCredential,
-    ) -> Self {
+    pub fn from_cookie_credential(client: PubkyHttpClient, credential: CookieCredential) -> Self {
         Self::from_credential(client, Arc::new(credential))
     }
 }

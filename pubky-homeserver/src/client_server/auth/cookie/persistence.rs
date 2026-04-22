@@ -5,7 +5,9 @@
 use std::{fmt::Display, str::FromStr};
 
 use pubky_common::crypto::PublicKey;
-use pubky_common::{capabilities::Capabilities, crypto::random_bytes, session::CookieSessionRecord};
+use pubky_common::{
+    capabilities::Capabilities, crypto::random_bytes, session::CookieSessionRecord,
+};
 use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};

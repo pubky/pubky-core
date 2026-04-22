@@ -982,7 +982,12 @@ async fn jwt_list_and_revoke_grants_root_only() {
         .unwrap();
 
     // Non-root sessions cannot enumerate grants — homeserver returns 403.
-    let err = scoped_session.as_jwt().unwrap().list_grants().await.unwrap_err();
+    let err = scoped_session
+        .as_jwt()
+        .unwrap()
+        .list_grants()
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN),
         "non-root list_grants must be forbidden, got {err:?}"
