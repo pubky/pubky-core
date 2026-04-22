@@ -57,6 +57,7 @@ impl HttpRelayInboxChannel {
 
     /// The base URL of the relay.
     #[cfg(test)]
+    #[must_use]
     pub fn base_url(&self) -> &Url {
         &self.base_url
     }
@@ -341,6 +342,9 @@ impl EncryptedHttpRelayInboxChannel {
     }
 
     /// Create an encrypted inbox channel with a random secret (for testing).
+    ///
+    /// # Errors
+    /// Propagates any error from [`Self::new`] if the base URL is not a valid base.
     #[cfg(test)]
     pub fn random_secret(relay_base_url: Url) -> crate::errors::Result<Self> {
         use pubky_common::crypto::random_bytes;
@@ -351,6 +355,7 @@ impl EncryptedHttpRelayInboxChannel {
 
     /// Returns the shared secret.
     #[cfg(test)]
+    #[must_use]
     pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }

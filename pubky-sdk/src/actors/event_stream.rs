@@ -926,7 +926,7 @@ mod tests {
         let query: Vec<_> = url.query_pairs().collect();
 
         // Should have: user (x2), limit, live, path
-        assert_eq!(query.len(), 5, "Should have 5 query params: {:?}", query);
+        assert_eq!(query.len(), 5, "Should have 5 query params: {query:?}");
 
         // Check user params
         let user_params: Vec<_> = query
