@@ -131,7 +131,7 @@ impl PubkyHttpClient {
 
     fn apply_endpoint_to_url(&self, url: &mut Url, endpoint: &Endpoint) -> Result<()> {
         let is_testnet_domain = endpoint.domain().is_some_and(|domain| {
-            if domain == "localhost" {
+            if pubky_common::constants::requires_http_port(domain) {
                 return true;
             }
             if let Some(test_host) = &self.testnet_host {

@@ -12,6 +12,7 @@ use anyhow::Result;
 use pkarr::dns::Name;
 use pkarr::errors::PublishError;
 use pkarr::{dns::rdata::SVCB, SignedPacket};
+use pubky_common::constants::requires_http_port;
 
 use crate::app_context::AppContext;
 use tokio::task::JoinHandle;
@@ -147,7 +148,7 @@ pub fn create_signed_packet(
         let mut svcb = SVCB::new(10, root_name.clone());
 
         let http_port_be_bytes = public_icann_http_port.to_be_bytes();
-        if domain.0 == "localhost" {
+        if requires_http_port(&domain.0) {
             svcb.set_param(
                 pubky_common::constants::reserved_param_keys::HTTP_PORT,
                 &http_port_be_bytes,
