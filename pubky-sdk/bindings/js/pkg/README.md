@@ -43,7 +43,7 @@ const addr = `${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
 // 5) Authenticate on a 3rd-party app
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin()); // require permissions to read and write into `my.app`
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin()); // require permissions to read and write into `my.app`
 renderQr(authFlow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
@@ -85,7 +85,7 @@ const pubkyLocal = Pubky.testnet("localhost");
 const signer = pubky.signer(Keypair.random());
 
 // Pubky Auth flow (with capabilities)
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin());
+const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
 
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
@@ -209,13 +209,17 @@ const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to this)
 
 // Start the auth polling
-const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin(), relay);
+const flow = pubky.startAuthFlow(caps, AuthFlowKind.signin(), relay);
 
 renderQr(flow.authorizationUrl); // show to user
 
 // Blocks until the signer approves; returns a ready Session
 const session = await flow.awaitApproval();
 ```
+
+#### Resume an auth flow after page refresh
+
+Auth flows are resumable. See [`pubky.resumeAuthFlow()`](https://github.com/pubky/pubky-core/blob/main/pubky-sdk/bindings/js/src/pubky.rs#L110-L147) for usage and security guidance.
 
 #### Validate and normalize capabilities
 
@@ -233,7 +237,7 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin());
+  const flow = pubky.startAuthFlow(caps, AuthFlowKind.signin());
   renderQr(flow.authorizationUrl);
   const session = await flow.awaitApproval();
   // ...
