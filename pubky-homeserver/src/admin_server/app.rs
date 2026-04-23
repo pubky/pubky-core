@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::routes::{
     dav_handler, delete_entry,
-    disable_users::{disable_user, enable_user},
+    disable_users::{disable_user, enable_user, list_disabled_users},
     generate_signup_token, info, root,
 };
 use super::trace::with_trace_layer;
@@ -30,6 +30,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
+        .route("/users/disabled", get(list_disabled_users))
         .layer(AdminAuthLayer::new(password.to_string()))
 }
 
