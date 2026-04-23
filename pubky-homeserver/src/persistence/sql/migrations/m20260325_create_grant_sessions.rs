@@ -122,8 +122,8 @@ impl M20260325CreateGrantSessionsMigration {
                     .auto_increment(),
             )
             .col(
-                ColumnDef::new(GrantSessionIden::TokenId)
-                    .string_len(36)
+                ColumnDef::new(GrantSessionIden::TokenHash)
+                    .binary_len(32)
                     .not_null()
                     .unique_key(),
             )
@@ -157,11 +157,11 @@ impl M20260325CreateGrantSessionsMigration {
         let query = fk.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
-        // Index on token_id (unique)
+        // Index on token_hash (unique)
         let idx = sea_query::Index::create()
-            .name("idx_grant_sessions_token_id")
+            .name("idx_grant_sessions_token_hash")
             .table(GRANT_SESSIONS_TABLE)
-            .col(GrantSessionIden::TokenId)
+            .col(GrantSessionIden::TokenHash)
             .index_type(sea_query::IndexType::BTree)
             .to_owned();
         let query = idx.build(PostgresQueryBuilder);
@@ -223,7 +223,7 @@ pub enum GrantIden {
 #[derive(Iden)]
 pub enum GrantSessionIden {
     Id,
-    TokenId,
+    TokenHash,
     GrantId,
     ExpiresAt,
     CreatedAt,

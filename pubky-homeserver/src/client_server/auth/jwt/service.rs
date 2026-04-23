@@ -14,19 +14,17 @@ use crate::{
 };
 use chrono::Utc;
 use pubky_common::{
-    auth::access_jwt::AccessJwtClaims,
     auth::grant::GrantClaims,
     auth::grant_session::{GrantSessionInfo, GrantSessionResponse},
     auth::jws::GrantId,
-    auth::jws::TokenId,
     crypto::{Keypair, PublicKey},
 };
 
 use super::crypto::{
-    access_jwt_issuer::{mint_access_jwt, verify_access_jwt},
     grant_verifier::verify_grant,
     jws_crypto::JwsCompact,
     pop_verifier::{PopProof, PopVerificationContext, POP_NONCE_GC_THRESHOLD_SECS},
+    session_token::SessionBearer,
 };
 use super::persistence::{
     grant::{GrantEntity, GrantRepository, NewGrant},
@@ -37,8 +35,8 @@ use super::service_error::AuthServiceError;
 use super::session::GrantSession;
 use crate::client_server::auth::AuthSession;
 
-/// Default JWT lifetime: 1 hour.
-const DEFAULT_JWT_LIFETIME_SECS: u64 = 3600;
+/// Default session bearer lifetime: 1 hour.
+const DEFAULT_SESSION_TOKEN_LIFETIME_SECS: u64 = 3600;
 
 /// Facade for all grant-based auth operations.
 ///
@@ -59,7 +57,8 @@ impl AuthService {
         }
     }
 
-    /// The homeserver's public key (used for JWT audience checks and session info).
+    /// The homeserver's public key (used by tests as the PoP audience).
+    #[cfg(test)]
     pub fn homeserver_public_key(&self) -> pubky_common::crypto::PublicKey {
         self.homeserver_keypair.public_key()
     }
@@ -150,27 +149,28 @@ impl AuthService {
         self.revoke_grant(&session.grant_id).await
     }
 
-    /// Resolve a verified Access JWT into a GrantSession.
+    /// Resolve an opaque bearer into a `GrantSession`.
     ///
-    /// Looks up the session by token ID, validates the grant is active
-    /// (not revoked, not expired), and returns the resolved session.
-    pub async fn resolve_grant_session(
+    /// Hashes the bearer, looks up the matching session row, loads the
+    /// backing grant (with JOINed user pubkey), and asserts the grant is
+    /// still active.
+    pub async fn resolve_grant_session_by_bearer(
         &self,
-        jwt: &AccessJwtClaims,
+        bearer: &SessionBearer,
     ) -> Result<GrantSession, AuthServiceError> {
+        let hash = bearer.hash();
         let session = map_not_found(
-            GrantSessionRepository::get_by_token_id(&jwt.jti, &mut self.sql_db.pool().into()).await,
+            GrantSessionRepository::get_by_token_hash(&hash, &mut self.sql_db.pool().into()).await,
             AuthServiceError::SessionNotFound,
         )?;
 
-        let grant = self.get_grant(&jwt.gid).await?;
+        let grant = self.get_grant(&session.grant_id).await?;
         grant.require_active(Utc::now().timestamp())?;
 
         Ok(GrantSession {
-            user_key: jwt.sub.clone(),
+            user_key: grant.user_pubkey.clone(),
             capabilities: grant.capabilities,
-            grant_id: jwt.gid.clone(),
-            token_id: jwt.jti.clone(),
+            grant_id: session.grant_id,
             token_expires_at: session.expires_at as u64,
         })
     }
@@ -368,52 +368,32 @@ impl AuthService {
         Ok(())
     }
 
-    /// Mint a new access JWT and persist the session row.
+    /// Generate a fresh opaque bearer, persist its hash, and return the wire response.
     async fn mint_session<'a>(
         &self,
         grant: &GrantClaims,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<GrantSessionResponse, AuthServiceError> {
         let now = Utc::now().timestamp() as u64;
-        let token_id = TokenId::generate();
-        let jwt_exp = now + DEFAULT_JWT_LIFETIME_SECS;
-
-        let claims =
-            build_access_jwt_claims(&self.homeserver_keypair, grant, &token_id, now, jwt_exp);
-        let token = mint_access_jwt(&self.homeserver_keypair, &claims);
+        let expires_at = now + DEFAULT_SESSION_TOKEN_LIFETIME_SECS;
+        let bearer = SessionBearer::generate();
+        let token_hash = bearer.hash();
 
         let new_session = NewGrantSession {
-            token_id,
+            token_hash,
             grant_id: grant.jti.clone(),
-            expires_at: jwt_exp,
+            expires_at,
         };
         // Enforces MAX_SESSIONS_PER_GRANT: atomically replaces any prior session row for this grant.
         GrantSessionRepository::replace_for_grant(&new_session, executor).await?;
 
         Ok(build_session_response(
-            token.to_string(),
+            bearer.into_string(),
             grant,
             self.homeserver_keypair.public_key(),
-            jwt_exp,
+            expires_at,
             now,
         ))
-    }
-}
-
-fn build_access_jwt_claims(
-    keypair: &Keypair,
-    grant: &GrantClaims,
-    token_id: &TokenId,
-    now: u64,
-    jwt_exp: u64,
-) -> AccessJwtClaims {
-    AccessJwtClaims {
-        iss: keypair.public_key(),
-        sub: grant.iss.clone(),
-        gid: grant.jti.clone(),
-        jti: token_id.clone(),
-        iat: now,
-        exp: jwt_exp,
     }
 }
 
@@ -426,6 +406,28 @@ fn map_not_found<T>(
         sqlx::Error::RowNotFound => not_found_err,
         other => AuthServiceError::Internal(other),
     })
+}
+
+fn build_session_response(
+    token: String,
+    grant: &GrantClaims,
+    homeserver: PublicKey,
+    token_expires_at: u64,
+    now: u64,
+) -> GrantSessionResponse {
+    GrantSessionResponse {
+        token,
+        session: GrantSessionInfo {
+            homeserver,
+            pubky: grant.iss.clone(),
+            client_id: grant.client_id.clone(),
+            capabilities: grant.caps.clone(),
+            grant_id: grant.jti.clone(),
+            token_expires_at,
+            grant_expires_at: grant.exp,
+            created_at: now,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -634,7 +636,7 @@ mod tests {
         assert!(matches!(err, AuthServiceError::UserAlreadyExists));
     }
 
-    // ── revoke_grant + resolve_grant_session ───────────────────────
+    // ── revoke_grant + resolve_grant_session_by_bearer ───────────────
 
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -650,10 +652,10 @@ mod tests {
             .await
             .unwrap();
 
-        // Verify the minted JWT and resolve
-        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
-        let session = service.resolve_grant_session(&jwt).await.unwrap();
+        let session = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap();
 
         assert_eq!(session.user_key, user_kp.public_key());
         assert_eq!(session.grant_id, raw_grant.jti);
@@ -674,9 +676,10 @@ mod tests {
             .unwrap();
         service.revoke_grant(&raw_grant.jti).await.unwrap();
 
-        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
-        let err = service.resolve_grant_session(&jwt).await.unwrap_err();
+        let err = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap_err();
         // Session was deleted by revoke_grant, so SessionNotFound (or GrantRevoked depending on timing)
         assert!(matches!(
             err,
@@ -688,23 +691,13 @@ mod tests {
     #[pubky_test_utils::test]
     async fn resolve_grant_session_missing_session() {
         let service = test_service().await;
-        let hs_kp_pub = service.homeserver_public_key();
 
-        // Create a valid JWT that points to a non-existent session
-        let user_kp = Keypair::random();
-        let now = Utc::now().timestamp() as u64;
-        let claims = AccessJwtClaims {
-            iss: hs_kp_pub.clone(),
-            sub: user_kp.public_key(),
-            gid: GrantId::generate(),
-            jti: TokenId::generate(),
-            iat: now,
-            exp: now + 3600,
-        };
-        let token = mint_access_jwt(&service.homeserver_keypair, &claims);
-        let jwt = verify_access_jwt(&token, &hs_kp_pub).unwrap();
-
-        let err = service.resolve_grant_session(&jwt).await.unwrap_err();
+        // A well-formed but unrecognized bearer must resolve to SessionNotFound.
+        let unknown = SessionBearer::parse("abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG").unwrap();
+        let err = service
+            .resolve_grant_session_by_bearer(&unknown)
+            .await
+            .unwrap_err();
         assert!(matches!(err, AuthServiceError::SessionNotFound));
     }
 
@@ -723,9 +716,10 @@ mod tests {
             .create_grant_session(&grant_jws, &pop_jws)
             .await
             .unwrap();
-        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
-        let session = service.resolve_grant_session(&jwt).await.unwrap();
+        let session = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap();
 
         let info = service.get_grant_session_info(&session).await.unwrap();
         assert_eq!(info.pubky, user_kp.public_key());
@@ -758,9 +752,10 @@ mod tests {
             .create_grant_session(&grant_b_jws, &pop_b_jws)
             .await
             .unwrap();
-        let jwt_b = JwsCompact::parse(&response_b.token).unwrap();
-        let claims_b = verify_access_jwt(&jwt_b, &service.homeserver_public_key()).unwrap();
-        let session_b = service.resolve_grant_session(&claims_b).await.unwrap();
+        let session_b = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response_b.token).unwrap())
+            .await
+            .unwrap();
         let auth_b = AuthSession::Grant(session_b);
 
         let err = service
@@ -805,14 +800,18 @@ mod tests {
             .create_grant_session(&grant_jws, &pop_jws)
             .await
             .unwrap();
-        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
-        let session = service.resolve_grant_session(&jwt).await.unwrap();
+        let session = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap();
 
         service.signout_grant_session(&session).await.unwrap();
 
         // Session should be gone
-        let err = service.resolve_grant_session(&jwt).await.unwrap_err();
+        let err = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap_err();
         assert!(matches!(
             err,
             AuthServiceError::SessionNotFound | AuthServiceError::GrantRevoked
@@ -834,9 +833,10 @@ mod tests {
             .create_grant_session(&grant_jws, &pop_jws)
             .await
             .unwrap();
-        let jwt_compact = JwsCompact::parse(&response.token).unwrap();
-        let jwt = verify_access_jwt(&jwt_compact, &service.homeserver_public_key()).unwrap();
-        let session = service.resolve_grant_session(&jwt).await.unwrap();
+        let session = service
+            .resolve_grant_session_by_bearer(&SessionBearer::parse(&response.token).unwrap())
+            .await
+            .unwrap();
 
         let resolved = service
             .resolve_user_id(&AuthSession::Grant(session))
@@ -853,7 +853,6 @@ mod tests {
             user_key: Keypair::random().public_key(),
             capabilities: Capabilities::builder().cap(Capability::root()).finish(),
             grant_id: GrantId::generate(),
-            token_id: TokenId::generate(),
             token_expires_at: 0,
         };
         assert!(AuthService::require_root_capability(&AuthSession::Grant(session)).is_ok());
@@ -865,32 +864,9 @@ mod tests {
             user_key: Keypair::random().public_key(),
             capabilities: Capabilities::builder().cap(Capability::read("/")).finish(),
             grant_id: GrantId::generate(),
-            token_id: TokenId::generate(),
             token_expires_at: 0,
         };
         let err = AuthService::require_root_capability(&AuthSession::Grant(session)).unwrap_err();
         assert!(matches!(err, AuthServiceError::RootCapabilityRequired));
-    }
-}
-
-fn build_session_response(
-    token: String,
-    grant: &GrantClaims,
-    homeserver: PublicKey,
-    jwt_exp: u64,
-    now: u64,
-) -> GrantSessionResponse {
-    GrantSessionResponse {
-        token,
-        session: GrantSessionInfo {
-            homeserver,
-            pubky: grant.iss.clone(),
-            client_id: grant.client_id.clone(),
-            capabilities: grant.caps.clone(),
-            grant_id: grant.jti.clone(),
-            token_expires_at: jwt_exp,
-            grant_expires_at: grant.exp,
-            created_at: now,
-        },
     }
 }

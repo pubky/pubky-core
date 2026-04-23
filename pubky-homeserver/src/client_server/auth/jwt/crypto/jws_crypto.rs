@@ -5,8 +5,12 @@
 
 use std::fmt;
 
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use pubky_common::crypto::{Keypair, PublicKey};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation};
+#[cfg(test)]
+use jsonwebtoken::{EncodingKey, Header};
+#[cfg(test)]
+use pubky_common::crypto::Keypair;
+use pubky_common::crypto::PublicKey;
 use serde::{Deserialize, Deserializer};
 
 // ── JWS Compact Serialization ────────────────────────────────────────────────
@@ -25,13 +29,6 @@ impl JwsCompact {
             return Err(JwsCompactError);
         }
         Ok(Self(s.to_string()))
-    }
-
-    /// Wrap a string that is **known** to be valid JWS Compact (e.g. output of
-    /// `jsonwebtoken::encode`). Skips the three-part check.
-    pub(crate) fn from_trusted(s: String) -> Self {
-        debug_assert_eq!(s.splitn(4, '.').count(), 3, "not a valid JWS Compact");
-        Self(s)
     }
 
     /// Returns the inner string.
@@ -77,6 +74,11 @@ const ED25519_SPKI_PREFIX: [u8; 12] = [
 ///
 /// Uses PEM format to provide both the seed and public key, avoiding
 /// potential key derivation mismatches between `ring` and `ed25519-dalek`.
+///
+/// Test-only: the homeserver verifies grant/PoP JWSes signed elsewhere and
+/// no longer signs its own access tokens, so this helper is reserved for
+/// test fixtures.
+#[cfg(test)]
 pub fn encoding_key(keypair: &Keypair) -> EncodingKey {
     let pem = ed25519_keypair_to_pem(keypair);
     EncodingKey::from_ed_pem(pem.as_bytes())
@@ -91,6 +93,9 @@ pub fn decoding_key(pubkey: &PublicKey) -> DecodingKey {
 }
 
 /// Create a JWS header for EdDSA with a custom `typ`.
+///
+/// Test-only (see [`encoding_key`]).
+#[cfg(test)]
 pub fn eddsa_header(typ: &str) -> Header {
     let mut header = Header::new(Algorithm::EdDSA);
     header.typ = Some(typ.to_string());
@@ -113,6 +118,7 @@ pub fn eddsa_validation() -> Validation {
 ///
 /// Uses v2 format (seed + public key) to ensure `ring` uses the same public key
 /// as `ed25519-dalek`, avoiding any key derivation inconsistencies between libraries.
+#[cfg(test)]
 fn ed25519_keypair_to_pem(keypair: &Keypair) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
 

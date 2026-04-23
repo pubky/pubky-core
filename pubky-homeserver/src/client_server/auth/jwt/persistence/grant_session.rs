@@ -1,12 +1,13 @@
 //! Repository for grant-based session entities.
 
-use pubky_common::auth::jws::{GrantId, TokenId};
+use pubky_common::auth::jws::GrantId;
 use sea_query::{
     Alias, CommonTableExpression, Expr, Iden, PostgresQueryBuilder, Query, WithClause, WithQuery,
 };
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
+use crate::client_server::auth::jwt::crypto::session_token::SessionTokenHash;
 use crate::persistence::sql::{
     migrations::m20260325_create_grant_sessions::{GrantSessionIden, GRANT_SESSIONS_TABLE},
     UnifiedExecutor,
@@ -19,12 +20,12 @@ impl GrantSessionRepository {
     /// Atomically replace any existing session for this grant with the new one.
     ///
     /// Enforces the "1 session per grant" invariant. Implemented as a CTE
-    /// (DELETE + INSERT) in a single statement so that two concurrent
+    /// (DELETE then INSERT) in a single statement so that two concurrent
     /// `mint_session` calls for the same grant cannot both observe 0 prior
-    /// sessions and produce 2 rows. Do **not** split into `delete_all_for_grant`
-    /// + insert — `mint_session` is called outside a transaction in
-    /// `AuthService::create_grant_session`, so the atomicity must come from
-    /// the SQL statement itself.
+    /// sessions and produce 2 rows. Do **not** split into
+    /// `delete_all_for_grant` followed by an insert — `mint_session` is
+    /// called outside a transaction in `AuthService::create_grant_session`,
+    /// so the atomicity must come from the SQL statement itself.
     pub async fn replace_for_grant<'a>(
         session: &NewGrantSession,
         executor: &mut UnifiedExecutor<'a>,
@@ -44,12 +45,12 @@ impl GrantSessionRepository {
         let insert = Query::insert()
             .into_table(GRANT_SESSIONS_TABLE)
             .columns([
-                GrantSessionIden::TokenId,
+                GrantSessionIden::TokenHash,
                 GrantSessionIden::GrantId,
                 GrantSessionIden::ExpiresAt,
             ])
             .values_panic([
-                session.token_id.to_string().into(),
+                session.token_hash.as_ref().to_vec().into(),
                 session.grant_id.to_string().into(),
                 (session.expires_at as i64).into(),
             ])
@@ -66,21 +67,21 @@ impl GrantSessionRepository {
         Ok(())
     }
 
-    /// Get a session by its token_id.
-    pub async fn get_by_token_id<'a>(
-        token_id: &TokenId,
+    /// Get a session by its token hash.
+    pub async fn get_by_token_hash<'a>(
+        token_hash: &SessionTokenHash,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<GrantSessionEntity, sqlx::Error> {
         let statement = Query::select()
             .from(GRANT_SESSIONS_TABLE)
             .columns([
                 GrantSessionIden::Id,
-                GrantSessionIden::TokenId,
+                GrantSessionIden::TokenHash,
                 GrantSessionIden::GrantId,
                 GrantSessionIden::ExpiresAt,
                 GrantSessionIden::CreatedAt,
             ])
-            .and_where(Expr::col(GrantSessionIden::TokenId).eq(token_id.to_string()))
+            .and_where(Expr::col(GrantSessionIden::TokenHash).eq(token_hash.as_ref().to_vec()))
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -107,16 +108,17 @@ impl GrantSessionRepository {
 
 /// Data needed to create a new grant session.
 pub struct NewGrantSession {
-    pub token_id: TokenId,
+    pub token_hash: SessionTokenHash,
     pub grant_id: GrantId,
     pub expires_at: u64,
 }
 
 /// A grant session entity as stored in the database.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // `id`, `token_hash`, `created_at` are decoded from DB rows for completeness but only consumed in tests.
 pub struct GrantSessionEntity {
     pub id: i32,
-    pub token_id: TokenId,
+    pub token_hash: SessionTokenHash,
     pub grant_id: GrantId,
     pub expires_at: i64,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
@@ -125,8 +127,10 @@ pub struct GrantSessionEntity {
 impl FromRow<'_, PgRow> for GrantSessionEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let id: i32 = row.try_get(GrantSessionIden::Id.to_string().as_str())?;
-        let token_id: String = row.try_get(GrantSessionIden::TokenId.to_string().as_str())?;
-        let token_id = TokenId::parse(&token_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        let token_hash_bytes: Vec<u8> =
+            row.try_get(GrantSessionIden::TokenHash.to_string().as_str())?;
+        let token_hash = SessionTokenHash::try_from(token_hash_bytes)
+            .map_err(|e| sqlx::Error::Decode(e.into()))?;
         let grant_id: String = row.try_get(GrantSessionIden::GrantId.to_string().as_str())?;
         let grant_id = GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
         let expires_at: i64 = row.try_get(GrantSessionIden::ExpiresAt.to_string().as_str())?;
@@ -134,7 +138,7 @@ impl FromRow<'_, PgRow> for GrantSessionEntity {
 
         Ok(GrantSessionEntity {
             id,
-            token_id,
+            token_hash,
             grant_id,
             expires_at,
             created_at,
@@ -146,11 +150,12 @@ impl FromRow<'_, PgRow> for GrantSessionEntity {
 mod tests {
     use super::*;
     use pubky_common::{
-        auth::jws::{ClientId, GrantId, TokenId},
+        auth::jws::{ClientId, GrantId},
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
     };
 
+    use crate::client_server::auth::jwt::crypto::session_token::SessionBearer;
     use crate::client_server::auth::jwt::persistence::grant::{GrantRepository, NewGrant};
     use crate::persistence::sql::{entities::user::UserRepository, SqlDb};
 
@@ -176,13 +181,17 @@ mod tests {
         grant_id
     }
 
-    fn make_new_session(grant_id: &GrantId) -> NewGrantSession {
+    fn make_new_session(grant_id: &GrantId) -> (NewGrantSession, SessionTokenHash) {
         let now = chrono::Utc::now().timestamp() as u64;
-        NewGrantSession {
-            token_id: TokenId::generate(),
-            grant_id: grant_id.clone(),
-            expires_at: now + 3600,
-        }
+        let hash = SessionBearer::generate().hash();
+        (
+            NewGrantSession {
+                token_hash: hash,
+                grant_id: grant_id.clone(),
+                expires_at: now + 3600,
+            },
+            hash,
+        )
     }
 
     #[tokio::test]
@@ -191,19 +200,18 @@ mod tests {
         let db = SqlDb::test().await;
         let grant_id = setup_user_and_grant(&db).await;
 
-        let new_session = make_new_session(&grant_id);
-        let token_id = new_session.token_id.clone();
+        let (new_session, hash) = make_new_session(&grant_id);
         let expires_at = new_session.expires_at;
 
         GrantSessionRepository::replace_for_grant(&new_session, &mut db.pool().into())
             .await
             .unwrap();
 
-        let entity = GrantSessionRepository::get_by_token_id(&token_id, &mut db.pool().into())
+        let entity = GrantSessionRepository::get_by_token_hash(&hash, &mut db.pool().into())
             .await
             .unwrap();
 
-        assert_eq!(entity.token_id, token_id);
+        assert_eq!(entity.token_hash, hash);
         assert_eq!(entity.grant_id, grant_id);
         assert_eq!(entity.expires_at, expires_at as i64);
     }
@@ -215,36 +223,33 @@ mod tests {
         let grant_id = setup_user_and_grant(&db).await;
 
         // With MAX_SESSIONS_PER_GRANT = 1, each new session evicts the previous one.
-        let s1 = make_new_session(&grant_id);
-        let s1_token = s1.token_id.clone();
+        let (s1, s1_hash) = make_new_session(&grant_id);
         GrantSessionRepository::replace_for_grant(&s1, &mut db.pool().into())
             .await
             .unwrap();
 
         // s2 evicts s1
-        let s2 = make_new_session(&grant_id);
-        let s2_token = s2.token_id.clone();
+        let (s2, s2_hash) = make_new_session(&grant_id);
         GrantSessionRepository::replace_for_grant(&s2, &mut db.pool().into())
             .await
             .unwrap();
 
         let result =
-            GrantSessionRepository::get_by_token_id(&s1_token, &mut db.pool().into()).await;
+            GrantSessionRepository::get_by_token_hash(&s1_hash, &mut db.pool().into()).await;
         assert!(result.is_err(), "s1 should have been evicted by s2");
 
         // s3 evicts s2
-        let s3 = make_new_session(&grant_id);
-        let s3_token = s3.token_id.clone();
+        let (s3, s3_hash) = make_new_session(&grant_id);
         GrantSessionRepository::replace_for_grant(&s3, &mut db.pool().into())
             .await
             .unwrap();
 
         let result =
-            GrantSessionRepository::get_by_token_id(&s2_token, &mut db.pool().into()).await;
+            GrantSessionRepository::get_by_token_hash(&s2_hash, &mut db.pool().into()).await;
         assert!(result.is_err(), "s2 should have been evicted by s3");
 
         // Only s3 survives
-        GrantSessionRepository::get_by_token_id(&s3_token, &mut db.pool().into())
+        GrantSessionRepository::get_by_token_hash(&s3_hash, &mut db.pool().into())
             .await
             .unwrap();
     }
@@ -277,31 +282,29 @@ mod tests {
 
         // With MAX_SESSIONS_PER_GRANT = 1, each grant independently holds 1 session.
         // sa2 evicts sa1, sb2 evicts sb1.
-        let sa1 = make_new_session(&grant_a);
+        let (sa1, _) = make_new_session(&grant_a);
         GrantSessionRepository::replace_for_grant(&sa1, &mut db.pool().into())
             .await
             .unwrap();
-        let sa2 = make_new_session(&grant_a);
-        let sa2_token = sa2.token_id.clone();
+        let (sa2, sa2_hash) = make_new_session(&grant_a);
         GrantSessionRepository::replace_for_grant(&sa2, &mut db.pool().into())
             .await
             .unwrap();
 
-        let sb1 = make_new_session(&grant_b_id);
+        let (sb1, _) = make_new_session(&grant_b_id);
         GrantSessionRepository::replace_for_grant(&sb1, &mut db.pool().into())
             .await
             .unwrap();
-        let sb2 = make_new_session(&grant_b_id);
-        let sb2_token = sb2.token_id.clone();
+        let (sb2, sb2_hash) = make_new_session(&grant_b_id);
         GrantSessionRepository::replace_for_grant(&sb2, &mut db.pool().into())
             .await
             .unwrap();
 
         // Only the latest session per grant survives
-        GrantSessionRepository::get_by_token_id(&sa2_token, &mut db.pool().into())
+        GrantSessionRepository::get_by_token_hash(&sa2_hash, &mut db.pool().into())
             .await
             .unwrap();
-        GrantSessionRepository::get_by_token_id(&sb2_token, &mut db.pool().into())
+        GrantSessionRepository::get_by_token_hash(&sb2_hash, &mut db.pool().into())
             .await
             .unwrap();
     }
@@ -312,14 +315,12 @@ mod tests {
         let db = SqlDb::test().await;
         let grant_id = setup_user_and_grant(&db).await;
 
-        let s1 = make_new_session(&grant_id);
-        let s1_token = s1.token_id.clone();
+        let (s1, s1_hash) = make_new_session(&grant_id);
         GrantSessionRepository::replace_for_grant(&s1, &mut db.pool().into())
             .await
             .unwrap();
 
-        let s2 = make_new_session(&grant_id);
-        let s2_token = s2.token_id.clone();
+        let (s2, s2_hash) = make_new_session(&grant_id);
         GrantSessionRepository::replace_for_grant(&s2, &mut db.pool().into())
             .await
             .unwrap();
@@ -329,12 +330,12 @@ mod tests {
             .unwrap();
 
         assert!(
-            GrantSessionRepository::get_by_token_id(&s1_token, &mut db.pool().into())
+            GrantSessionRepository::get_by_token_hash(&s1_hash, &mut db.pool().into())
                 .await
                 .is_err()
         );
         assert!(
-            GrantSessionRepository::get_by_token_id(&s2_token, &mut db.pool().into())
+            GrantSessionRepository::get_by_token_hash(&s2_hash, &mut db.pool().into())
                 .await
                 .is_err()
         );
@@ -344,9 +345,9 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_get_nonexistent_session() {
         let db = SqlDb::test().await;
+        let unknown = SessionTokenHash::try_from(vec![0u8; 32]).unwrap();
         let result =
-            GrantSessionRepository::get_by_token_id(&TokenId::generate(), &mut db.pool().into())
-                .await;
+            GrantSessionRepository::get_by_token_hash(&unknown, &mut db.pool().into()).await;
         assert!(result.is_err());
     }
 }

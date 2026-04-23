@@ -1,14 +1,14 @@
-//! Grant-based JWT session — the resolved session attached to authenticated requests.
+//! Grant-based session — the resolved session attached to authenticated requests.
 
-use pubky_common::auth::jws::{GrantId, TokenId};
+use pubky_common::auth::jws::GrantId;
 use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 
-/// Grant-based JWT session data.
+/// Grant-based session data.
 ///
-/// Constructed by [`AuthService::resolve_grant_session`](super::service::AuthService::resolve_grant_session)
+/// Constructed by [`AuthService::resolve_grant_session_by_bearer`](super::service::AuthService::resolve_grant_session_by_bearer)
 /// and wrapped in [`AuthSession::Grant`](crate::client_server::auth::AuthSession::Grant)
-/// by the JWT authentication middleware.
+/// by the authentication middleware.
 #[derive(Clone, Debug)]
 pub struct GrantSession {
     /// User public key.
@@ -17,8 +17,6 @@ pub struct GrantSession {
     pub capabilities: Capabilities,
     /// Grant ID (for revocation).
     pub grant_id: GrantId,
-    /// Token ID (session cache key).
-    pub token_id: TokenId,
-    /// When the JWT token expires (Unix seconds).
+    /// When the bearer expires (Unix seconds).
     pub token_expires_at: u64,
 }

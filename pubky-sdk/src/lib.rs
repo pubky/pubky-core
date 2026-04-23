@@ -82,7 +82,6 @@ pub use pkarr;
 pub use pubky_common::{
     auth::{
         AuthToken,
-        access_jwt::AccessJwtClaims,
         grant::GrantClaims,
         grant_session::{GrantInfo, GrantSessionInfo, GrantSessionResponse},
         jws::{ClientId, GrantId, PopNonce},

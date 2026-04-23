@@ -864,11 +864,11 @@ async fn jwt_proactive_refresh_produces_fresh_token() {
         .unwrap();
     let session = auth.await_approval().await.unwrap();
 
-    let token_before = session.as_jwt().unwrap().current_jwt().await;
+    let token_before = session.as_jwt().unwrap().current_bearer().await;
 
     // Force a refresh and verify the JWT changed.
     session.as_jwt().unwrap().force_refresh().await.unwrap();
-    let token_after = session.as_jwt().unwrap().current_jwt().await;
+    let token_after = session.as_jwt().unwrap().current_bearer().await;
 
     assert_ne!(
         token_before, token_after,

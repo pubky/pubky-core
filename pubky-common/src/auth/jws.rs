@@ -133,9 +133,6 @@ impl From<RandomId> for String {
 /// Grant identifier — a [`RandomId`] used as the `jti` claim in a Grant JWS.
 pub type GrantId = RandomId;
 
-/// JWT token identifier — a [`RandomId`] used as the `jti` claim in an Access JWT.
-pub type TokenId = RandomId;
-
 /// Proof-of-Possession nonce — a [`RandomId`] used to prevent PoP replay.
 pub type PopNonce = RandomId;
 

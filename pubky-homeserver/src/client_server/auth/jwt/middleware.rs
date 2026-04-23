@@ -1,16 +1,15 @@
-//! JWT Bearer token authentication middleware.
+//! Bearer token authentication middleware.
 //!
-//! The [`JwtAuthenticationLayer`] extracts and validates Bearer tokens from the
-//! `Authorization` header. On success it inserts an [`AuthSession`] into
-//! request extensions.
+//! The [`JwtAuthenticationLayer`] extracts the opaque Bearer token from the
+//! `Authorization` header and asks the `AuthService` to resolve it into a
+//! `GrantSession`. On success it inserts an [`AuthSession`] into request extensions.
 //!
 //! - **Bearer token present and valid** → inserts `AuthSession::Grant`.
-//! - **Bearer token present but invalid** → rejects with 401.
+//! - **Bearer token present but unknown/expired/revoked** → rejects with 401.
 //! - **No Authorization header** → forwards without an identity (never rejects).
 //! - **Non-Bearer Authorization scheme** → rejects with 401.
 
-use crate::client_server::auth::jwt::crypto::access_jwt_issuer::verify_access_jwt;
-use crate::client_server::auth::jwt::crypto::jws_crypto::JwsCompact;
+use crate::client_server::auth::jwt::crypto::session_token::SessionBearer;
 use crate::client_server::auth::{AuthSession, AuthState};
 use crate::shared::HttpError;
 use axum::http::header;
@@ -22,12 +21,12 @@ use tower::{Layer, Service};
 
 // ── Bearer token extraction ────────────────────────────────────────────────
 
-/// Extract and parse Bearer token from the Authorization header.
+/// Extract and validate the Bearer token from the Authorization header.
 ///
-/// - `Ok(Some(token))` — valid Bearer token found.
+/// - `Ok(Some(bearer))` — a [`SessionBearer`] that passed `parse` (non-empty, within length bound).
 /// - `Ok(None)` — no Authorization header present.
-/// - `Err(HttpError)` — Authorization header present but not a valid Bearer token.
-fn extract_bearer_token(req: &Request<Body>) -> Result<Option<JwsCompact>, HttpError> {
+/// - `Err(HttpError)` — Authorization header present but malformed, empty, or oversized.
+fn extract_bearer_token(req: &Request<Body>) -> Result<Option<SessionBearer>, HttpError> {
     let Some(value) = req.headers().get(header::AUTHORIZATION) else {
         return Ok(None);
     };
@@ -40,9 +39,9 @@ fn extract_bearer_token(req: &Request<Body>) -> Result<Option<JwsCompact>, HttpE
             "Malformed Authorization header",
         ));
     };
-    let token = JwsCompact::parse(raw_token)
-        .map_err(|_| HttpError::unauthorized_with_message("Malformed Bearer token"))?;
-    Ok(Some(token))
+    SessionBearer::parse(raw_token)
+        .map(Some)
+        .map_err(|_| HttpError::unauthorized_with_message("Malformed Bearer token"))
 }
 
 // ── Layer ───────────────────────────────────────────────────────────────────
@@ -98,23 +97,17 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let token = match extract_bearer_token(&req) {
-                Ok(Some(token)) => token,
+            let bearer = match extract_bearer_token(&req) {
+                Ok(Some(bearer)) => bearer,
                 Ok(None) => return inner.call(req).await.map_err(|e| match e {}),
                 Err(e) => return Ok(e.into_response()),
             };
 
-            // Verify JWT signature/expiry, then resolve the session via AuthService.
-            let jwt = match verify_access_jwt(&token, &state.auth_service.homeserver_public_key()) {
-                Ok(jwt) => jwt,
-                Err(_) => {
-                    return Ok(
-                        HttpError::unauthorized_with_message("Invalid or expired JWT")
-                            .into_response(),
-                    )
-                }
-            };
-            match state.auth_service.resolve_grant_session(&jwt).await {
+            match state
+                .auth_service
+                .resolve_grant_session_by_bearer(&bearer)
+                .await
+            {
                 Ok(session) => {
                     req.extensions_mut().insert(AuthSession::Grant(session));
                 }
@@ -131,16 +124,20 @@ mod tests {
     use super::*;
     use crate::app_context::AppContext;
     use crate::client_server::auth::cookie::verifier::AuthVerifier;
-    use crate::client_server::auth::jwt::crypto::access_jwt_issuer::mint_access_jwt;
     use crate::client_server::auth::AuthSession;
     use crate::client_server::auth::AuthState;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
-    use pubky_common::auth::access_jwt::AccessJwtClaims;
-    use pubky_common::auth::jws::{GrantId, TokenId};
     use pubky_common::crypto::Keypair;
     use std::sync::Arc;
     use tower::ServiceExt;
+
+    /// A 43-char stand-in for a well-formed but unknown bearer (same shape as
+    /// what the server mints but never issued → service-layer miss).
+    const UNKNOWN_WELL_FORMED_BEARER: &str = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+
+    /// Any length other than 43 — test wants to probe the parse-layer reject.
+    const WRONG_LENGTH_BEARER_LEN: usize = 200;
 
     async fn test_state() -> (AuthState, Keypair) {
         let context = AppContext::test().await;
@@ -180,20 +177,6 @@ mod tests {
         })
     }
 
-    fn mint_jwt(homeserver_keypair: &Keypair) -> String {
-        let user_kp = Keypair::random();
-        let now = chrono::Utc::now().timestamp() as u64;
-        let claims = AccessJwtClaims {
-            iss: homeserver_keypair.public_key(),
-            sub: user_kp.public_key(),
-            gid: GrantId::generate(),
-            jti: TokenId::generate(),
-            iat: now,
-            exp: now + 3600,
-        };
-        mint_access_jwt(homeserver_keypair, &claims).to_string()
-    }
-
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn no_auth_header_forwards_without_session() {
@@ -211,13 +194,16 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn malformed_bearer_token_rejects_with_401() {
+    async fn unknown_bearer_rejects_with_401() {
         let (state, _) = test_state().await;
         let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
 
         let req = Request::builder()
             .uri("/pub/file.txt")
-            .header("Authorization", "Bearer not-a-valid-jws")
+            .header(
+                "Authorization",
+                format!("Bearer {UNKNOWN_WELL_FORMED_BEARER}"),
+            )
             .body(Body::empty())
             .unwrap();
 
@@ -227,61 +213,14 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn valid_jws_with_wrong_signature_rejects_with_401() {
+    async fn wrong_length_bearer_rejects_with_401() {
         let (state, _) = test_state().await;
         let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
 
-        let wrong_keypair = Keypair::random();
-        let token = mint_jwt(&wrong_keypair);
-
+        let huge = "a".repeat(WRONG_LENGTH_BEARER_LEN);
         let req = Request::builder()
             .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn valid_jwt_but_no_session_in_db_rejects_with_401() {
-        let (state, hs_keypair) = test_state().await;
-        let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let token = mint_jwt(&hs_keypair);
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn expired_jwt_rejects_with_401() {
-        let (state, hs_keypair) = test_state().await;
-        let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
-
-        let user_kp = Keypair::random();
-        let claims = AccessJwtClaims {
-            iss: hs_keypair.public_key(),
-            sub: user_kp.public_key(),
-            gid: GrantId::generate(),
-            jti: TokenId::generate(),
-            iat: 1000,
-            exp: 2000, // far in the past
-        };
-        let token = mint_access_jwt(&hs_keypair, &claims);
-
-        let req = Request::builder()
-            .uri("/pub/file.txt")
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {huge}"))
             .body(Body::empty())
             .unwrap();
 
@@ -323,15 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_bearer_malformed_token() {
-        let req = Request::builder()
-            .header("Authorization", "Bearer not-a-jws")
-            .body(Body::empty())
-            .unwrap();
-        assert!(extract_bearer_token(&req).is_err());
-    }
-
-    #[test]
     fn extract_bearer_empty_token() {
         let req = Request::builder()
             .header("Authorization", "Bearer ")
@@ -341,12 +271,25 @@ mod tests {
     }
 
     #[test]
-    fn extract_bearer_valid_jws_format() {
+    fn extract_bearer_wrong_length_token() {
+        let huge = "a".repeat(WRONG_LENGTH_BEARER_LEN);
         let req = Request::builder()
-            .header("Authorization", "Bearer aaa.bbb.ccc")
+            .header("Authorization", format!("Bearer {huge}"))
             .body(Body::empty())
             .unwrap();
-        let result = extract_bearer_token(&req).unwrap();
-        assert!(result.is_some());
+        assert!(extract_bearer_token(&req).is_err());
+    }
+
+    #[test]
+    fn extract_bearer_valid_token() {
+        let req = Request::builder()
+            .header(
+                "Authorization",
+                format!("Bearer {UNKNOWN_WELL_FORMED_BEARER}"),
+            )
+            .body(Body::empty())
+            .unwrap();
+        let bearer = extract_bearer_token(&req).unwrap().expect("present");
+        assert_eq!(bearer.as_str(), UNKNOWN_WELL_FORMED_BEARER);
     }
 }

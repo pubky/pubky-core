@@ -7,7 +7,7 @@
 //!   first.
 //!
 //! All grant-management operations (`list_grants`, `revoke_grant`,
-//! `current_jwt`, `force_refresh`, `grant_id`) live on
+//! `current_bearer`, `force_refresh`, `grant_id`) live on
 //! [`super::view::JwtSessionView`] — they are reachable via
 //! [`PubkySession::as_jwt`](crate::actors::session::core::PubkySession::as_jwt)
 //! and only compile when the credential is JWT.
@@ -68,13 +68,13 @@ pub(crate) async fn credential_from_grant_exchange(
         &GrantExchangeMode::Signin,
     )
     .await?;
-    JwtCredential::from_response(
+    Ok(JwtCredential::from_response(
         response,
         grant_jws,
         grant_claims,
         client_keypair,
         homeserver_pubkey,
-    )
+    ))
 }
 
 /// Like [`credential_from_grant_exchange`] but hits
@@ -105,13 +105,13 @@ pub(crate) async fn credential_from_grant_signup(
         },
     )
     .await?;
-    JwtCredential::from_response(
+    Ok(JwtCredential::from_response(
         response,
         grant_jws,
         grant_claims,
         client_keypair,
         homeserver_pk,
-    )
+    ))
 }
 
 /// `POST` a grant + `PoP` proof to either `/auth/jwt/session` or

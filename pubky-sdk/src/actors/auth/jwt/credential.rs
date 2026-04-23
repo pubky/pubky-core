@@ -1,8 +1,8 @@
-//! JWT credential — grant + Proof-of-Possession + access JWT.
+//! Grant credential — grant + Proof-of-Possession + opaque session bearer.
 //!
 //! This is the **default** session credential. A user-signed grant JWS is
-//! exchanged at the homeserver for a short-lived access JWT and a session
-//! record. The SDK refreshes the JWT transparently using the stored grant
+//! exchanged at the homeserver for a short-lived opaque bearer and a session
+//! record. The SDK refreshes the bearer transparently using the stored grant
 //! and a fresh `PoP` proof.
 
 use std::any::Any;
@@ -11,7 +11,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use pubky_common::{
     auth::{
-        access_jwt::AccessJwtClaims,
         grant::GrantClaims,
         grant_session::{GrantSessionInfo, GrantSessionResponse},
         jws::PopNonce,
@@ -29,11 +28,11 @@ use crate::{
     actors::session::SessionInfo,
     actors::storage::resource::resolve_pubky,
     cross_log,
-    errors::{AuthError, RequestError, Result},
+    errors::{RequestError, Result},
     util::check_http_status,
 };
 
-/// Refresh the JWT proactively when it has less than this many seconds left.
+/// Refresh the bearer proactively when it has less than this many seconds left.
 pub(crate) const REFRESH_SLACK_SECS: u64 = 300;
 
 /// Current Unix timestamp in seconds, cross-target.
@@ -50,11 +49,11 @@ pub(crate) fn now_unix() -> u64 {
 /// concurrent refreshes serialize.
 #[derive(Debug)]
 pub(crate) struct JwtState {
-    /// Current bearer token (JWS Compact string).
-    pub jwt: String,
-    /// Decoded claims (used for proactive refresh checks).
-    pub claims: AccessJwtClaims,
-    /// The grant JWS used to mint this and future JWTs (refresh material).
+    /// Current opaque bearer token (homeserver-issued).
+    pub bearer: String,
+    /// Unix seconds at which `bearer` expires. Drives proactive refresh.
+    pub token_expires_at: u64,
+    /// The grant JWS used to mint this and future bearers (refresh material).
     pub grant_jws: String,
     /// Decoded grant claims — exposes `iss`, `client_id`, `cnf`, `jti`, …
     pub grant_claims: GrantClaims,
@@ -64,6 +63,12 @@ pub(crate) struct JwtState {
     pub homeserver_pk: PublicKey,
     /// Latest server-reported session metadata.
     pub session: GrantSessionInfo,
+}
+
+impl JwtState {
+    fn is_near_expiry(&self, now: u64, slack: u64) -> bool {
+        self.token_expires_at.saturating_sub(slack) <= now
+    }
 }
 
 /// Cheap-to-clone JWT credential. The mutable token state is shared across
@@ -85,32 +90,29 @@ impl JwtCredential {
         grant_claims: GrantClaims,
         client_keypair: Keypair,
         homeserver_pk: PublicKey,
-    ) -> Result<Self> {
-        let claims = AccessJwtClaims::decode(&response.token)
-            .map_err(|e| AuthError::Validation(format!("invalid access JWT in response: {e}")))?;
+    ) -> Self {
         let info = to_session_info(&response.session);
         let state = JwtState {
-            jwt: response.token,
-            claims,
+            bearer: response.token,
+            token_expires_at: response.session.token_expires_at,
             grant_jws,
             grant_claims,
             client_keypair,
             homeserver_pk,
             session: response.session,
         };
-        Ok(Self {
+        Self {
             state: Arc::new(Mutex::new(state)),
             info,
-        })
+        }
     }
 
     /// Snapshot of the current bearer token (released immediately).
-    pub(crate) async fn current_jwt(&self) -> String {
-        self.state.lock().await.jwt.clone()
+    pub(crate) async fn current_bearer(&self) -> String {
+        self.state.lock().await.bearer.clone()
     }
 
-    /// Refresh the JWT credential by exchanging the stored grant for a new
-    /// bearer token.
+    /// Refresh the credential by exchanging the stored grant for a new bearer.
     ///
     /// Holds the credential mutex for the entire refresh so concurrent
     /// refreshes serialize on the same `Arc<Mutex<…>>`.
@@ -120,11 +122,8 @@ impl JwtCredential {
 
         // Double-check pattern: by the time we acquired the lock, another
         // task may have already refreshed. Skip the network call if the
-        // token is comfortably fresh now.
-        if !state
-            .claims
-            .is_near_expiry(now_unix(), REFRESH_SLACK_SECS / 2)
-        {
+        // bearer is comfortably fresh now.
+        if !state.is_near_expiry(now_unix(), REFRESH_SLACK_SECS / 2) {
             return Ok(());
         }
 
@@ -149,11 +148,8 @@ impl JwtCredential {
                 message: format!("decoding /auth/jwt/session response: {e}"),
             })?;
 
-        let new_claims = AccessJwtClaims::decode(&parsed.token)
-            .map_err(|e| AuthError::Validation(format!("invalid access JWT in response: {e}")))?;
-
-        state.jwt = parsed.token;
-        state.claims = new_claims;
+        state.bearer = parsed.token;
+        state.token_expires_at = parsed.session.token_expires_at;
         state.session = parsed.session;
         Ok(())
     }
@@ -176,7 +172,7 @@ impl SessionCredential for JwtCredential {
         let user_pk = self.state.lock().await.grant_claims.iss.clone();
         let url = format!("pubky{}/auth/jwt/session", user_pk.z32());
         let resolved = resolve_pubky(&url)?;
-        let bearer = self.current_jwt().await;
+        let bearer = self.current_bearer().await;
         let response = client
             .cross_request(Method::DELETE, resolved)
             .await?
@@ -193,14 +189,12 @@ impl SessionCredential for JwtCredential {
         // network call when no refresh is needed.
         let needs_refresh = {
             let jwt_state = self.state.lock().await;
-            jwt_state
-                .claims
-                .is_near_expiry(now_unix(), REFRESH_SLACK_SECS)
+            jwt_state.is_near_expiry(now_unix(), REFRESH_SLACK_SECS)
         };
         if needs_refresh {
             self.refresh(client).await?;
         }
-        let bearer = self.state.lock().await.jwt.clone();
+        let bearer = self.state.lock().await.bearer.clone();
         Ok(rb.bearer_auth(bearer))
     }
 
@@ -215,7 +209,7 @@ impl SessionCredential for JwtCredential {
         let user_pk = self.state.lock().await.grant_claims.iss.clone();
         let url = format!("pubky{}/auth/jwt/session", user_pk.z32());
         let resolved = resolve_pubky(&url)?;
-        let bearer = self.current_jwt().await;
+        let bearer = self.current_bearer().await;
         let response = client
             .cross_request(Method::GET, resolved)
             .await?

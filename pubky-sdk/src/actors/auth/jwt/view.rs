@@ -27,7 +27,7 @@ pub struct JwtSessionView<'a> {
 impl PubkySession {
     /// Returns a [`JwtSessionView`] if this session is JWT-backed.
     ///
-    /// JWT-only operations (`list_grants`, `revoke_grant`, `current_jwt`,
+    /// JWT-only operations (`list_grants`, `revoke_grant`, `current_bearer`,
     /// `force_refresh`, `grant_id`) live on the view. Cookie-backed sessions
     /// return `None`.
     #[must_use]
@@ -68,7 +68,7 @@ impl<'a> JwtSessionView<'a> {
     pub async fn list_grants(&self) -> Result<Vec<GrantInfo>> {
         let (user, bearer) = {
             let g = self.credential.state.lock().await;
-            (g.grant_claims.iss.clone(), g.jwt.clone())
+            (g.grant_claims.iss.clone(), g.bearer.clone())
         };
         let url = format!("pubky://{}/auth/jwt/sessions", user.z32());
         let resolved = resolve_pubky(&url)?;
@@ -98,7 +98,7 @@ impl<'a> JwtSessionView<'a> {
     pub async fn revoke_grant(&self, grant_id: &GrantId) -> Result<()> {
         let (user, bearer) = {
             let g = self.credential.state.lock().await;
-            (g.grant_claims.iss.clone(), g.jwt.clone())
+            (g.grant_claims.iss.clone(), g.bearer.clone())
         };
         let url = format!(
             "pubky://{}/auth/jwt/session/{}",
@@ -118,9 +118,9 @@ impl<'a> JwtSessionView<'a> {
         Ok(())
     }
 
-    /// Returns the current access JWT for this session.
-    pub async fn current_jwt(&self) -> String {
-        self.credential.current_jwt().await
+    /// Returns the current opaque bearer for this session.
+    pub async fn current_bearer(&self) -> String {
+        self.credential.current_bearer().await
     }
 
     /// Returns the grant id (`jti`) backing this session, for callers that
@@ -129,22 +129,21 @@ impl<'a> JwtSessionView<'a> {
         self.credential.state.lock().await.grant_claims.jti.clone()
     }
 
-    /// Test/debug helper: force a refresh of the JWT credential right now.
+    /// Test/debug helper: force a refresh of the credential right now.
     ///
-    /// Used by integration tests to verify that a refresh produces a token
-    /// with a fresh `iat`/`jti`. Returns the new token's `iat` for assertions.
+    /// Used by integration tests to verify that a refresh yields a new
+    /// bearer. Returns the new bearer for assertions.
     ///
     /// Bypasses the proactive-refresh time check so the refresh always runs.
     ///
     /// # Errors
     /// - Propagates HTTP errors from the refresh exchange.
     #[doc(hidden)]
-    pub async fn force_refresh(&self) -> Result<u64> {
-        // Bypass the proactive-refresh time check by setting `claims.exp`
-        // to "expired now"; the refresh helper then always hits the network.
-        self.credential.state.lock().await.claims.exp = 0;
+    pub async fn force_refresh(&self) -> Result<String> {
+        // Bypass the proactive-refresh time check by setting the expiry
+        // to 0; the refresh helper then always hits the network.
+        self.credential.state.lock().await.token_expires_at = 0;
         self.credential.refresh(self.session.client()).await?;
-        let g = self.credential.state.lock().await;
-        Ok(g.claims.iat)
+        Ok(self.credential.state.lock().await.bearer.clone())
     }
 }

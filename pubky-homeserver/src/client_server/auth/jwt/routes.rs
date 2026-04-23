@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use axum::response::IntoResponse;
     use pubky_common::{
-        auth::jws::{GrantId, TokenId},
+        auth::jws::GrantId,
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
     };
@@ -167,7 +167,6 @@ mod tests {
             user_key: Keypair::random().public_key(),
             capabilities: caps,
             grant_id: GrantId::generate(),
-            token_id: TokenId::generate(),
             token_expires_at: now + 3600,
         })
     }

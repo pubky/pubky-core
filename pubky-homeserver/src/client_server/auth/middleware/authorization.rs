@@ -116,7 +116,7 @@ mod tests {
     use crate::client_server::auth::jwt::session::GrantSession;
     use axum::body::Body;
     use axum::http::Request;
-    use pubky_common::auth::jws::{GrantId, TokenId};
+    use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_common::crypto::{Keypair, PublicKey};
 
@@ -129,7 +129,6 @@ mod tests {
             user_key: pk,
             capabilities,
             grant_id: GrantId::generate(),
-            token_id: TokenId::generate(),
             token_expires_at: 9999999999,
         })
     }
