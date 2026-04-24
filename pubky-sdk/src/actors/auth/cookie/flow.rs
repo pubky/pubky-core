@@ -236,7 +236,10 @@ impl PubkyCookieAuthFlow {
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "Tests exercise the deprecated cookie flow on purpose")]
+#[allow(
+    deprecated,
+    reason = "Tests exercise the deprecated cookie flow on purpose"
+)]
 mod tests {
     use super::*;
     use crate::actors::auth::relay::http_relay_inbox_channel::EncryptedHttpRelayInboxChannel;

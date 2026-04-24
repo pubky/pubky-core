@@ -741,9 +741,13 @@ mod tests {
             .await
             .unwrap();
         let prior_user = Keypair::random().public_key();
-        SignupCodeRepository::mark_as_used(&code_id, &prior_user, &mut service.sql_db.pool().into())
-            .await
-            .unwrap();
+        SignupCodeRepository::mark_as_used(
+            &code_id,
+            &prior_user,
+            &mut service.sql_db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         let err = service
             .signup_grant_session(

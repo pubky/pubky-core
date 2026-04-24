@@ -208,7 +208,7 @@ println!("Scan to sign in: {}", flow.authorization_url());
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
 # pubky.signer(Keypair::random()).approve_auth(flow.authorization_url()).await?;
 
-let session = flow.await_session().await?;
+let session = flow.await_approval().await?;
 
 # Ok(()) }
 ```
