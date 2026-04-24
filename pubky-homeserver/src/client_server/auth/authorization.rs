@@ -191,8 +191,6 @@ mod tests {
         // covered end-to-end by that SDK test; here we just verify the
         // predicate rejects the path before any tenant/capability check.
         let (session, pubky) = session_with_caps(root_caps());
-        assert!(
-            has_write_permission(&session, &pubky, &web_path("/priv/example.com/x")).is_err()
-        );
+        assert!(has_write_permission(&session, &pubky, &web_path("/priv/example.com/x")).is_err());
     }
 }
