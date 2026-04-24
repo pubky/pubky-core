@@ -55,10 +55,6 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "ServiceWorkerGlobalScope",
 ] }
 url.workspace = true
-getrandom = { version = "0.4.1", features = ["wasm_js"] }
-# pubky-common uses rand 0.9.x which transitively depends on getrandom 0.3.x.
-# When compiling to WASM, getrandom 0.3.x needs the wasm_js feature enabled.
-getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 reqwest = { workspace = true, features = [
     "stream",
 ] }

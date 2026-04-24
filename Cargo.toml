@@ -54,6 +54,7 @@ tower-http = "0.6.8"
 thiserror = "2.0.18"
 clap = "4.6.0"
 http-relay = "0.7.0"
+rand = "0.10"
 
 # Transitive dependency of pkarr
 # Pinned until pubky-homeserver key-republisher code supports newer versions
