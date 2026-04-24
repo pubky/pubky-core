@@ -105,19 +105,21 @@ pub async fn get_session(
     Ok(resp)
 }
 
-/// `DELETE /session` — deletes DB session and sets removal cookie.
+/// `DELETE /session` — idempotently deletes the DB session (if any) and sets a removal cookie.
+///
+/// Takes `Option<AuthSession>` rather than `AuthSession` so a second signout with an
+/// already-invalidated cookie is a 200 no-op rather than a 401. The removal cookie is
+/// attached on both paths so the client always wipes any locally-stale cookie.
 pub async fn signout(
     State(state): State<AuthState>,
-    auth: crate::client_server::auth::AuthSession,
+    auth: Option<crate::client_server::auth::AuthSession>,
     cookies: Cookies,
     Host(host): Host,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    let crate::client_server::auth::AuthSession::Cookie(cookie_session) = auth else {
-        return Err(HttpError::unauthorized());
-    };
-
-    SessionRepository::delete(&cookie_session.secret, &mut state.sql_db.pool().into()).await?;
+    if let Some(crate::client_server::auth::AuthSession::Cookie(cookie_session)) = auth {
+        SessionRepository::delete(&cookie_session.secret, &mut state.sql_db.pool().into()).await?;
+    }
 
     let mut removal = Cookie::new(pubky.public_key().z32(), String::new());
     removal.make_removal();

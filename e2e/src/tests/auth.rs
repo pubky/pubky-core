@@ -943,6 +943,56 @@ async fn jwt_signout_kills_grant() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+async fn cookie_signout_is_idempotent() {
+    let testnet = build_full_testnet().await;
+    let homeserver = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
+
+    // First signout succeeds and invalidates the cookie server-side.
+    session.clone().signout().await.unwrap();
+
+    // A second signout with the now-stale cookie must be a 200 no-op.
+    session
+        .signout()
+        .await
+        .expect("second signout must be idempotent");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_signout_is_idempotent() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let session = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url,
+        "app.idempotent",
+        Capabilities::builder().cap(Capability::root()).finish(),
+    )
+    .await;
+
+    // First signout revokes the grant.
+    session.clone().signout().await.unwrap();
+
+    // A second signout with the now-revoked bearer must be a 200 no-op.
+    session
+        .signout()
+        .await
+        .expect("second JWT signout must be idempotent");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
 async fn jwt_list_and_revoke_grants_root_only() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();

@@ -3,17 +3,20 @@
 //! The [`JwtAuthenticationLayer`] extracts the opaque Bearer token from the
 //! `Authorization` header and asks the `AuthService` to resolve it into a
 //! `GrantSession`. On success it inserts an [`AuthSession`] into request extensions.
+//! The middleware never rejects — downstream handlers declare their auth
+//! requirement via the extractor type (`AuthSession` for strict, `Option<AuthSession>`
+//! for lenient).
 //!
 //! - **Bearer token present and valid** → inserts `AuthSession::Grant`.
-//! - **Bearer token present but unknown/expired/revoked** → rejects with 401.
-//! - **No Authorization header** → forwards without an identity (never rejects).
-//! - **Non-Bearer Authorization scheme** → rejects with 401.
+//! - **Bearer token present but unknown/expired/revoked** → forwards without an
+//!   identity; the downstream extractor emits 401 if the route requires auth.
+//! - **No Authorization header** → forwards without an identity.
+//! - **Non-Bearer / malformed Authorization header** → forwards without an identity.
 
 use crate::client_server::auth::jwt::crypto::session_token::SessionBearer;
 use crate::client_server::auth::{AuthSession, AuthState};
 use crate::shared::HttpError;
 use axum::http::header;
-use axum::response::IntoResponse;
 use axum::{body::Body, http::Request};
 use futures_util::future::BoxFuture;
 use std::{convert::Infallible, task::Poll};
@@ -100,7 +103,12 @@ where
             let bearer = match extract_bearer_token(&req) {
                 Ok(Some(bearer)) => bearer,
                 Ok(None) => return inner.call(req).await.map_err(|e| match e {}),
-                Err(e) => return Ok(e.into_response()),
+                Err(_) => {
+                    tracing::debug!(
+                        "Authorization header present but not a usable Bearer token; forwarding without auth"
+                    );
+                    return inner.call(req).await.map_err(|e| match e {});
+                }
             };
 
             match state
@@ -111,7 +119,12 @@ where
                 Ok(session) => {
                     req.extensions_mut().insert(AuthSession::Grant(session));
                 }
-                Err(e) => return Ok(HttpError::from(e).into_response()),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Bearer token did not resolve to a grant session; forwarding without auth"
+                    );
+                }
             }
 
             inner.call(req).await.map_err(|e| match e {})
@@ -194,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn unknown_bearer_rejects_with_401() {
+    async fn unknown_bearer_forwards_without_session() {
         let (state, _) = test_state().await;
         let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
 
@@ -208,12 +221,12 @@ mod tests {
             .unwrap();
 
         let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn wrong_length_bearer_rejects_with_401() {
+    async fn wrong_length_bearer_forwards_without_session() {
         let (state, _) = test_state().await;
         let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
 
@@ -225,12 +238,12 @@ mod tests {
             .unwrap();
 
         let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn basic_auth_header_rejected_with_401() {
+    async fn basic_auth_header_forwards_without_session() {
         let (state, _) = test_state().await;
         let svc = JwtAuthenticationLayer::new(state).layer(assert_handler(false));
 
@@ -241,7 +254,7 @@ mod tests {
             .unwrap();
 
         let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     // ── extract_bearer_token unit tests ────────────────────────────────

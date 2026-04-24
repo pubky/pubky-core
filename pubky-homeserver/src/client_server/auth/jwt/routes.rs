@@ -94,15 +94,17 @@ pub async fn get_session(
     Ok(Json(info))
 }
 
-/// `DELETE /auth/jwt/session` — revokes the grant and all its sessions.
+/// `DELETE /auth/jwt/session` — idempotently revokes the grant (if any).
+///
+/// Takes `Option<AuthSession>` rather than `AuthSession` so a second signout with an
+/// already-revoked bearer is a 200 no-op rather than a 401.
 pub async fn signout(
     State(state): State<AuthState>,
-    auth: AuthSession,
+    auth: Option<AuthSession>,
 ) -> HttpResult<impl IntoResponse> {
-    let AuthSession::Grant(session) = auth else {
-        return Err(HttpError::unauthorized());
-    };
-    state.auth_service.signout_grant_session(&session).await?;
+    if let Some(AuthSession::Grant(session)) = auth {
+        state.auth_service.signout_grant_session(&session).await?;
+    }
     Ok(StatusCode::OK)
 }
 

@@ -1,11 +1,14 @@
 //! Composed authentication middleware.
 //!
 //! The [`AuthenticationLayer`] composes JWT and cookie authentication into a
-//! single layer. JWT runs first; cookie only activates when no Bearer token
-//! was present.
+//! single layer. JWT runs first; cookie only activates when no `AuthSession`
+//! was inserted by the JWT layer. Neither layer rejects — handlers declare
+//! their auth requirement via the extractor type (`AuthSession` for strict,
+//! `Option<AuthSession>` for lenient).
 //!
 //! - **Bearer token present and valid** → `AuthSession::Grant` (cookie skipped).
-//! - **Bearer token present but invalid** → rejects with 401 (cookie never runs).
+//! - **Bearer token present but invalid** → forwards without identity; cookie
+//!   fallback still runs downstream.
 //! - **No Bearer, valid cookie** → `AuthSession::Cookie`.
 //! - **No credentials** → forwards without an identity.
 
@@ -119,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn invalid_bearer_rejects_even_with_valid_cookie_present() {
+    async fn invalid_bearer_falls_through_without_auth() {
         let (state, _) = test_state().await;
         let svc = AuthenticationLayer::new(state).layer(assert_handler(false));
 
@@ -133,6 +136,6 @@ mod tests {
         req.extensions_mut().insert(PubkyHost(pk));
 
         let resp = svc.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
