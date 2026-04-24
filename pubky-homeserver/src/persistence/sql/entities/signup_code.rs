@@ -130,6 +130,7 @@ impl SignupCodeRepository {
                 SimpleExpr::Value(used_by.z32().into()),
             )])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
+            .and_where(Expr::col(SignupCodeIden::UsedBy).is_null())
             .returning_all()
             .to_owned();
 

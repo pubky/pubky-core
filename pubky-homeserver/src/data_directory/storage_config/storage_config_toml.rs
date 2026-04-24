@@ -24,6 +24,5 @@ pub struct StorageToml {
     pub backend: StorageConfigToml,
     /// Default per-user storage quota in MB.
     /// Omit for unlimited. `0` means zero storage (not unlimited).
-    #[serde(default)]
     pub default_quota_mb: Option<u64>,
 }

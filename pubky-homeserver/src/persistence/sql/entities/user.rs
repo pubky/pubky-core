@@ -8,6 +8,21 @@ use crate::shared::user_quota::UserQuota;
 
 pub const USER_TABLE: &str = "users";
 
+/// All columns needed to construct a `UserEntity` from a row.
+/// Single source of truth — used by `get`, `get_for_update`, and `get_all`.
+const ALL_USER_COLUMNS: [UserIden; 10] = [
+    UserIden::Id,
+    UserIden::PublicKey,
+    UserIden::CreatedAt,
+    UserIden::Disabled,
+    UserIden::UsedBytes,
+    UserIden::QuotaStorageMb,
+    UserIden::QuotaRateRead,
+    UserIden::QuotaRateWrite,
+    UserIden::QuotaRateReadBurst,
+    UserIden::QuotaRateWriteBurst,
+];
+
 /// Repository that handles all the queries regarding the UserEntity.
 pub struct UserRepository;
 
@@ -40,18 +55,7 @@ impl UserRepository {
     ) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([
-                UserIden::Id,
-                UserIden::PublicKey,
-                UserIden::CreatedAt,
-                UserIden::Disabled,
-                UserIden::UsedBytes,
-                UserIden::QuotaStorageMb,
-                UserIden::QuotaRateRead,
-                UserIden::QuotaRateWrite,
-                UserIden::QuotaRateReadBurst,
-                UserIden::QuotaRateWriteBurst,
-            ])
+            .columns(ALL_USER_COLUMNS)
             .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -69,18 +73,7 @@ impl UserRepository {
     ) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([
-                UserIden::Id,
-                UserIden::PublicKey,
-                UserIden::CreatedAt,
-                UserIden::Disabled,
-                UserIden::UsedBytes,
-                UserIden::QuotaStorageMb,
-                UserIden::QuotaRateRead,
-                UserIden::QuotaRateWrite,
-                UserIden::QuotaRateReadBurst,
-                UserIden::QuotaRateWriteBurst,
-            ])
+            .columns(ALL_USER_COLUMNS)
             .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
             .lock(sea_query::LockType::Update)
             .to_owned();
@@ -115,18 +108,7 @@ impl UserRepository {
     ) -> Result<Vec<UserEntity>, sqlx::Error> {
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([
-                UserIden::Id,
-                UserIden::PublicKey,
-                UserIden::CreatedAt,
-                UserIden::Disabled,
-                UserIden::UsedBytes,
-                UserIden::QuotaStorageMb,
-                UserIden::QuotaRateRead,
-                UserIden::QuotaRateWrite,
-                UserIden::QuotaRateReadBurst,
-                UserIden::QuotaRateWriteBurst,
-            ])
+            .columns(ALL_USER_COLUMNS)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;

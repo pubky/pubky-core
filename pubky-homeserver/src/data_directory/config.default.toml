@@ -26,10 +26,18 @@ key = "ip"
 #   PATCH /users/{pubkey}/quota
 #
 # Default bandwidth limit for user reads / downloads.
-# rate_read = "10mb/s"
+rate_read = "10mb/s"
 #
 # Default bandwidth limit for user writes / uploads.
-# rate_write = "5mb/s"
+rate_write = "5mb/s"
+#
+# Default burst for read rate, in the rate's natural unit (e.g. MB for "…mb/s").
+# Per-user overrides take precedence. Omit for burst = rate.
+# rate_read_burst = 50
+#
+# Default burst for write rate, in the rate's natural unit (e.g. MB for "…mb/s").
+# Per-user overrides take precedence. Omit for burst = rate.
+# rate_write_burst = 25
 #
 # Server-level bandwidth limit for unauthenticated IP reads.
 # Not per-user — applies to all anonymous requests by IP.
@@ -39,7 +47,7 @@ key = "ip"
 type = "file_system"
 # Default per-user storage quota in MB.
 # Omit for unlimited. 0 means zero storage (not unlimited).
-# default_quota_mb = 500
+# default_quota_mb = 1024
 
 [admin]
 enabled = true

@@ -66,7 +66,6 @@ pub struct DriveToml {
     pub pubky_listen_socket: SocketAddr,
     pub icann_listen_socket: SocketAddr,
     /// Per-path request-count rate limits.
-    #[serde(default)]
     pub rate_limits: Vec<PathLimit>,
 }
 
@@ -89,6 +88,12 @@ pub struct DefaultQuotasToml {
     /// Default bandwidth limit for user writes / uploads (e.g. "5mb/s").
     /// Per-user DB overrides take precedence. `None` means no write throttling.
     pub rate_write: Option<BandwidthRate>,
+    /// Default burst for read rate, in the rate's natural unit (e.g. MB for "…mb/s").
+    /// Per-user DB overrides take precedence. `None` means burst equals rate.
+    pub rate_read_burst: Option<u32>,
+    /// Default burst for write rate, in the rate's natural unit (e.g. MB for "…mb/s").
+    /// Per-user DB overrides take precedence. `None` means burst equals rate.
+    pub rate_write_burst: Option<u32>,
     /// Server-level bandwidth limit for unauthenticated IP reads (e.g. "1mb/s").
     /// `None` means no read throttling for unauthenticated requests.
     pub unauthenticated_ip_rate_read: Option<BandwidthRate>,
@@ -115,6 +120,7 @@ pub struct GeneralToml {
         since = "0.7.0",
         note = "use `storage.default_quota_mb` instead; this field is only resolved at TOML parse time"
     )]
+    #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
 }
@@ -147,7 +153,6 @@ pub struct ConfigToml {
     /// Storage configuration: backend selection and default storage quota.
     pub storage: StorageToml,
     /// Default bandwidth limits for the rate limiter. Overridable per-user via admin API.
-    #[serde(default)]
     pub default_quotas: DefaultQuotasToml,
     /// Administrative API configuration.
     pub admin: AdminToml,
@@ -347,8 +352,10 @@ mod tests {
         assert_eq!(c.drive.rate_limits.len(), 1);
         assert_eq!(c.drive.rate_limits[0].path.0, "/signup_tokens/*");
         assert_eq!(c.default_quotas.unauthenticated_ip_rate_read, None);
-        assert_eq!(c.default_quotas.rate_read, None);
-        assert_eq!(c.default_quotas.rate_write, None);
+        assert_eq!(c.default_quotas.rate_read, Some("10mb/s".parse().unwrap()));
+        assert_eq!(c.default_quotas.rate_write, Some("5mb/s".parse().unwrap()));
+        assert_eq!(c.default_quotas.rate_read_burst, None);
+        assert_eq!(c.default_quotas.rate_write_burst, None);
         assert_eq!(c.storage.default_quota_mb, None);
         assert_eq!(c.storage.backend, StorageConfigToml::FileSystem);
         assert_eq!(

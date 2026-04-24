@@ -142,9 +142,8 @@ impl UserService {
 
     /// Apply a partial quota update.
     ///
-    /// The cached entry is **not** actively invalidated — downstream layers
-    /// (rate limiter, etc.) will pick up the new values once the cache TTL
-    /// expires (≤ 2 minutes).
+    /// The cached entry is actively invalidated after commit so downstream
+    /// layers (rate limiter, etc.) pick up the new values on their next request.
     pub async fn patch_quota(
         &self,
         pubkey: &PublicKey,
@@ -168,6 +167,9 @@ impl UserService {
 
         let updated = UserRepository::set_quota(user.id, &config, uexecutor!(tx)).await?;
         tx.commit().await?;
+
+        // Evict cached entry so the rate limiter sees the change immediately.
+        self.quota_cache.remove(pubkey);
 
         Ok(updated)
     }

@@ -12,7 +12,7 @@ signup_mode = "token_required"
 # DEPRECATED: Use [storage].default_quota_mb instead.
 # Kept for backwards compatibility. 0 means unlimited.
 # Ignored when [storage].default_quota_mb is set.
-user_storage_quota_mb = 0
+# user_storage_quota_mb = 0
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.
@@ -86,7 +86,7 @@ type = "file_system"
 
 # Default per-user storage quota (in MB).
 # Omit for unlimited. 0 means zero storage (not unlimited).
-# default_quota_mb = 500
+# default_quota_mb = 1024
 
 # Google Cloud Bucket
 # Files are saved in a Google Cloud Bucket.

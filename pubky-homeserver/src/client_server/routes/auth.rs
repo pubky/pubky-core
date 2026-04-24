@@ -108,7 +108,19 @@ pub async fn signup(
             ));
         }
 
-        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
+        match SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await
+        {
+            Ok(_) => {}
+            // The WHERE clause includes `used_by IS NULL`, so RowNotFound means
+            // another transaction redeemed the code between our check and update.
+            Err(sqlx::Error::RowNotFound) => {
+                return Err(HttpError::new_with_message(
+                    StatusCode::UNAUTHORIZED,
+                    "Token already used",
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         // 4) Create the new user record with the token's limits.
         let limits = code.quota();

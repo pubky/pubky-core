@@ -18,6 +18,9 @@ use crate::data_directory::quota_config::BandwidthRate;
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_quota_columns` migration.
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
 
+/// Sentinel value stored in BIGINT columns to represent "Unlimited".
+const DB_UNLIMITED_SENTINEL: i64 = -1;
+
 /// A three-state override for per-user quota fields.
 ///
 /// Semantics:
@@ -111,7 +114,7 @@ impl QuotaOverride<u64> {
     pub fn to_db_bigint(&self) -> Option<i64> {
         match self {
             QuotaOverride::Default => None,
-            QuotaOverride::Unlimited => Some(-1),
+            QuotaOverride::Unlimited => Some(DB_UNLIMITED_SENTINEL),
             QuotaOverride::Value(v) => Some(i64::try_from(*v).unwrap_or(i64::MAX)),
         }
     }
@@ -120,7 +123,7 @@ impl QuotaOverride<u64> {
     pub fn from_db_bigint(column: &str, val: Option<i64>) -> Self {
         match val {
             None => QuotaOverride::Default,
-            Some(-1) => QuotaOverride::Unlimited,
+            Some(DB_UNLIMITED_SENTINEL) => QuotaOverride::Unlimited,
             Some(v) if v >= 0 => QuotaOverride::Value(v as u64),
             Some(v) => {
                 tracing::warn!("Unexpected {column} ({v}) in DB; treating as Default");
@@ -183,6 +186,17 @@ impl QuotaOverride<BandwidthRate> {
             },
         }
     }
+}
+
+/// Convert an `Option<u32>` burst value to the DB column type (`INTEGER`),
+/// truncating to `i32::MAX` with a warning if the value overflows.
+fn burst_to_i32(label: &str, value: Option<u32>) -> Option<i32> {
+    value.map(|v| {
+        i32::try_from(v).unwrap_or_else(|_| {
+            tracing::warn!("{label} {v} exceeds i32::MAX, truncating to {}", i32::MAX);
+            i32::MAX
+        })
+    })
 }
 
 /// Validate that a `BandwidthRate` value can be persisted: its string form
@@ -299,28 +313,12 @@ impl UserQuota {
 
     /// Rate-read burst as DB-column type (`INTEGER`).
     pub fn rate_read_burst_i32(&self) -> Option<i32> {
-        self.rate_read_burst.map(|v| {
-            i32::try_from(v).unwrap_or_else(|_| {
-                tracing::warn!(
-                    "rate_read_burst {v} exceeds i32::MAX, truncating to {}",
-                    i32::MAX
-                );
-                i32::MAX
-            })
-        })
+        burst_to_i32("rate_read_burst", self.rate_read_burst)
     }
 
     /// Rate-write burst as DB-column type (`INTEGER`).
     pub fn rate_write_burst_i32(&self) -> Option<i32> {
-        self.rate_write_burst.map(|v| {
-            i32::try_from(v).unwrap_or_else(|_| {
-                tracing::warn!(
-                    "rate_write_burst {v} exceeds i32::MAX, truncating to {}",
-                    i32::MAX
-                );
-                i32::MAX
-            })
-        })
+        burst_to_i32("rate_write_burst", self.rate_write_burst)
     }
 
     /// Check that the quota fields are internally consistent:
