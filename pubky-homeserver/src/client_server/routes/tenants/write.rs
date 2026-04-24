@@ -8,8 +8,10 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     client_server::{
-        auth::WriteAccess, err_if_user_is_invalid::get_user_or_http_error,
-        middleware::pubky_host::PubkyHost, AppState,
+        auth::{has_write_permission, AuthSession},
+        err_if_user_is_invalid::get_user_or_http_error,
+        middleware::pubky_host::PubkyHost,
+        AppState,
     },
     persistence::{
         files::WriteStreamError,
@@ -23,10 +25,12 @@ use crate::{
 
 pub async fn delete(
     State(state): State<AppState>,
-    _write: WriteAccess,
+    session: AuthSession,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
@@ -37,11 +41,13 @@ pub async fn delete(
 
 pub async fn put(
     State(state): State<AppState>,
-    _write: WriteAccess,
+    session: AuthSession,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
