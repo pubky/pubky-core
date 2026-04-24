@@ -38,7 +38,7 @@ opt-level = 'z'
 # Setting "default-features = false" because cargo doesn't allow member crates to override the root "default-features" flag, which if not set, is implied to be true.
 # Member crates that need "default-features = false" should leave it out of their dependency specification, as it's inherited from here.
 # Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
-pkarr = { version = "5.0.4", default-features = false }
+pkarr = { version = "5.0.3", default-features = false }
 mainline = { version = "6.1.1" }
 pkarr-relay = { version = "0.11.5" }
 log = "0.4.29"
