@@ -9,14 +9,37 @@ icann_listen_socket = "127.0.0.1:6286"
 
 # Default rate limit to mitigate brute-forcing signup tokens (invite codes).
 # 10 requests per minute per IP address.
+# Note: path limits only support request-count quotas (e.g. "10r/m").
+# For bandwidth throttling, use [default_quotas].
 [[drive.rate_limits]]
 path = "/signup_tokens/*"
 method = "GET"
 quota = "10r/m"
 key = "ip"
 
+[default_quotas]
+# Default bandwidth limits for the rate limiter.
+#
+# Per-user defaults (rate_read, rate_write) are the system-wide
+# fallback values used when a user's quota is "Default" (NULL in DB).
+# Per-user overrides are managed via the admin API:
+#   PATCH /users/{pubkey}/quota
+#
+# Default bandwidth limit for user reads / downloads.
+# rate_read = "10mb/s"
+#
+# Default bandwidth limit for user writes / uploads.
+# rate_write = "5mb/s"
+#
+# Server-level bandwidth limit for unauthenticated IP reads.
+# Not per-user — applies to all anonymous requests by IP.
+# unauthenticated_ip_rate_read = "1mb/s"
+
 [storage]
 type = "file_system"
+# Default per-user storage quota in MB.
+# Omit for unlimited. 0 means zero storage (not unlimited).
+# default_quota_mb = 500
 
 [admin]
 enabled = true

@@ -9,31 +9,29 @@
 //! # Two sources of limits
 //!
 //! 1. **Path limits** (`[[drive.rate_limits]]` in config) — matched by request
-//!    path and method. Each entry specifies a `key` (ip or user), a `quota`
-//!    (request-count or speed), and an optional whitelist.
-//! 2. **Per-user quota** (`QuotaOverride` fields on `UserQuota`) — stored per-user
-//!    in the DB. Currently only speed limits: `rate_read` and `rate_write`.
-//!    No per-user request-count limits exist.
+//!    path and method. Only request-count quotas are supported here.
+//! 2. **Bandwidth config** (`[default_quotas]`):
+//!    - `rate_read` / `rate_write` — defaults for authenticated users,
+//!      with per-user DB overrides via `UserQuota`.
+//!    - `unauthenticated_ip_rate_read` — for unauthenticated IP reads.
 //!
-//! # How they interact
+//! # Auth detection
 //!
-//! - **IP path limit + user path/quota limit**: both apply (stack). The request
-//!   is throttled by whichever is stricter.
-//! - **Config user speed limit + DB per-user override**: the DB override
-//!   **replaces** the config limit, it does not stack. `Value(rate)` uses that
-//!   rate, `Unlimited` skips throttling, `Default` falls back to the config
-//!   user-keyed speed limit (if one matched the request path).
+//! Authentication is detected by checking for a session cookie matching the
+//! PubkyHost (cheap cookie check, no DB hit). The full auth enforcement stays
+//! in the tenant router.
 //!
 //! # Phases
 //!
-//! The `call()` method is structured into 5 phases:
+//! The `call()` method is structured into 4 phases:
 //!
 //! 1. **Request-count limits** — check path limits with `RateUnit::Request`,
 //!    return 429 if exceeded.
-//! 2. **IP-keyed speed limits** — throttle upload for matched IP speed path limits.
-//! 3. **User speed limit** — resolve per-user `rate_read`/`rate_write` overrides.
-//! 4. **Call inner service**.
-//! 5. **Download throttling** — apply IP + user speed limiters to the response body.
+//! 2. **Bandwidth throttling** — based on auth status:
+//!    - Authenticated: resolve per-user rate via `UserService`, throttle upload.
+//!    - Unauthenticated: apply `unauthenticated_ip_rate_read` (reads only).
+//! 3. **Call inner service**.
+//! 4. **Download throttling** — apply collected limiters to the response body.
 //!
 use axum::http::Method;
 use axum::response::{IntoResponse, Response};
@@ -55,10 +53,11 @@ use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::quota_config::BandwidthRate;
 use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
 use crate::services::user_service::UserService;
-use crate::shared::user_quota::QuotaOverride;
 use crate::shared::HttpError;
+use crate::DefaultQuotasToml;
 use futures_util::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
+use tower_cookies::Cookies;
 
 use super::extract_ip::extract_ip;
 
@@ -82,12 +81,21 @@ const CLEANUP_INTERVAL_SECS: u64 = 60;
 pub struct RateLimiterLayer {
     limits: Vec<PathLimit>,
     user_service: UserService,
+    /// Default bandwidth rates from `[default_quotas]` config.
+    defaults: DefaultQuotasToml,
 }
 
 impl RateLimiterLayer {
-    /// Create a new rate limiter layer with the given path limits and per-user
-    /// quota resolution dependencies.
-    pub fn new(limits: Vec<PathLimit>, user_service: UserService) -> Self {
+    /// Create a new rate limiter layer.
+    ///
+    /// * `limits` — per-path request-count limits from `[[drive.rate_limits]]`.
+    /// * `user_service` — for resolving per-user quota overrides.
+    /// * `defaults` — system-wide bandwidth defaults from `[default_quotas]`.
+    pub fn new(
+        limits: Vec<PathLimit>,
+        user_service: UserService,
+        defaults: crate::DefaultQuotasToml,
+    ) -> Self {
         if limits.is_empty() {
             tracing::info!("General rate limiting is disabled.");
         } else {
@@ -101,6 +109,7 @@ impl RateLimiterLayer {
         Self {
             limits,
             user_service,
+            defaults,
         }
     }
 }
@@ -117,13 +126,41 @@ impl<S> Layer<S> for RateLimiterLayer {
 
         let user_read_limiters = LimiterPool::new();
         let user_write_limiters = LimiterPool::new();
+        let unauthenticated_read_limiter =
+            self.defaults
+                .unauthenticated_ip_rate_read
+                .as_ref()
+                .map(|rate| {
+                    let quota = rate.to_governor_quota(None);
+                    let limiter = Arc::new(RateLimiter::keyed(quota));
+
+                    // Spawn cleanup task to evict expired IP entries.
+                    let weak = Arc::downgrade(&limiter);
+                    tokio::spawn(async move {
+                        let mut interval =
+                            tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
+                        interval.tick().await; // skip first immediate tick
+                        loop {
+                            interval.tick().await;
+                            let Some(limiter) = weak.upgrade() else {
+                                break;
+                            };
+                            limiter.retain_recent();
+                            limiter.shrink_to_fit();
+                        }
+                    });
+
+                    limiter
+                });
 
         RateLimiterMiddleware {
             inner,
             limits: tuples,
             user_service: self.user_service.clone(),
+            defaults: self.defaults.clone(),
             user_read_limiters,
             user_write_limiters,
+            unauthenticated_read_limiter,
         }
     }
 }
@@ -238,8 +275,10 @@ pub struct RateLimiterMiddleware<S> {
     inner: S,
     limits: Vec<LimitTuple>,
     user_service: UserService,
+    defaults: DefaultQuotasToml,
     user_read_limiters: LimiterPool,
     user_write_limiters: LimiterPool,
+    unauthenticated_read_limiter: Option<Arc<KeyedRateLimiter>>,
 }
 
 impl<S> RateLimiterMiddleware<S> {
@@ -385,85 +424,25 @@ fn check_request_count_limits(
     Ok(())
 }
 
-/// Apply IP-keyed speed limits: throttle upload and collect limiters for download throttling.
-#[allow(clippy::result_large_err)]
-fn apply_ip_speed_limits<S>(
-    mut req: Request<Body>,
-    path_limits: &[LimitTuple],
-    download_throttlers: &mut Vec<(LimitKey, Arc<KeyedRateLimiter>)>,
-) -> Result<Request<Body>, Response> {
-    for limit in path_limits {
-        if !limit.limit.quota.rate_unit.is_speed_rate_unit() || limit.limit.key != LimitKeyType::Ip
-        {
-            continue;
-        }
-        let key = match limit.extract_key(&req) {
-            Ok(key) => key,
-            Err(e) => {
-                tracing::warn!(
-                    "{} {} Failed to extract key for rate limiting: {}",
-                    limit.limit.path.0,
-                    limit.limit.method.0,
-                    e
-                );
-                return Err(HttpError::new_with_message(
-                    StatusCode::BAD_REQUEST,
-                    "Failed to extract key for rate limiting",
-                )
-                .into_response());
-            }
-        };
-        if limit.limit.is_whitelisted(&key) {
-            continue;
-        }
-        req = RateLimiterMiddleware::<S>::throttle_upload(req, &key, &limit.limiter);
-        download_throttlers.push((key, limit.limiter.clone()));
-    }
-    Ok(req)
+/// Check if the request is authenticated by looking for a session cookie
+/// matching the PubkyHost. This is a cheap cookie check with no DB hit.
+fn is_authenticated(req: &Request<Body>) -> bool {
+    req.extensions()
+        .get::<Cookies>()
+        .and_then(|cookies| {
+            let pk = req.extensions().get::<PubkyHost>()?;
+            cookies.get(&pk.public_key().z32())?;
+            Some(())
+        })
+        .is_some()
 }
 
-/// Resolve per-user speed limits and apply upload throttling.
-fn apply_user_speed_limits<S>(
-    mut req: Request<Body>,
-    user_pubkey: &LimitKey,
-    quota: &crate::shared::user_quota::UserQuota,
-    path_limits: &[LimitTuple],
-    limiter_pool: &LimiterPool,
-    download_throttlers: &mut Vec<(LimitKey, Arc<KeyedRateLimiter>)>,
-) -> Request<Body> {
-    let method = req.method().clone();
-    let (rate_field, burst_field) = match method {
-        Method::PUT | Method::POST | Method::PATCH | Method::DELETE => {
-            (&quota.rate_write, quota.rate_write_burst)
-        }
-        _ => (&quota.rate_read, quota.rate_read_burst),
-    };
-
-    // Find the matching global user-keyed speed LimitTuple for Default fallback.
-    let global_user_speed_limit: Option<&LimitTuple> = path_limits.iter().find(|lt| {
-        lt.limit.key == LimitKeyType::User && lt.limit.quota.rate_unit.is_speed_rate_unit()
-    });
-
-    match rate_field {
-        QuotaOverride::Value(rate) => {
-            let limiter = limiter_pool.get_or_create(rate, burst_field);
-            req = RateLimiterMiddleware::<S>::throttle_upload(req, user_pubkey, &limiter);
-            download_throttlers.push((user_pubkey.clone(), limiter));
-        }
-        QuotaOverride::Unlimited => {
-            // User explicitly bypasses speed limiting — no throttle.
-        }
-        QuotaOverride::Default => {
-            if let Some(lt) = global_user_speed_limit {
-                if !lt.limit.is_whitelisted(user_pubkey) {
-                    req =
-                        RateLimiterMiddleware::<S>::throttle_upload(req, user_pubkey, &lt.limiter);
-                    download_throttlers.push((user_pubkey.clone(), lt.limiter.clone()));
-                }
-            }
-        }
-    }
-    req
+/// Returns true for HTTP methods that represent writes (uploads).
+fn is_write_method(method: &Method) -> bool {
+    matches!(
+        *method,
+        Method::PUT | Method::POST | Method::PATCH | Method::DELETE
+    )
 }
 
 impl<S> Service<Request<Body>> for RateLimiterMiddleware<S>
@@ -493,34 +472,21 @@ where
             .get::<PubkyHost>()
             .map(|pk| pk.public_key().clone());
 
-        if path_limits.is_empty() && user_pubkey.is_none() {
-            // No limits matched and no user to resolve, skip entirely.
+        let has_bandwidth_config = self.unauthenticated_read_limiter.is_some();
+
+        if path_limits.is_empty() && user_pubkey.is_none() && !has_bandwidth_config {
+            // No limits matched and no user/bandwidth config, skip entirely.
             return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
         }
 
         let user_service = self.user_service.clone();
+        let defaults = self.defaults.clone();
         let path_limits_owned: Vec<LimitTuple> = path_limits.into_iter().cloned().collect();
         let user_read_limiters = self.user_read_limiters.clone();
         let user_write_limiters = self.user_write_limiters.clone();
+        let unauthenticated_read_limiter = self.unauthenticated_read_limiter.clone();
 
         Box::pin(async move {
-            // Resolve per-user quota when a user pubkey is present (cache makes this cheap).
-            let user_quota = if let Some(ref pubkey) = user_pubkey {
-                match user_service.resolve_quota(pubkey).await {
-                    Ok(quota) => quota,
-                    Err(e) => {
-                        tracing::error!("Failed to resolve user limits for {}: {e}", pubkey.z32());
-                        return Ok(HttpError::new_with_message(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to resolve user limits",
-                        )
-                        .into_response());
-                    }
-                }
-            } else {
-                None
-            };
-
             let mut download_throttlers: Vec<(LimitKey, Arc<KeyedRateLimiter>)> = Vec::new();
 
             // ── Phase 1: Request-count limits ──
@@ -528,41 +494,98 @@ where
                 return Ok(resp);
             }
 
-            // ── Phase 2: IP-keyed speed limits ──
-            req =
-                match apply_ip_speed_limits::<S>(req, &path_limits_owned, &mut download_throttlers)
-                {
-                    Ok(req) => req,
-                    Err(resp) => return Ok(resp),
-                };
+            // ── Phase 2: Bandwidth throttling ──
+            let authenticated = is_authenticated(&req);
+            let method = req.method().clone();
 
-            // ── Phase 3: User speed limit (one effective rate per direction) ──
-            if let (Some(ref pubkey), Some(ref quota)) = (&user_pubkey, &user_quota) {
-                let user_key = LimitKey::User(pubkey.clone());
-                let method = req.method().clone();
-                let limiter_pool = match method {
-                    Method::PUT | Method::POST | Method::PATCH | Method::DELETE => {
-                        &user_write_limiters
+            if authenticated {
+                // Authenticated user: resolve per-user quota and apply bandwidth limits.
+                if let Some(ref pubkey) = user_pubkey {
+                    let user_quota = match user_service.resolve_quota(pubkey).await {
+                        Ok(quota) => quota,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to resolve user limits for {}: {e}",
+                                pubkey.z32()
+                            );
+                            return Ok(HttpError::new_with_message(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Failed to resolve user limits",
+                            )
+                            .into_response());
+                        }
+                    };
+
+                    if let Some(ref quota) = user_quota {
+                        let user_key = LimitKey::User(pubkey.clone());
+                        let is_write = is_write_method(&method);
+                        let (default_rate, burst) = if is_write {
+                            (defaults.rate_write.as_ref(), quota.rate_write_burst)
+                        } else {
+                            (defaults.rate_read.as_ref(), quota.rate_read_burst)
+                        };
+                        let rate_field = if is_write {
+                            &quota.rate_write
+                        } else {
+                            &quota.rate_read
+                        };
+                        let resolved = rate_field
+                            .resolve_with_default(default_rate)
+                            .map(|rate| (rate, burst));
+
+                        if let Some((rate, burst)) = resolved {
+                            let limiter_pool = if is_write {
+                                &user_write_limiters
+                            } else {
+                                &user_read_limiters
+                            };
+                            let limiter = limiter_pool.get_or_create(&rate, burst);
+                            req = Self::throttle_upload(req, &user_key, &limiter);
+                            download_throttlers.push((user_key, limiter));
+                        }
+                    } else {
+                        // Unknown user (e.g. spoofed cookie): fall back to
+                        // unauthenticated IP bandwidth rate so attackers can't
+                        // bypass throttling by faking a session cookie.
+                        // Applies to both reads and writes — writes will be
+                        // rejected downstream by the auth layer, but throttling
+                        // here prevents bandwidth exhaustion from streamed bodies.
+                        if let Some(ref limiter) = unauthenticated_read_limiter {
+                            if let Ok(ip) = extract_ip(&req) {
+                                let key = LimitKey::Ip(ip);
+                                req = Self::throttle_upload(req, &key, limiter);
+                                download_throttlers.push((key, limiter.clone()));
+                            }
+                        }
                     }
-                    _ => &user_read_limiters,
-                };
-                req = apply_user_speed_limits::<S>(
-                    req,
-                    &user_key,
-                    quota,
-                    &path_limits_owned,
-                    limiter_pool,
-                    &mut download_throttlers,
-                );
+                }
+            } else if !is_write_method(&method) {
+                // Unauthenticated read: apply IP-keyed bandwidth limit.
+                if let Some(ref limiter) = unauthenticated_read_limiter {
+                    match extract_ip(&req) {
+                        Ok(ip) => {
+                            let key = LimitKey::Ip(ip);
+                            req = Self::throttle_upload(req, &key, limiter);
+                            download_throttlers.push((key, limiter.clone()));
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to extract IP for unauthenticated rate limiting: {e}"
+                            );
+                        }
+                    }
+                }
             }
+            // Unauthenticated writes: no bandwidth throttling here;
+            // the auth layer will reject them.
 
-            // ── Phase 4: Call inner service ──
+            // ── Phase 3: Call inner service ──
             let mut response = match inner.call(req).await.map_err(|_| unreachable!()) {
                 Ok(response) => response,
                 Err(e) => return Err(e),
             };
 
-            // ── Phase 5: Download throttling ──
+            // ── Phase 4: Download throttling ──
             for (key, limiter) in &download_throttlers {
                 response = Self::throttle_download(response, key, limiter);
             }
@@ -586,8 +609,9 @@ mod tests {
     use pubky_common::crypto::{Keypair, PublicKey};
     use reqwest::{Client, Response};
     use tokio::{task::JoinHandle, time::Instant};
+    use tower_cookies::CookieManagerLayer;
 
-    use crate::shared::user_quota::UserQuota;
+    use crate::shared::user_quota::{QuotaOverride, UserQuota};
     use crate::shared::HttpResult;
     use crate::{client_server::layers::pubky_host::PubkyHostLayer, quota_config::GlobPattern};
 
@@ -611,22 +635,31 @@ mod tests {
 
     use crate::persistence::sql::SqlDb;
 
-    // Start a server with the given quota config on a random port.
-    async fn start_server(config: Vec<PathLimit>) -> SocketAddr {
+    // Start a server with the given path limits and optional unauthenticated read rate.
+    async fn start_server(
+        config: Vec<PathLimit>,
+        unauthenticated_ip_rate_read: Option<BandwidthRate>,
+    ) -> SocketAddr {
         let db = SqlDb::test().await;
-        let user_service = UserService::new(db, None);
-        start_server_with_user_service(config, user_service).await
+        let user_service = UserService::new(db);
+        let defaults = crate::DefaultQuotasToml {
+            unauthenticated_ip_rate_read,
+            ..Default::default()
+        };
+        start_server_with_user_service(config, user_service, defaults).await
     }
 
     // Start a server with the given config and user service on a random port.
     async fn start_server_with_user_service(
         config: Vec<PathLimit>,
         user_service: UserService,
+        defaults: crate::DefaultQuotasToml,
     ) -> SocketAddr {
         let app = Router::new()
             .route("/upload", post(upload_handler))
             .route("/download", get(download_handler))
-            .layer(RateLimiterLayer::new(config, user_service))
+            .layer(RateLimiterLayer::new(config, user_service, defaults))
+            .layer(CookieManagerLayer::new())
             .layer(PubkyHostLayer);
 
         // Create a TCP listener to bind to the socket first
@@ -655,54 +688,10 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_throttle_upload() {
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/upload"),
-            Method::POST,
-            "1kb/s".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
-        let socket = start_server(vec![path_limit]).await;
-
-        fn upload_data(socket: SocketAddr, kilobytes: usize) -> JoinHandle<()> {
-            tokio::spawn(async move {
-                let client = Client::new();
-                let data = vec![0u8; kilobytes * 1024];
-                let response = client
-                    .post(format!("http://{}/upload", socket))
-                    .body(data.clone())
-                    .send()
-                    .await
-                    .unwrap();
-                assert_eq!(response.status(), StatusCode::CREATED);
-            })
-        }
-
-        let start = Instant::now();
-        // Spawn in the background to test 2 uploads in parallel
-        // Upload 3kb each
-        let handle1 = upload_data(socket, 4);
-        let handle2 = upload_data(socket, 4);
-
-        // Wait for the uploads to finish
-        let _ = tokio::try_join!(handle1, handle2);
-
-        let time_taken = start.elapsed();
-        assert!(time_taken > Duration::from_secs(5), "Should at least take 5s because uploads are limited to 1kb/s and the sum of the uploads is 6kb");
-    }
-
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_throttle_download() {
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/download"),
-            Method::GET,
-            "1kb/s".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
-        let socket = start_server(vec![path_limit]).await;
+    async fn test_throttle_unauthenticated_download() {
+        // Unauthenticated IP read throttling via server-level config
+        let rate: BandwidthRate = "1kb/s".parse().unwrap();
+        let socket = start_server(vec![], Some(rate)).await;
 
         fn download_data(socket: SocketAddr) -> JoinHandle<()> {
             tokio::spawn(async move {
@@ -718,18 +707,18 @@ mod tests {
         }
 
         let start = Instant::now();
-        // Spawn in the background to test 2 downloads in parallel
-        // Download 3kb each
+        // Spawn 2 downloads in parallel. Download 3kb each at 1kb/s shared by IP.
         let handle1 = download_data(socket);
         let handle2 = download_data(socket);
 
-        // Wait for the uploads to finish
         let _ = tokio::try_join!(handle1, handle2);
 
         let time_taken = start.elapsed();
-        if time_taken < Duration::from_secs(5) {
-            panic!("Should at least take 5s because downloads are limited to 1kb/s and the sum of the downloads is 6kb. Time taken: {:?}", time_taken);
-        }
+        assert!(
+            time_taken > Duration::from_secs(5),
+            "Should take >5s: downloads limited to 1kb/s and sum is 6kb. Took: {:?}",
+            time_taken
+        );
     }
 
     #[tokio::test]
@@ -742,7 +731,7 @@ mod tests {
             LimitKeyType::Ip,
             None,
         );
-        let socket = start_server(vec![path_limit]).await;
+        let socket = start_server(vec![path_limit], None).await;
 
         fn send_request(socket: SocketAddr) -> JoinHandle<Response> {
             tokio::spawn(async move {
@@ -776,7 +765,7 @@ mod tests {
             LimitKeyType::User,
             None,
         );
-        let socket = start_server(vec![path_limit]).await;
+        let socket = start_server(vec![path_limit], None).await;
 
         fn send_request(socket: SocketAddr, user_pubkey: PublicKey) -> JoinHandle<Response> {
             tokio::spawn(async move {
@@ -818,8 +807,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_direction_detection() {
-        use crate::shared::user_quota::QuotaOverride;
-
         let write_rate: BandwidthRate = "5mb/s".parse().unwrap();
         let read_rate: BandwidthRate = "10mb/s".parse().unwrap();
         let quota = UserQuota {
@@ -828,7 +815,7 @@ mod tests {
             ..Default::default()
         };
 
-        // Phase 3 resolves direction from HTTP method:
+        // Resolved direction from HTTP method:
         // PUT/POST/PATCH → rate_write, GET/HEAD → rate_read
         assert_eq!(quota.rate_write.as_value(), Some(&write_rate));
         assert_eq!(quota.rate_read.as_value(), Some(&read_rate));
@@ -841,24 +828,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_rate_override_unlimited_bypass() {
-        use crate::shared::user_quota::QuotaOverride;
-
         let quota = UserQuota {
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
 
-        // Phase 3: Unlimited means no throttling is applied
+        // Unlimited means no throttling is applied
         assert!(quota.rate_write.is_unlimited());
     }
 
-    #[tokio::test]
-    async fn test_user_without_override_uses_default() {
-        // User with no rate overrides (all Default) — phase 3 falls back to
-        // the global user-keyed speed PathLimit (if one matched).
+    #[test]
+    fn test_user_without_override_uses_server_default() {
+        // User with no rate overrides (all Default) — falls back to
+        // the server-level authenticated_rate_read/write config.
         let quota = UserQuota::default();
         assert!(quota.rate_write.is_default());
         assert!(quota.rate_read.is_default());
+
+        // Test resolution via QuotaOverride directly (no DB needed)
+        let default_read: BandwidthRate = "10mb/s".parse().unwrap();
+        assert_eq!(
+            quota.rate_read.resolve_with_default(Some(&default_read)),
+            Some(default_read)
+        );
+        // No server default for write → None
+        assert_eq!(quota.rate_write.resolve_with_default(None), None);
     }
 
     #[tokio::test]
@@ -884,5 +878,61 @@ mod tests {
         // Same rate + same burst should share
         let limiter5 = pool.get_or_create(&rate, Some(50));
         assert!(Arc::ptr_eq(&limiter4, &limiter5));
+    }
+
+    #[test]
+    fn test_path_limit_rejects_bandwidth_quota() {
+        let limit = PathLimit::new(
+            GlobPattern::new("/pub/**"),
+            Method::PUT,
+            "1mb/s".parse().unwrap(),
+            LimitKeyType::User,
+            None,
+        );
+        let err = limit.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("bandwidth quota"),
+            "Expected bandwidth rejection error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_path_limit_accepts_request_count_quota() {
+        let limit = PathLimit::new(
+            GlobPattern::new("/session"),
+            Method::POST,
+            "10r/m".parse().unwrap(),
+            LimitKeyType::Ip,
+            None,
+        );
+        assert!(limit.validate().is_ok());
+    }
+
+    #[test]
+    fn test_resolve_bandwidth_rate_with_user_override() {
+        let default_read: BandwidthRate = "10mb/s".parse().unwrap();
+
+        // User with custom read rate overrides the server default
+        let custom_rate: BandwidthRate = "20mb/s".parse().unwrap();
+        let quota = UserQuota {
+            rate_read: QuotaOverride::Value(custom_rate.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            quota.rate_read.resolve_with_default(Some(&default_read)),
+            Some(custom_rate)
+        );
+
+        // User with Unlimited bypasses throttling
+        let unlimited_quota = UserQuota {
+            rate_read: QuotaOverride::Unlimited,
+            ..Default::default()
+        };
+        assert_eq!(
+            unlimited_quota
+                .rate_read
+                .resolve_with_default(Some(&default_read)),
+            None
+        );
     }
 }

@@ -1,4 +1,4 @@
-use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, QuotaValue};
+use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, QuotaValue, RateUnit};
 use axum::http::Method;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -57,6 +57,18 @@ impl PathLimit {
 
     /// Validate the path limit.
     pub fn validate(&self) -> anyhow::Result<()> {
+        // Path limits only support request-count quotas.
+        // Bandwidth throttling is configured via [default_quotas]:
+        //   rate_read, rate_write, unauthenticated_ip_rate_read
+        if self.quota.rate_unit != RateUnit::Request {
+            return Err(anyhow::anyhow!(
+                "Path limit '{}' uses bandwidth quota '{}', but path limits only support \
+                 request-count quotas (e.g. \"10r/m\"). Use [default_quotas] for bandwidth \
+                 throttling (rate_read, rate_write, unauthenticated_ip_rate_read).",
+                self.path.0,
+                self.quota
+            ));
+        }
         if let Some(k) = self.whitelist.iter().find(|k| k.get_type() != self.key) {
             let should_type = self.key.to_string();
             let is_type = k.get_type().to_string();

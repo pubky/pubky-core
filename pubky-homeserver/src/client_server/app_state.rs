@@ -15,6 +15,8 @@ pub(crate) struct AppState {
     pub(crate) signup_mode: SignupMode,
     pub(crate) events_service: EventsService,
     pub(crate) metrics: Metrics,
-    /// User service for quota resolution, user creation, and cache access.
+    /// User service for user lookups, creation, and cache access.
     pub(crate) user_service: UserService,
+    /// Default per-user storage quota in MB (from `[storage].default_quota_mb`).
+    pub(crate) default_storage_mb: Option<u64>,
 }

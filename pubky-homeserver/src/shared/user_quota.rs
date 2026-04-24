@@ -144,6 +144,22 @@ impl QuotaOverride<u64> {
 }
 
 impl QuotaOverride<BandwidthRate> {
+    /// Resolve to an effective `Option<BandwidthRate>` using a system default.
+    ///
+    /// - `Default`   → `system_default`
+    /// - `Unlimited` → `None`
+    /// - `Value(v)`  → `Some(v)`
+    pub fn resolve_with_default(
+        &self,
+        system_default: Option<&BandwidthRate>,
+    ) -> Option<BandwidthRate> {
+        match self {
+            QuotaOverride::Default => system_default.cloned(),
+            QuotaOverride::Unlimited => None,
+            QuotaOverride::Value(v) => Some(v.clone()),
+        }
+    }
+
     /// Encode to DB VARCHAR column: Default → NULL, Unlimited → "unlimited", Value → rate string.
     pub fn to_db_varchar(&self) -> Option<String> {
         match self {
@@ -216,9 +232,9 @@ fn validate_burst(
 ///
 /// | Field | Default means | Example Value |
 /// |---|---|---|
-/// | `storage_quota_mb` | use `user_storage_quota_mb` from config | `Value(500)` = 500 MB |
-/// | `rate_read` | use path-based rate limit from config | `Value(BandwidthRate)` |
-/// | `rate_write` | use path-based rate limit from config | `Value(BandwidthRate)` |
+/// | `storage_quota_mb` | use `storage.default_quota_mb` from config | `Value(500)` = 500 MB |
+/// | `rate_read` | use `default_quotas.rate_read` from config | `Value(BandwidthRate)` |
+/// | `rate_write` | use `default_quotas.rate_write` from config | `Value(BandwidthRate)` |
 /// | `rate_read_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
 /// | `rate_write_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

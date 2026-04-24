@@ -6,7 +6,7 @@
 
 use super::{
     domain_port::DomainPort,
-    quota_config::PathLimit,
+    quota_config::{BandwidthRate, PathLimit},
     storage_config::{StorageConfigToml, StorageToml},
     Domain, SignupMode,
 };
@@ -65,7 +65,33 @@ pub struct PkdnsToml {
 pub struct DriveToml {
     pub pubky_listen_socket: SocketAddr,
     pub icann_listen_socket: SocketAddr,
+    /// Per-path request-count rate limits.
+    #[serde(default)]
     pub rate_limits: Vec<PathLimit>,
+}
+
+/// Default bandwidth limits for the rate limiter.
+///
+/// Per-user defaults (`rate_read`, `rate_write`) are the system-wide
+/// fallback values used when a user's quota is "Default" (NULL in DB).
+/// Per-user overrides are managed via the admin API:
+///   `PATCH /users/{pubkey}/quota`
+///
+/// `unauthenticated_ip_rate_read` is a fixed server-level limit for
+/// anonymous requests (not overridable per-user).
+///
+/// Consumed by `RateLimiterLayer`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+pub struct DefaultQuotasToml {
+    /// Default bandwidth limit for user reads / downloads (e.g. "10mb/s").
+    /// Per-user DB overrides take precedence. `None` means no read throttling.
+    pub rate_read: Option<BandwidthRate>,
+    /// Default bandwidth limit for user writes / uploads (e.g. "5mb/s").
+    /// Per-user DB overrides take precedence. `None` means no write throttling.
+    pub rate_write: Option<BandwidthRate>,
+    /// Server-level bandwidth limit for unauthenticated IP reads (e.g. "1mb/s").
+    /// `None` means no read throttling for unauthenticated requests.
+    pub unauthenticated_ip_rate_read: Option<BandwidthRate>,
 }
 
 /// Admin server configuration
@@ -118,8 +144,11 @@ pub struct ConfigToml {
     pub general: GeneralToml,
     /// File‐drive API settings (listen sockets for Pubky TLS and HTTP).
     pub drive: DriveToml,
-    /// Storage configuration: backend selection + storage-level defaults.
+    /// Storage configuration: backend selection and default storage quota.
     pub storage: StorageToml,
+    /// Default bandwidth limits for the rate limiter. Overridable per-user via admin API.
+    #[serde(default)]
+    pub default_quotas: DefaultQuotasToml,
     /// Administrative API configuration.
     pub admin: AdminToml,
     /// Metrics server configuration.
@@ -182,7 +211,7 @@ impl ConfigToml {
 
         // 4. Deserialize into our strongly typed struct (can fail with toml::de::Error)
         let mut config: Self = merged_val.try_into()?;
-        config.resolve_legacy_storage_quota();
+        config.resolve_legacy_quotas();
         Ok(config)
     }
 
@@ -249,20 +278,18 @@ impl ConfigToml {
         Self::default_test_config()
     }
 
-    /// Populate `[storage].default_quota_mb` from the deprecated
-    /// `[general].user_storage_quota_mb` when the new field is not set.
-    /// Called once at parse time so downstream code only checks one place.
-    fn resolve_legacy_storage_quota(&mut self) {
-        if self.storage.default_quota_mb.is_some() {
-            return;
+    /// Migrate deprecated `[general].user_storage_quota_mb` into
+    /// `[storage].default_quota_mb`. Called once at parse time so
+    /// downstream code only checks one place.
+    fn resolve_legacy_quotas(&mut self) {
+        if self.storage.default_quota_mb.is_none() {
+            #[allow(deprecated)]
+            let legacy = self.general.user_storage_quota_mb;
+            self.storage.default_quota_mb = match legacy {
+                0 => None,
+                n => Some(n),
+            };
         }
-        // Legacy fallback: 0 means unlimited (None), n means Some(n).
-        #[allow(deprecated)]
-        let legacy = self.general.user_storage_quota_mb;
-        self.storage.default_quota_mb = match legacy {
-            0 => None,
-            n => Some(n),
-        };
     }
 }
 
@@ -271,7 +298,7 @@ impl FromStr for ConfigToml {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut config: Self = toml::from_str(s)?;
-        config.resolve_legacy_storage_quota();
+        config.resolve_legacy_quotas();
         Ok(config)
     }
 }
@@ -319,8 +346,11 @@ mod tests {
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits.len(), 1);
         assert_eq!(c.drive.rate_limits[0].path.0, "/signup_tokens/*");
-        assert_eq!(c.storage.backend, StorageConfigToml::FileSystem);
+        assert_eq!(c.default_quotas.unauthenticated_ip_rate_read, None);
+        assert_eq!(c.default_quotas.rate_read, None);
+        assert_eq!(c.default_quotas.rate_write, None);
         assert_eq!(c.storage.default_quota_mb, None);
+        assert_eq!(c.storage.backend, StorageConfigToml::FileSystem);
         assert_eq!(
             c.logging,
             Some(LoggingToml {
@@ -374,5 +404,13 @@ mod tests {
             module_levels: vec![],
         });
         assert_eq!(merged.logging, expected_logging);
+    }
+
+    #[test]
+    fn test_legacy_general_storage_quota_migrated() {
+        // general.user_storage_quota_mb should migrate to storage.default_quota_mb
+        let s = "[general]\nuser_storage_quota_mb = 500\n";
+        let parsed = ConfigToml::from_str_with_defaults(s).unwrap();
+        assert_eq!(parsed.storage.default_quota_mb, Some(500));
     }
 }

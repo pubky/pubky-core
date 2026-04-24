@@ -120,7 +120,7 @@ impl AppContext {
             .await
             .map_err(AppContextConversionError::PgEventListener)?;
 
-        let user_service = UserService::new(sql_db.clone(), conf.storage.default_quota_mb);
+        let user_service = UserService::new(sql_db.clone());
 
         let file_service = FileService::new_from_config(
             &conf,

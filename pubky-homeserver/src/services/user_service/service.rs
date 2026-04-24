@@ -1,4 +1,7 @@
 //! Service layer for user operations.
+//!
+//! Pure user CRUD + quota cache. No config — callers that need
+//! default quotas (storage, bandwidth) own them directly.
 
 use pubky_common::crypto::PublicKey;
 
@@ -13,28 +16,25 @@ use super::quota_cache::{CachedEntry, QuotaCache};
 /// Added to quota accounting so that zero-byte files still count against the quota.
 pub const FILE_METADATA_SIZE: u64 = 256;
 
-/// Coordinates user lookups, creation, and storage quota enforcement.
+/// Coordinates user lookups, creation, and quota caching.
 ///
-/// Wraps the database, quota cache, and system-wide defaults so that
-/// callers don't need direct repository access or knowledge of config values.
+/// Wraps the database and quota cache. Does not hold any config —
+/// callers that need default quota values own them directly.
 #[derive(Clone, Debug)]
 pub struct UserService {
     /// Database connection pool.
     sql_db: SqlDb,
     /// In-memory TTL cache for resolved per-user quotas.
     quota_cache: QuotaCache,
-    /// System-wide default storage quota in MB (`None` = unlimited).
-    default_storage_quota_mb: Option<u64>,
 }
 
 impl UserService {
     /// Create a new service with its own quota cache.
-    pub fn new(sql_db: SqlDb, default_storage_quota_mb: Option<u64>) -> Self {
+    pub fn new(sql_db: SqlDb) -> Self {
         let quota_cache = QuotaCache::new();
         Self {
             sql_db,
             quota_cache,
-            default_storage_quota_mb,
         }
     }
 
@@ -59,27 +59,6 @@ impl UserService {
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<UserEntity, sqlx::Error> {
         UserRepository::update(user, executor).await
-    }
-
-    /// Check whether adding `bytes_delta` to the user's current usage would
-    /// exceed their effective storage quota.
-    pub fn would_exceed_storage_quota(&self, user: &UserEntity, bytes_delta: i64) -> bool {
-        let max_bytes = user
-            .quota()
-            .storage_quota_mb
-            .resolve_with_default(self.default_storage_quota_mb)
-            .map(|mb| mb.saturating_mul(1024 * 1024));
-        Self::exceeds_limit(user.used_bytes, bytes_delta, max_bytes)
-    }
-
-    /// Pure arithmetic: does `current + delta` exceed `max`?
-    /// `None` max means unlimited (never exceeds).
-    fn exceeds_limit(current_bytes: u64, bytes_delta: i64, max_bytes: Option<u64>) -> bool {
-        let Some(max) = max_bytes else {
-            return false;
-        };
-        let new_total = current_bytes as i128 + bytes_delta as i128;
-        new_total > 0 && new_total > max as i128
     }
 
     /// Look up a user by public key, returning HTTP-appropriate errors.
@@ -191,67 +170,5 @@ impl UserService {
         tx.commit().await?;
 
         Ok(updated)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn no_limit_never_exceeds() {
-        assert!(!UserService::exceeds_limit(u64::MAX, i64::MAX, None));
-    }
-
-    #[test]
-    fn exactly_at_limit_does_not_exceed() {
-        // 500 current + 500 delta == 1000 limit → not exceeded
-        assert!(!UserService::exceeds_limit(500, 500, Some(1000)));
-    }
-
-    #[test]
-    fn one_byte_over_limit_exceeds() {
-        assert!(UserService::exceeds_limit(500, 501, Some(1000)));
-    }
-
-    #[test]
-    fn negative_delta_shrinks_usage() {
-        // 1000 current - 500 delta = 500 → within 1000 limit
-        assert!(!UserService::exceeds_limit(1000, -500, Some(1000)));
-    }
-
-    #[test]
-    fn negative_delta_below_zero_does_not_exceed() {
-        // 100 current - 200 delta = -100 → negative total, not exceeded
-        assert!(!UserService::exceeds_limit(100, -200, Some(50)));
-    }
-
-    #[test]
-    fn zero_limit_any_positive_delta_exceeds() {
-        assert!(UserService::exceeds_limit(0, 1, Some(0)));
-    }
-
-    #[test]
-    fn zero_limit_zero_delta_does_not_exceed() {
-        assert!(!UserService::exceeds_limit(0, 0, Some(0)));
-    }
-
-    #[test]
-    fn large_current_with_large_negative_delta() {
-        // Ensures i128 promotion handles this without overflow
-        assert!(!UserService::exceeds_limit(
-            u64::MAX,
-            i64::MIN,
-            Some(u64::MAX)
-        ));
-    }
-
-    #[test]
-    fn large_current_near_limit() {
-        let max = u64::MAX;
-        // Exactly at limit
-        assert!(!UserService::exceeds_limit(max, 0, Some(max)));
-        // One over (via delta=1)
-        assert!(UserService::exceeds_limit(max, 1, Some(max)));
     }
 }

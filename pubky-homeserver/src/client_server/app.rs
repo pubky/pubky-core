@@ -120,6 +120,7 @@ impl ClientServer {
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
             user_service: context.user_service.clone(),
+            default_storage_mb: context.config_toml.storage.default_quota_mb,
         };
         super::create_app(state.clone(), context)
     }
@@ -222,12 +223,13 @@ fn base() -> Router<AppState> {
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
-        .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
             context.user_service.clone(),
+            context.config_toml.default_quotas.clone(),
         ))
+        .layer(CookieManagerLayer::new())
         .layer(PubkyHostLayer)
         .with_state(state);
 

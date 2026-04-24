@@ -32,7 +32,7 @@ pub fn build_storage_operator(
     events_service: EventsService,
     user_service: UserService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(user_service);
+    let user_quota_layer = UserQuotaLayer::new(user_service, storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:

@@ -15,17 +15,49 @@ use opendal::Result;
 /// It will also enforce that only paths in the form of {pubkey}/{path} are allowed.
 ///
 /// The per-user storage quota is read from the `quota_storage_mb` column on
-/// the user row in the database. `Default` resolves to `default_storage_quota_mb`
-/// (from config), `Unlimited` means no limit, and `Value(n)` means n MB.
+/// the user row in the database. `Default` resolves to `default_storage_mb`
+/// (from `[storage]` config), `Unlimited` means no limit, and `Value(n)` means n MB.
 #[derive(Clone)]
 pub struct UserQuotaLayer {
     user_service: UserService,
+    /// System-wide default storage quota in MB (from `[storage].default_quota_mb`).
+    /// `None` means unlimited by default.
+    default_storage_mb: Option<u64>,
 }
 
 impl UserQuotaLayer {
-    pub fn new(user_service: UserService) -> Self {
-        Self { user_service }
+    pub fn new(user_service: UserService, default_storage_mb: Option<u64>) -> Self {
+        Self {
+            user_service,
+            default_storage_mb,
+        }
     }
+}
+
+/// Check whether adding `bytes_delta` to `current_bytes` would exceed `max_bytes`.
+/// `None` max means unlimited (never exceeds).
+pub(crate) fn would_exceed_limit(
+    current_bytes: u64,
+    bytes_delta: i64,
+    max_bytes: Option<u64>,
+) -> bool {
+    let Some(max) = max_bytes else {
+        return false;
+    };
+    let new_total = current_bytes as i128 + bytes_delta as i128;
+    new_total > 0 && new_total > max as i128
+}
+
+/// Resolve the effective max bytes for a user's storage quota,
+/// using the per-user override and falling back to the system default.
+pub(crate) fn resolve_storage_max_bytes(
+    user: &crate::persistence::sql::user::UserEntity,
+    default_storage_mb: Option<u64>,
+) -> Option<u64> {
+    user.quota()
+        .storage_quota_mb
+        .resolve_with_default(default_storage_mb)
+        .map(|mb| mb.saturating_mul(1024 * 1024))
 }
 
 impl<A: Access> Layer<A> for UserQuotaLayer {
@@ -35,6 +67,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
         UserQuotaAccessor {
             inner: Arc::new(inner),
             user_service: self.user_service.clone(),
+            default_storage_mb: self.default_storage_mb,
         }
     }
 }
@@ -43,6 +76,7 @@ impl<A: Access> Layer<A> for UserQuotaLayer {
 pub struct UserQuotaAccessor<A: Access> {
     inner: Arc<A>,
     user_service: UserService,
+    default_storage_mb: Option<u64>,
 }
 
 impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
@@ -77,6 +111,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
                 bytes_count: 0,
                 entry_path,
                 inner_accessor: self.inner.clone(),
+                default_storage_mb: self.default_storage_mb,
             },
         ))
     }
@@ -127,6 +162,7 @@ pub struct WriterWrapper<R, A: Access> {
     bytes_count: u64,
     entry_path: EntryPath,
     inner_accessor: Arc<A>,
+    default_storage_mb: Option<u64>,
 }
 
 impl<R, A: Access> WriterWrapper<R, A> {
@@ -188,10 +224,8 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             self.bytes_count as i64 - current_file_size as i64 + FILE_METADATA_SIZE as i64
         };
 
-        if self
-            .user_service
-            .would_exceed_storage_quota(&user, bytes_delta)
-        {
+        let max_bytes = resolve_storage_max_bytes(&user, self.default_storage_mb);
+        if would_exceed_limit(user.used_bytes, bytes_delta, max_bytes) {
             return Err(opendal::Error::new(
                 opendal::ErrorKind::RateLimited,
                 "User quota exceeded",
@@ -372,8 +406,9 @@ mod tests {
 
     use super::*;
 
-    fn test_user_service(db: &SqlDb, default_quota_mb: Option<u64>) -> UserService {
-        UserService::new(db.clone(), default_quota_mb)
+    fn test_quota_layer(db: &SqlDb, default_quota_mb: Option<u64>) -> UserQuotaLayer {
+        let user_service = UserService::new(db.clone());
+        UserQuotaLayer::new(user_service, default_quota_mb)
     }
 
     async fn get_user_data_usage(db: &SqlDb, user_pubkey: &PublicKey) -> anyhow::Result<u64> {
@@ -388,7 +423,7 @@ mod tests {
     async fn test_ensure_valid_path() {
         for (_scheme, operator) in OpendalTestOperators::new().operators() {
             let db = SqlDb::test().await;
-            let layer = UserQuotaLayer::new(test_user_service(&db, None));
+            let layer = test_quota_layer(&db, None);
             let operator = operator.layer(layer);
 
             operator
@@ -430,7 +465,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_quota_updated_write_delete() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(test_user_service(&db, None));
+        let layer = test_quota_layer(&db, None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey1 = pubky_common::crypto::Keypair::random().public_key();
@@ -498,7 +533,7 @@ mod tests {
 
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
-        let user_quota_layer = UserQuotaLayer::new(test_user_service(&db, None));
+        let user_quota_layer = test_quota_layer(&db, None);
         let entry_layer = EntryLayer::new(db.clone());
         let events_layer = EventsLayer::new(db.clone(), events_service);
         let operator = get_memory_operator()
@@ -592,7 +627,7 @@ mod tests {
 
         let db = SqlDb::test().await;
         // System default: 1 MB
-        let layer = UserQuotaLayer::new(test_user_service(&db, Some(1)));
+        let layer = test_quota_layer(&db, Some(1));
         let operator = get_memory_operator().layer(layer);
 
         // ── Value(1) — explicit 1 MB limit ──
@@ -644,7 +679,7 @@ mod tests {
 
         // ── Default with no system default — unlimited ──
         let db2 = SqlDb::test().await;
-        let layer_no_default = UserQuotaLayer::new(test_user_service(&db2, None));
+        let layer_no_default = test_quota_layer(&db2, None);
         let op_no_default = get_memory_operator().layer(layer_no_default);
 
         let pk_no_default = pubky_common::crypto::Keypair::random().public_key();
@@ -689,7 +724,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_storage_quota_change_takes_effect() {
         let db = SqlDb::test().await;
-        let layer = UserQuotaLayer::new(test_user_service(&db, None));
+        let layer = test_quota_layer(&db, None);
         let operator = get_memory_operator().layer(layer);
 
         let user_pubkey = pubky_common::crypto::Keypair::random().public_key();
@@ -718,5 +753,54 @@ mod tests {
             .write(format!("{user_raw}/file.txt").as_str(), vec![0; 10])
             .await
             .expect("Should succeed after quota increase");
+    }
+
+    // --- Unit tests for would_exceed_limit ---
+
+    #[test]
+    fn no_limit_never_exceeds() {
+        assert!(!would_exceed_limit(u64::MAX, i64::MAX, None));
+    }
+
+    #[test]
+    fn exactly_at_limit_does_not_exceed() {
+        assert!(!would_exceed_limit(500, 500, Some(1000)));
+    }
+
+    #[test]
+    fn one_byte_over_limit_exceeds() {
+        assert!(would_exceed_limit(500, 501, Some(1000)));
+    }
+
+    #[test]
+    fn negative_delta_shrinks_usage() {
+        assert!(!would_exceed_limit(1000, -500, Some(1000)));
+    }
+
+    #[test]
+    fn negative_delta_below_zero_does_not_exceed() {
+        assert!(!would_exceed_limit(100, -200, Some(50)));
+    }
+
+    #[test]
+    fn zero_limit_any_positive_delta_exceeds() {
+        assert!(would_exceed_limit(0, 1, Some(0)));
+    }
+
+    #[test]
+    fn zero_limit_zero_delta_does_not_exceed() {
+        assert!(!would_exceed_limit(0, 0, Some(0)));
+    }
+
+    #[test]
+    fn large_current_with_large_negative_delta() {
+        assert!(!would_exceed_limit(u64::MAX, i64::MIN, Some(u64::MAX)));
+    }
+
+    #[test]
+    fn large_current_near_limit() {
+        let max = u64::MAX;
+        assert!(!would_exceed_limit(max, 0, Some(max)));
+        assert!(would_exceed_limit(max, 1, Some(max)));
     }
 }
