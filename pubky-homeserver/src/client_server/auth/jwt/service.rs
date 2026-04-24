@@ -636,6 +636,127 @@ mod tests {
         assert!(matches!(err, AuthServiceError::UserAlreadyExists));
     }
 
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_token_required_happy_path() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let code_id = SignupCodeId::random();
+        SignupCodeRepository::create(&code_id, &mut service.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        service
+            .signup_grant_session(
+                &grant_jws,
+                &pop_jws,
+                &SignupMode::TokenRequired,
+                Some(code_id.0.as_str()),
+            )
+            .await
+            .unwrap();
+
+        let consumed = SignupCodeRepository::get(&code_id, &mut service.sql_db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(consumed.used_by, Some(user_kp.public_key()));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_token_required_missing_token() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let err = service
+            .signup_grant_session(&grant_jws, &pop_jws, &SignupMode::TokenRequired, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AuthServiceError::SignupTokenRequired));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_token_required_invalid_format() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let err = service
+            .signup_grant_session(
+                &grant_jws,
+                &pop_jws,
+                &SignupMode::TokenRequired,
+                Some("not-a-valid-code"),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AuthServiceError::InvalidSignupTokenFormat(_)));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_token_required_unknown_token() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        // Well-formed but never inserted into the DB.
+        let unknown = SignupCodeId::random();
+
+        let err = service
+            .signup_grant_session(
+                &grant_jws,
+                &pop_jws,
+                &SignupMode::TokenRequired,
+                Some(unknown.0.as_str()),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AuthServiceError::InvalidSignupToken));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn signup_grant_session_token_required_already_used() {
+        let service = test_service().await;
+        let user_kp = Keypair::random();
+        let client_kp = Keypair::random();
+        let (grant_jws, pop_jws, _) =
+            sign_grant(&user_kp, &client_kp, &service.homeserver_public_key());
+
+        let code_id = SignupCodeId::random();
+        SignupCodeRepository::create(&code_id, &mut service.sql_db.pool().into())
+            .await
+            .unwrap();
+        let prior_user = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&code_id, &prior_user, &mut service.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let err = service
+            .signup_grant_session(
+                &grant_jws,
+                &pop_jws,
+                &SignupMode::TokenRequired,
+                Some(code_id.0.as_str()),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AuthServiceError::SignupTokenAlreadyUsed));
+    }
+
     // ── revoke_grant + resolve_grant_session_by_bearer ───────────────
 
     #[tokio::test]
