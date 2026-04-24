@@ -333,4 +333,44 @@ mod tests {
             .await;
         response.assert_status(axum::http::StatusCode::NOT_FOUND);
     }
+
+    /// Exceeding user quota through the admin DAV endpoint currently returns 500.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_dav_put_quota_overflow_returns_500() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let mut context = AppContext::test().await;
+        context.config_toml.general.user_storage_quota_mb = 1;
+        let server = create_test_server(&context);
+        let auth_value = auth_header();
+
+        let keypair = Keypair::from_secret(&[0; 32]);
+        let pubkey = keypair.public_key();
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let pubkey = keypair.public_key().z32();
+        let file1_url = format!("/dav/{pubkey}/pub/one.bin");
+        let file2_url = format!("/dav/{pubkey}/pub/two.bin");
+        let file_content = vec![0u8; 600_000];
+
+        let response = server
+            .put(&file1_url)
+            .add_header("Authorization", auth_value.as_str())
+            .bytes(file_content.clone().into())
+            .expect_success()
+            .await;
+        response.assert_status(axum::http::StatusCode::CREATED);
+
+        let response = server
+            .put(&file2_url)
+            .add_header("Authorization", auth_value.as_str())
+            .bytes(file_content.into())
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }

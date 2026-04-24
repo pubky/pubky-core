@@ -78,7 +78,7 @@ impl AuthToken {
 
     /// Parse and verify an AuthToken.
     pub fn verify(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes[75] > CURRENT_VERSION {
+        if bytes[74] > CURRENT_VERSION {
             return Err(Error::UnknownVersion);
         }
 
@@ -231,5 +231,21 @@ mod tests {
             Timestamp::now() + (TIMESTAMP_WINDOW as u64 - 5_000_000),
         );
         AuthToken::verify(&future_token.serialize()).unwrap();
+    }
+
+    #[test]
+    fn unknown_version() {
+        let signer = Keypair::random();
+        let token = AuthToken {
+            signature: Signature::from_bytes(&[0; 64]),
+            namespace: *PUBKY_AUTH,
+            version: 1,
+            timestamp: Timestamp::now(),
+            public_key: signer.public_key(),
+            capabilities: Capabilities(vec![Capability::root()]),
+        };
+        let serialized = token.serialize();
+
+        assert_eq!(AuthToken::verify(&serialized), Err(Error::UnknownVersion));
     }
 }

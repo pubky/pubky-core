@@ -3,6 +3,7 @@
     reason = "JS binding wraps the deprecated cookie auth flow; JWT wrapper will ship in a follow-up"
 )]
 
+use pubky::PubkyCookieAuthFlow;
 use pubky_common::capabilities::Capabilities;
 use std::{cell::RefCell, rc::Rc};
 use url::Url;
@@ -25,7 +26,7 @@ use crate::{
 /// 3) `awaitApproval()` to receive a ready `Session`
 #[wasm_bindgen]
 pub struct AuthFlow {
-    inner: RefCell<Option<Rc<pubky::PubkyCookieAuthFlow>>>,
+    inner: RefCell<Option<Rc<PubkyCookieAuthFlow>>>,
     in_flight: RefCell<bool>,
     authorization_url: String,
 }
@@ -85,7 +86,7 @@ impl AuthFlow {
         let caps = Capabilities::try_from(normalized.as_str())?;
 
         // 3) Build the flow with optional relay and optional client
-        let mut builder = pubky::PubkyCookieAuthFlow::builder(&caps, kind.0);
+        let mut builder = PubkyCookieAuthFlow::builder(&caps, kind.0);
         if let Some(c) = client {
             builder = builder.client(c);
         }
@@ -95,21 +96,50 @@ impl AuthFlow {
         }
 
         let flow = builder.start()?;
-        let auth_url = flow.authorization_url().as_str().to_string();
+        Ok(flow.into())
+    }
 
-        Ok(AuthFlow {
-            authorization_url: auth_url,
-            in_flight: RefCell::new(false),
-            inner: RefCell::new(Some(Rc::new(flow))),
-        })
+    /// Resume a previously started auth flow from its saved `authorizationUrl` (standalone).
+    /// Prefer `pubky.resumeAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
+    ///
+    /// Relay messages expire after ~5 minutes; resume is only viable in that window.
+    /// See `Pubky.resumeAuthFlow()` / `Pubky.startAuthFlow()` for full guidance.
+    ///
+    /// **Security:** `authorizationUrl` contains the `client_secret`.
+    /// Delete it from storage as soon as resume completes or is abandoned.
+    ///
+    /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
+    /// @returns {AuthFlow} A flow reconnected to the original relay channel.
+    /// @throws {PubkyError}
+    /// - `{ name: "AuthenticationError" }` if the URL is invalid or not a signin/signup link
+    #[wasm_bindgen(js_name = "resume")]
+    pub fn resume(authorization_url: String) -> JsResult<AuthFlow> {
+        Self::resume_with_client(authorization_url, None)
+    }
+
+    /// Internal helper that threads an explicit transport for resume.
+    pub(crate) fn resume_with_client(
+        authorization_url: String,
+        client: Option<pubky::PubkyHttpClient>,
+    ) -> JsResult<AuthFlow> {
+        let pubky = match client {
+            Some(c) => pubky::Pubky::with_client(c),
+            None => pubky::Pubky::new()?,
+        };
+        let flow = pubky.resume_auth_flow(&authorization_url)?;
+        Ok(flow.into())
     }
 
     /// Return the authorization deep link (URL) to show as QR or open on the signer device.
     ///
+    /// **Security:** This URL contains the `client_secret` in plaintext.
+    /// Treat it as a short-lived secret and delete it after the flow completes.
+    /// See `Pubky.startAuthFlow()` docs for storage guidance.
+    ///
     /// @returns {string} A `pubkyauth://…` or `https://…` URL with channel info.
     ///
     /// @example
-    /// renderQr(flow.authorizationUrl());
+    /// renderQr(flow.authorizationUrl);
     #[wasm_bindgen(js_name = "authorizationUrl", getter)]
     pub fn authorization_url(&self) -> String {
         self.authorization_url.clone()
@@ -177,6 +207,17 @@ impl AuthFlow {
     }
 }
 
+impl From<PubkyCookieAuthFlow> for AuthFlow {
+    fn from(flow: PubkyCookieAuthFlow) -> Self {
+        let auth_url = flow.authorization_url().as_str().to_string();
+        AuthFlow {
+            authorization_url: auth_url,
+            in_flight: RefCell::new(false),
+            inner: RefCell::new(Some(Rc::new(flow))),
+        }
+    }
+}
+
 impl AuthFlow {
     fn begin_call(&self, caller: &str) -> JsResult<InFlightGuard<'_>> {
         let mut flag = self.in_flight.borrow_mut();
@@ -190,7 +231,7 @@ impl AuthFlow {
         }
     }
 
-    fn borrow_inner(&self) -> JsResult<Rc<pubky::PubkyCookieAuthFlow>> {
+    fn borrow_inner(&self) -> JsResult<Rc<PubkyCookieAuthFlow>> {
         self.inner
             .borrow()
             .as_ref()
@@ -198,14 +239,14 @@ impl AuthFlow {
             .ok_or_else(|| self.consumed_error())
     }
 
-    fn take_inner(&self, caller: &str) -> JsResult<Rc<pubky::PubkyCookieAuthFlow>> {
+    fn take_inner(&self, caller: &str) -> JsResult<Rc<PubkyCookieAuthFlow>> {
         self.inner
             .borrow_mut()
             .take()
             .ok_or_else(|| self.already_taken_error(caller))
     }
 
-    fn restore_inner(&self, flow: Rc<pubky::PubkyCookieAuthFlow>) {
+    fn restore_inner(&self, flow: Rc<PubkyCookieAuthFlow>) {
         let mut inner = self.inner.borrow_mut();
         *inner = Some(flow);
     }

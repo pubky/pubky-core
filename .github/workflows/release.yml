@@ -59,7 +59,7 @@ jobs:
         with:
           toolchain: stable
       - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
       - name: Build Artifacts
         run: .scripts/build-artifacts.sh
       - name: Upload artifacts
@@ -100,7 +100,7 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
       - name: Publish crates
         run: cargo ws publish --no-git-commit --publish-as-is
         env:

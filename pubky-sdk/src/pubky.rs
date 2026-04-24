@@ -50,6 +50,8 @@
 //! # Ok(()) }
 //! ```
 
+use std::str::FromStr;
+
 use crate::PublicKey;
 
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
@@ -57,6 +59,7 @@ use crate::PubkyCookieAuthFlow;
 use crate::{
     Capabilities, ClientId, EventCursor, EventStreamBuilder, Pkdns, PubkyHttpClient,
     PubkyJwtAuthFlow, PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
+    deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -146,6 +149,37 @@ impl Pubky {
         client_id: ClientId,
     ) -> Result<PubkyJwtAuthFlow> {
         PubkyJwtAuthFlow::builder(caps, auth_kind, client_id)
+            .client(self.client.clone())
+            .start()
+    }
+
+    /// Resume a previously started auth flow from its `authorization_url`.
+    ///
+    /// Parses the secret, capabilities, relay, and flow kind from the URL
+    /// and rebuilds the flow against the same relay channel. If the signer
+    /// already approved, the first `try_poll_once()` returns a session.
+    ///
+    /// The relay inbox persists messages for **~5 minutes**; resume is only
+    /// viable within that window. After the TTL expires the channel is gone
+    /// and you must start a fresh flow with [`start_auth_flow`](Self::start_auth_flow).
+    ///
+    /// The `authorization_url` contains the `client_secret`; follow
+    /// [`start_auth_flow`](Self::start_auth_flow) storage guidance and delete it
+    /// once resume completes or is abandoned.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Authentication`] if the URL cannot be parsed
+    ///   or is not a signin/signup deep link.
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
+    pub fn resume_auth_flow(&self, authorization_url: &str) -> Result<PubkyCookieAuthFlow> {
+        let (caps, relay, secret, auth_kind) = parse_auth_deep_link(authorization_url)?;
+
+        PubkyCookieAuthFlow::builder(&caps, auth_kind)
+            .client_secret(secret)
+            .relay(relay)
             .client(self.client.clone())
             .start()
     }
@@ -299,5 +333,36 @@ impl Pubky {
     #[must_use]
     pub const fn client(&self) -> &PubkyHttpClient {
         &self.client
+    }
+}
+
+/// Parse a `pubkyauth://` URL into the components needed to rebuild an auth flow.
+///
+/// Rejects `SeedExport` deep links since they cannot be resumed as auth flows.
+fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], AuthFlowKind)> {
+    let deep_link = DeepLink::from_str(url)
+        .map_err(|e| AuthError::Validation(format!("Failed to parse authorization URL: {e}")))?;
+
+    match &deep_link {
+        DeepLink::Signin(s) => Ok((
+            s.capabilities().clone(),
+            s.relay().clone(),
+            *s.secret(),
+            AuthFlowKind::signin(),
+        )),
+        DeepLink::Signup(s) => Ok((
+            s.capabilities().clone(),
+            s.relay().clone(),
+            *s.secret(),
+            AuthFlowKind::signup(s.homeserver().clone(), s.signup_token()),
+        )),
+        DeepLink::SigninJwt(_) | DeepLink::SignupJwt(_) => Err(AuthError::Validation(
+            "JWT auth flows cannot be resumed via resume_auth_flow; this API is legacy cookie only."
+                .into(),
+        )
+        .into()),
+        DeepLink::SeedExport(_) => {
+            Err(AuthError::Validation("Only signin and signup URLs can be resumed.".into()).into())
+        }
     }
 }
