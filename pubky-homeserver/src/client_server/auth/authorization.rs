@@ -15,26 +15,38 @@ use pubky_common::capabilities::Action;
 
 use crate::client_server::auth::AuthSession;
 use crate::client_server::middleware::pubky_host::PubkyHost;
-use crate::shared::webdav::WebDavPathPub;
+use crate::shared::webdav::WebDavPath;
 use crate::shared::HttpError;
 
 /// Authorize a write to `path` for `session` on tenant `pubky`.
 ///
-/// Returns `Ok(())` when the session targets the same tenant and holds a
-/// capability whose scope covers `path` with [`Action::Write`]. Returns a 403
-/// `HttpError` otherwise.
+/// Returns `Ok(())` when the path is under `/pub/`, the session targets the
+/// same tenant, and the session holds a capability whose scope covers `path`
+/// with [`Action::Write`]. Returns a 403 `HttpError` otherwise.
+///
+/// The `/pub/` requirement is enforced here (not at the path extractor) so
+/// that violations produce a 403 with a meaningful message — the SDK contract
+/// expects `"Writing to directories other than '/pub/' is forbidden"` rather
+/// than axum's default 400 for a deserialization failure.
 pub fn has_write_permission(
     session: &AuthSession,
     pubky: &PubkyHost,
-    path: &WebDavPathPub,
+    path: &WebDavPath,
 ) -> Result<(), HttpError> {
+    let path_str = path.as_str();
+
+    if !path_str.starts_with("/pub/") {
+        return Err(HttpError::forbidden_with_message(
+            "Writing to directories other than '/pub/' is forbidden",
+        ));
+    }
+
     if session.user_key() != pubky.public_key() {
         return Err(HttpError::forbidden_with_message(
             "Session user does not match target tenant",
         ));
     }
 
-    let path_str = path.inner().as_str();
     let granted = session
         .capabilities()
         .iter()
@@ -56,14 +68,13 @@ mod tests {
     use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_common::crypto::{Keypair, PublicKey};
-    use std::str::FromStr;
 
     fn dummy_pk() -> PublicKey {
         Keypair::random().public_key()
     }
 
-    fn pub_path(s: &str) -> WebDavPathPub {
-        WebDavPathPub::from_str(s).expect("test path must be a valid /pub/ path")
+    fn web_path(s: &str) -> WebDavPath {
+        WebDavPath::new(s).expect("test path must be a syntactically valid webdav path")
     }
 
     fn session_with_key(pk: PublicKey, capabilities: Capabilities) -> AuthSession {
@@ -96,45 +107,45 @@ mod tests {
     #[test]
     fn root_capability_grants_access_to_any_pub_path() {
         let (session, pubky) = session_with_caps(root_caps());
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/anything")).is_ok());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/anything")).is_ok());
     }
 
     #[test]
     fn empty_capabilities_denies_access() {
         let (session, pubky) = session_with_caps(Capabilities(vec![]));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/file")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/file")).is_err());
     }
 
     #[test]
     fn read_only_capabilities_deny_write() {
         let (session, pubky) = session_with_caps(read_only_caps());
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/file.txt")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/file.txt")).is_err());
     }
 
     #[test]
     fn scoped_capability_grants_access_to_subpath() {
         let (session, pubky) = session_with_caps(scoped_caps("/pub/my.app/"));
         assert!(
-            has_write_permission(&session, &pubky, &pub_path("/pub/my.app/nested/file")).is_ok()
+            has_write_permission(&session, &pubky, &web_path("/pub/my.app/nested/file")).is_ok()
         );
     }
 
     #[test]
     fn scoped_capability_denies_access_to_sibling_path() {
         let (session, pubky) = session_with_caps(scoped_caps("/pub/my.app/"));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/other.app/file")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/other.app/file")).is_err());
     }
 
     #[test]
     fn scoped_capability_without_slash_rejects_prefix_attack() {
         let (session, pubky) = session_with_caps(scoped_caps("/pub/app"));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/app-evil/file")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/app-evil/file")).is_err());
     }
 
     #[test]
     fn scoped_capability_without_slash_allows_exact_match() {
         let (session, pubky) = session_with_caps(scoped_caps("/pub/app"));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/app")).is_ok());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/app")).is_ok());
     }
 
     #[test]
@@ -144,7 +155,7 @@ mod tests {
         // for `/pub/pubky.app/` (the directory) must NOT cover a write to
         // `/pub/pubky.app` (treated as a file at the parent level).
         let (session, pubky) = session_with_caps(scoped_caps("/pub/pubky.app/"));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/pubky.app")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/pubky.app")).is_err());
     }
 
     #[test]
@@ -152,7 +163,7 @@ mod tests {
         // A file scope (no trailing `/`) is not a directory namespace —
         // granting `/pub/app:rw` does not authorize writes to `/pub/app/foo`.
         let (session, pubky) = session_with_caps(scoped_caps("/pub/app"));
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/app/foo")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/app/foo")).is_err());
     }
 
     #[test]
@@ -160,7 +171,7 @@ mod tests {
         // Session owned by user A, target tenant is user B.
         let session = session_with_key(dummy_pk(), root_caps());
         let pubky = PubkyHost(dummy_pk());
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/file.txt")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/file.txt")).is_err());
     }
 
     #[test]
@@ -168,6 +179,20 @@ mod tests {
         let pk = dummy_pk();
         let session = session_with_key(pk.clone(), root_caps());
         let pubky = PubkyHost(pk);
-        assert!(has_write_permission(&session, &pubky, &pub_path("/pub/file.txt")).is_ok());
+        assert!(has_write_permission(&session, &pubky, &web_path("/pub/file.txt")).is_ok());
+    }
+
+    #[test]
+    fn write_outside_pub_is_rejected() {
+        // SDK contract: writes to non-`/pub/` paths must return 403 with a
+        // message containing `"Writing to directories other than '/pub/'"`
+        // (asserted by `pubky-sdk/bindings/js/pkg/tests/storage.ts` →
+        // "forbidden: writing outside /pub returns 403"). The HTTP shape is
+        // covered end-to-end by that SDK test; here we just verify the
+        // predicate rejects the path before any tenant/capability check.
+        let (session, pubky) = session_with_caps(root_caps());
+        assert!(
+            has_write_permission(&session, &pubky, &web_path("/priv/example.com/x")).is_err()
+        );
     }
 }

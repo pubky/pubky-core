@@ -18,7 +18,7 @@ use crate::{
         sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
     },
     shared::{
-        webdav::{EntryPath, WebDavPathPubAxum},
+        webdav::{EntryPath, WebDavPathAxum},
         HttpError, HttpResult,
     },
 };
@@ -27,7 +27,7 @@ pub async fn delete(
     State(state): State<AppState>,
     session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
     has_write_permission(&session, &pubky, &path.0)?;
 
@@ -43,7 +43,7 @@ pub async fn put(
     State(state): State<AppState>,
     session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     has_write_permission(&session, &pubky, &path.0)?;
