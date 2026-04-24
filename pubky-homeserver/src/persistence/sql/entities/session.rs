@@ -407,18 +407,16 @@ mod tests {
                     .fetch_one(&mut *tx)
                     .await
                     .unwrap();
-                let count =
-                    SessionRepository::count_by_user_id(user_id, &mut (&mut tx).into())
-                        .await
-                        .unwrap();
+                let count = SessionRepository::count_by_user_id(user_id, &mut (&mut tx).into())
+                    .await
+                    .unwrap();
                 if count >= i64::from(max_sessions) {
                     tx.rollback().await.unwrap();
                     return Err(());
                 }
-                let _secret =
-                    SessionRepository::create(user_id, &caps, &mut (&mut tx).into())
-                        .await
-                        .unwrap();
+                let _secret = SessionRepository::create(user_id, &caps, &mut (&mut tx).into())
+                    .await
+                    .unwrap();
                 tx.commit().await.unwrap();
                 Ok(())
             }));
@@ -440,10 +438,9 @@ mod tests {
         assert_eq!(failures, 9);
 
         // Verify the actual count in DB
-        let count =
-            SessionRepository::count_by_user_id(user.id, &mut db.pool().into())
-                .await
-                .unwrap();
+        let count = SessionRepository::count_by_user_id(user.id, &mut db.pool().into())
+            .await
+            .unwrap();
         assert_eq!(count, 1, "DB should have exactly 1 session");
     }
 }

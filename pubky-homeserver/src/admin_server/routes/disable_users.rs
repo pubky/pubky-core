@@ -98,7 +98,6 @@ mod tests {
             context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
-            context.user_limits_cache.clone(),
         );
         let router = Router::new()
             .route("/users/{pubkey}/disable", post(disable_user))

@@ -166,8 +166,11 @@ impl SqlDb {
         use crate::data_directory::user_limit_config::UserLimitConfig;
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_without_migrations().await;
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
-        migrator.run().await.expect("Failed to run migrations");
+        let migrator = Migrator::new(&db);
+        migrator
+            .run(UserLimitConfig::default())
+            .await
+            .expect("Failed to run migrations");
         db
     }
 }

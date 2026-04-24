@@ -441,4 +441,60 @@ mod tests {
         assert_eq!(overview.num_signup_codes, 3);
         assert_eq!(overview.num_unused_signup_codes, 1);
     }
+
+    /// Verify that signup token custom limits are propagated to the user
+    /// entity when the token is redeemed.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_signup_token_limits_applied_to_user() {
+        use crate::data_directory::quota_config::BandwidthBudget;
+        use crate::persistence::sql::user::UserRepository;
+        use std::str::FromStr;
+
+        let db = SqlDb::test().await;
+
+        fn bw(s: &str) -> BandwidthBudget {
+            BandwidthBudget::from_str(s).unwrap()
+        }
+
+        // 1) Create a signup code with custom limits
+        let custom_limits = UserLimitConfig {
+            storage_quota_mb: Some(1024),
+            max_sessions: Some(5),
+            rate_read: Some(bw("200mb/m")),
+            rate_write: None,
+        };
+        let code_id = SignupCodeId::random();
+        let code = SignupCodeRepository::create(&code_id, &custom_limits, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // 2) Simulate the signup flow: create user, mark code used, apply limits
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let mut tx = db.pool().begin().await.unwrap();
+        let mut user = UserRepository::create(&pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        if let Some(token_limits) = &code.custom_limits() {
+            UserRepository::set_custom_limits(user.id, token_limits, &mut (&mut tx).into())
+                .await
+                .unwrap();
+            user.apply_custom_limits(token_limits);
+        }
+        tx.commit().await.unwrap();
+
+        // 3) Re-read from DB and verify limits were persisted
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let user_limits = user.limits();
+        assert_eq!(user_limits.storage_quota_mb, Some(1024));
+        assert_eq!(user_limits.max_sessions, Some(5));
+        assert_eq!(user_limits.rate_read, Some(bw("200mb/m")));
+        assert_eq!(user_limits.rate_write, None);
+    }
 }

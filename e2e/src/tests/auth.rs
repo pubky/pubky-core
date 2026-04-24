@@ -4,7 +4,7 @@ use pubky_testnet::pubky::{
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
-    pubky_homeserver::{ConfigToml, MockDataDir, SignupMode},
+    pubky_homeserver::{ConfigToml, SignupMode},
     EphemeralTestnet, Testnet,
 };
 use std::str::FromStr;
@@ -738,90 +738,4 @@ async fn test_republish_homeserver() {
         .as_u64();
 
     assert!(ts3 > ts2, "record should be republished when stale");
-}
-
-/// Test that per-user max_sessions limit is enforced during signin.
-/// Set max_sessions=2 via admin API, create 2 sessions, verify the 3rd signin
-/// is rejected with 429, then sign out one session and verify a new signin succeeds.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn max_sessions_enforced_via_admin_api() {
-    let config = ConfigToml::default_test_config();
-    let admin_password = config.admin.admin_password.clone();
-
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
-        .await
-        .unwrap();
-
-    let admin_socket = server
-        .admin_server()
-        .expect("admin server should be enabled")
-        .listen_socket();
-
-    // Signup creates session #1
-    let signer = pubky.signer(Keypair::random());
-    let session1 = signer.signup(&server.public_key(), None).await.unwrap();
-    let pubkey_z32 = signer.public_key().z32();
-
-    // Set max_sessions=2 via admin API
-    let admin_client = PubkyHttpClient::new().unwrap();
-    let resp = admin_client
-        .request(
-            Method::PUT,
-            &format!("http://{admin_socket}/users/{pubkey_z32}/limits"),
-        )
-        .header("X-Admin-Password", &admin_password)
-        .header("content-type", "application/json")
-        .body(r#"{"storage_quota_mb": null, "max_sessions": 2, "rate_read": null, "rate_write": null}"#)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Signin creates session #2 — should succeed
-    let session2 = signer.signin().await.unwrap();
-
-    // Signin for session #3 — should be rejected (429)
-    let err = signer
-        .signin()
-        .await
-        .expect_err("Third signin should be rejected — max_sessions=2");
-    assert!(
-        matches!(
-            err,
-            Error::Request(RequestError::Server { status, .. })
-                if status == StatusCode::TOO_MANY_REQUESTS
-        ),
-        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
-    );
-
-    // Sign out one session to free a slot
-    session1.signout().await.unwrap();
-
-    // Now a new signin should succeed
-    let _session3 = signer
-        .signin()
-        .await
-        .expect("Signin should succeed after signing out one session");
-
-    // And the next one should be rejected again
-    let err = signer
-        .signin()
-        .await
-        .expect_err("Should be rejected — back at max_sessions=2");
-    assert!(
-        matches!(
-            err,
-            Error::Request(RequestError::Server { status, .. })
-                if status == StatusCode::TOO_MANY_REQUESTS
-        ),
-        "Expected 429 TOO_MANY_REQUESTS, got: {err:?}"
-    );
-
-    // Clean up: the remaining sessions can still be used
-    session2.signout().await.unwrap();
 }

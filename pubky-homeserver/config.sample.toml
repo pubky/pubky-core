@@ -28,20 +28,19 @@ user_storage_quota_mb = 0
 #      will NOT retroactively update existing users. To change an existing
 #      user's limits, use the admin API:
 #        - PUT  /users/{pubkey}/limits   — set custom limits
-#        - DELETE /users/{pubkey}/limits — revert to current deploy-time defaults
+#        - DELETE /users/{pubkey}/limits — make fully unlimited
 #
 # Within a limit config, omitted (or null) fields mean "unlimited".
 
 # Default per-user storage quota in MB. Omit for unlimited.
 # Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
 #
-# IMPORTANT: Unlike the deprecated `user_storage_quota_mb` where 0 = unlimited,
-# here 0 means "zero quota" (no storage allowed). Omit the field entirely for
+# IMPORTANT: 0 means "zero quota" (no storage allowed). Omit the field entirely for
 # unlimited storage.
-# storage_limit_mb = 500
+# storage_limit_mb = 1024
 
 # Default maximum concurrent sessions per user. Omit for unlimited.
-# max_sessions = 10
+# max_sessions = 3
 
 # Default per-user read bandwidth budget. Omit for unlimited.
 # Total bytes allowed per time window. Accepts bandwidth units (kb, mb, gb)

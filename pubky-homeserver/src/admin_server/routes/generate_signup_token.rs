@@ -26,10 +26,7 @@ async fn create_signup_code(
 
 /// GET /generate_signup_token — create a token with the server's deploy-time defaults.
 ///
-/// The token inherits the current deploy-time default limits from the TOML config.
-/// Users who redeem this token will get those defaults written to their user row.
-/// To create a token with explicit custom limits (including "all unlimited"),
-/// use the POST endpoint instead.
+/// To create a token with explicit custom limits use the POST endpoint instead.
 pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
     create_signup_code(&state, &state.default_user_limits).await
 }
@@ -38,8 +35,6 @@ pub async fn generate_signup_token(State(state): State<AppState>) -> HttpResult<
 ///
 /// All four fields are **required**. Use `null` for unlimited.
 /// Omitting a field returns 422, preventing accidental unlimited grants.
-/// This differs from the GET endpoint: GET writes the server's deploy-time defaults,
-/// while POST writes exactly what the caller specifies.
 pub async fn generate_signup_token_with_limits(
     State(state): State<AppState>,
     Json(explicit): Json<ExplicitUserLimitConfig>,

@@ -120,7 +120,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_create_user_migration() {
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, Default::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20250806CreateUserMigration)])
             .await

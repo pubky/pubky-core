@@ -139,7 +139,7 @@ async fn authorize(
     path: &str,
 ) -> HttpResult<AuthzResult> {
     if path == "/session" {
-        // Checking (or deleting) one's session is ok for everyone.
+        // Checking (or deleting) one's session is ok for everyone
         return Ok(AuthzResult::Anonymous);
     } else if path.starts_with("/pub/") {
         if method == Method::GET || method == Method::HEAD {
@@ -227,11 +227,7 @@ async fn authorize(
 /// this pubkey, return `Authenticated`; otherwise `Anonymous`.
 /// Only performs a DB lookup when a session cookie is actually present, so
 /// anonymous requests incur no overhead.
-async fn probe_session(
-    state: &AppState,
-    cookies: &Cookies,
-    public_key: &PublicKey,
-) -> AuthzResult {
+async fn probe_session(state: &AppState, cookies: &Cookies, public_key: &PublicKey) -> AuthzResult {
     let Some(session_secret) = session_secret_from_cookies(cookies, public_key) else {
         return AuthzResult::Anonymous;
     };

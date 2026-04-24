@@ -11,6 +11,10 @@ use crate::data_directory::quota_config::BandwidthBudget;
 /// How long a cached limit entry is considered fresh before re-resolving from DB.
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
+/// How long a negative (user-not-found) cache entry lives before re-checking the DB.
+/// Short TTL so that a subsequent signup populates limits promptly.
+const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(30);
+
 /// Maximum length of the VARCHAR column used for rate budget strings in the DB.
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_limit_columns` migration.
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
@@ -22,23 +26,34 @@ pub const MAX_CACHED_USER_LIMITS: usize = 100_000;
 /// A cached user limit config with an expiry timestamp.
 #[derive(Debug, Clone)]
 pub struct CachedUserLimits {
-    /// The resolved limit configuration.
-    pub config: UserLimitConfig,
+    /// The resolved limit configuration, or `None` for a negative (user-not-found) entry.
+    pub config: Option<UserLimitConfig>,
     cached_at: Instant,
+    ttl: Duration,
 }
 
 impl CachedUserLimits {
     /// Wrap a resolved config with a fresh timestamp.
     pub fn new(config: UserLimitConfig) -> Self {
         Self {
-            config,
+            config: Some(config),
             cached_at: Instant::now(),
+            ttl: CACHE_TTL,
         }
     }
 
-    /// Returns true if this entry has exceeded the cache TTL.
+    /// Create a negative cache entry (user not found) with a shorter TTL.
+    pub fn not_found() -> Self {
+        Self {
+            config: None,
+            cached_at: Instant::now(),
+            ttl: NEGATIVE_CACHE_TTL,
+        }
+    }
+
+    /// Returns true if this entry has exceeded its TTL.
     pub fn is_expired(&self) -> bool {
-        self.cached_at.elapsed() > CACHE_TTL
+        self.cached_at.elapsed() > self.ttl
     }
 }
 
@@ -51,7 +66,7 @@ pub type UserLimitsCache = Arc<DashMap<PublicKey, CachedUserLimits>>;
 ///
 /// Used in three contexts:
 /// 1. **Deploy-time defaults** — parsed from TOML config via [`UserLimitConfig::from_general_toml`].
-/// 2. **Per-user config** — stored on the user row in the DB. When present, replaces defaults entirely.
+/// 2. **Per-user config** — stored on the user row in the DB.
 /// 3. **Signup token config** — attached to a signup code; applied to the user on signup.
 ///
 /// There is no merging: if a user has a custom config, it is used as-is. If not, deploy-time
@@ -405,9 +420,7 @@ mod tests {
     #[test]
     fn test_validate_rate_roundtrips_valid_budgets_under_column_limit() {
         // All realistic budget strings should be well under 32 characters.
-        let budgets = [
-            "100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s",
-        ];
+        let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
             let config = UserLimitConfig {
                 rate_read: Some(BandwidthBudget::from_str(s).unwrap()),

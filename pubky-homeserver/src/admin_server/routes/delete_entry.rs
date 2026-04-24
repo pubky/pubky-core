@@ -46,12 +46,7 @@ mod tests {
         let file_path = "my_file.txt";
         let db = context.sql_db.clone();
         let file_service = FileService::new_from_context(&context).unwrap();
-        let app_state = AppState::new(
-            context.sql_db.clone(),
-            file_service.clone(),
-            "",
-            context.user_limits_cache.clone(),
-        );
+        let app_state = AppState::new(context.sql_db.clone(), file_service.clone(), "");
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -101,7 +96,6 @@ mod tests {
             context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
-            context.user_limits_cache.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
@@ -125,7 +119,6 @@ mod tests {
             sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
-            context.user_limits_cache.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))

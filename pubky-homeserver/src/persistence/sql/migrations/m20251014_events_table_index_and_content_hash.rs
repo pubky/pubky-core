@@ -143,7 +143,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_table_index_and_content_hash_migration() {
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, Default::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![
                 Box::new(M20250806CreateUserMigration),
@@ -286,7 +286,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_content_hash_backfill() {
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, Default::default());
+        let migrator = Migrator::new(&db);
 
         // Run migrations up to (but not including) the content_hash migration
         migrator

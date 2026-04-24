@@ -20,40 +20,34 @@ const MIGRATION_TABLE: &str = "migrations";
 /// Migrator is responsible for running migrations on the database.
 pub struct Migrator<'a> {
     db: &'a SqlDb,
-    /// Deploy-time default user limits, used to backfill existing users during migration.
-    default_user_limits: UserLimitConfig,
+}
+
+/// Returns the full list of migrations to run. Add new migrations here.
+pub fn all_migrations(default_user_limits: UserLimitConfig) -> Vec<Box<dyn MigrationTrait>> {
+    vec![
+        Box::new(M20250806CreateUserMigration),
+        Box::new(M20250812CreateSignupCodeMigration),
+        Box::new(M20250813CreateSessionMigration),
+        Box::new(M20250814CreateEventMigration),
+        Box::new(M20250815CreateEntryMigration),
+        Box::new(M20251014EventsTableIndexAndContentHashMigration),
+        Box::new(M20260327AddLimitColumnsMigration {
+            defaults: default_user_limits,
+        }),
+    ]
 }
 
 impl<'a> Migrator<'a> {
     /// Creates a new migrator.
-    /// - `db`: The database connection to use.
-    /// - `default_user_limits`: Deploy-time defaults applied to existing users during migration.
-    pub fn new(db: &'a SqlDb, default_user_limits: UserLimitConfig) -> Self {
-        Self {
-            db,
-            default_user_limits,
-        }
-    }
-
-    /// Returns a list of migrations to run.
-    fn migrations(&self) -> Vec<Box<dyn MigrationTrait>> {
-        // Add new migrations here. They run from top to bottom.
-        vec![
-            Box::new(M20250806CreateUserMigration),
-            Box::new(M20250812CreateSignupCodeMigration),
-            Box::new(M20250813CreateSessionMigration),
-            Box::new(M20250814CreateEventMigration),
-            Box::new(M20250815CreateEntryMigration),
-            Box::new(M20251014EventsTableIndexAndContentHashMigration),
-            Box::new(M20260327AddLimitColumnsMigration {
-                defaults: self.default_user_limits.clone(),
-            }),
-        ]
+    /// db: The database connection to use.
+    pub fn new(db: &'a SqlDb) -> Self {
+        Self { db }
     }
 
     /// Runs all migrations that are not yet applied.
-    pub async fn run(&self) -> anyhow::Result<()> {
-        self.run_migrations(self.migrations()).await
+    pub async fn run(&self, default_user_limits: UserLimitConfig) -> anyhow::Result<()> {
+        self.run_migrations(all_migrations(default_user_limits))
+            .await
     }
 
     /// Runs a specific list of migrations.
@@ -169,13 +163,12 @@ impl<'a> Migrator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_directory::user_limit_config::UserLimitConfig;
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_table() {
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         let mut tx = db.pool().begin().await.unwrap();
         migrator
@@ -219,7 +212,7 @@ mod tests {
         }
 
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
             .await
@@ -269,7 +262,7 @@ mod tests {
         }
 
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(TestMigration)])
             .await
@@ -305,7 +298,7 @@ mod tests {
         }
 
         let db = SqlDb::test_without_migrations().await;
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator.create_migration_table().await.unwrap();
         // Mark the migration as done
         migrator

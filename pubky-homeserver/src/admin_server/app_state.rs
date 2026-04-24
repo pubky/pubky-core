@@ -1,6 +1,8 @@
 use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
+use std::sync::Arc;
+
 use crate::data_directory::user_limit_config::{UserLimitConfig, UserLimitsCache};
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::ConfigToml;
@@ -22,17 +24,12 @@ pub(crate) struct AppState {
     pub(crate) metadata: AdminMetadata,
     /// Deploy-time default user limits.
     pub(crate) default_user_limits: UserLimitConfig,
-    /// Shared cache for resolved user limits (same instance used by client server).
+    /// Shared cache for resolved user limits
     pub(crate) user_limits_cache: UserLimitsCache,
 }
 
 impl AppState {
-    pub fn new(
-        sql_db: SqlDb,
-        file_service: FileService,
-        admin_password: &str,
-        user_limits_cache: UserLimitsCache,
-    ) -> Self {
+    pub fn new(sql_db: SqlDb, file_service: FileService, admin_password: &str) -> Self {
         let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
@@ -47,8 +44,13 @@ impl AppState {
             inner_dav_handler,
             metadata: AdminMetadata::default(),
             default_user_limits: UserLimitConfig::default(),
-            user_limits_cache,
+            user_limits_cache: Arc::new(dashmap::DashMap::new()),
         }
+    }
+
+    pub fn with_user_limits_cache(mut self, cache: UserLimitsCache) -> Self {
+        self.user_limits_cache = cache;
+        self
     }
 
     pub fn with_metadata_from_config(

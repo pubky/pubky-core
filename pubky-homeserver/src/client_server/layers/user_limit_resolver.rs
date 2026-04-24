@@ -17,12 +17,17 @@ use axum::http::Request;
 use futures_util::future::BoxFuture;
 use tower::{Layer, Service};
 
+use pubky_common::crypto::PublicKey;
+
 use crate::client_server::extractors::PubkyHost;
 use crate::data_directory::user_limit_config::{
-    CachedUserLimits, UserLimitsCache, MAX_CACHED_USER_LIMITS,
+    CachedUserLimits, UserLimitConfig, UserLimitsCache, MAX_CACHED_USER_LIMITS,
 };
 use crate::persistence::sql::user::UserRepository;
 use crate::persistence::sql::SqlDb;
+
+/// How often the background task runs to evict expired cache entries.
+const CLEANUP_INTERVAL_SECS: u64 = 60;
 
 #[derive(Debug, Clone)]
 pub struct UserLimitResolverLayer {
@@ -36,7 +41,7 @@ impl UserLimitResolverLayer {
         // unbounded memory growth from requests with rotating public keys.
         let cache_weak = Arc::downgrade(&cache);
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
             interval.tick().await; // skip first immediate tick
             loop {
                 interval.tick().await;
@@ -70,6 +75,57 @@ pub struct UserLimitResolverMiddleware<S> {
     sql_db: SqlDb,
 }
 
+/// Resolve limits for a single user: check cache, fall back to DB on miss.
+///
+/// Returns `Some(config)` for known users, `None` for unknown or on error.
+async fn resolve_limits(
+    pubkey: &PublicKey,
+    cache: &UserLimitsCache,
+    sql_db: &SqlDb,
+) -> Option<UserLimitConfig> {
+    // Check cache: use entry if present and not expired.
+    // `Some(Some(config))` = cached positive hit
+    // `Some(None)` = cached negative hit (user not found)
+    // `None` = cache miss or expired
+    let cached = cache
+        .get(pubkey)
+        .filter(|entry| !entry.is_expired())
+        .map(|entry| entry.config.clone());
+
+    if let Some(maybe_config) = cached {
+        return maybe_config;
+    }
+
+    // Cache miss or expired — query DB.
+    cache.remove(pubkey);
+
+    // Evict expired entries if at capacity to prevent unbounded growth.
+    if cache.len() >= MAX_CACHED_USER_LIMITS {
+        cache.retain(|_, entry| !entry.is_expired());
+    }
+
+    match UserRepository::get(pubkey, &mut sql_db.pool().into()).await {
+        Ok(user) => {
+            let resolved = user.limits();
+            cache.insert(pubkey.clone(), CachedUserLimits::new(resolved.clone()));
+            Some(resolved)
+        }
+        // Cache a negative entry with a short TTL to prevent repeated DB queries
+        // for non-existent users, while allowing subsequent signup to take effect.
+        Err(sqlx::Error::RowNotFound) => {
+            cache.insert(pubkey.clone(), CachedUserLimits::not_found());
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to query user limits for {}: {e}; skipping",
+                pubkey.z32()
+            );
+            None
+        }
+    }
+}
+
 impl<S> Service<Request<Body>> for UserLimitResolverMiddleware<S>
 where
     S: Service<Request<Body>, Response = axum::response::Response, Error = Infallible>
@@ -92,55 +148,12 @@ where
         let sql_db = self.sql_db.clone();
 
         Box::pin(async move {
-            // Only resolve if we have a PubkyHost
             if let Some(pubky_host) = req.extensions().get::<PubkyHost>().cloned() {
                 let pubkey = pubky_host.public_key().clone();
-
-                // Check cache: use entry if present and not expired.
-                let cached_hit = cache
-                    .get(&pubkey)
-                    .filter(|entry| !entry.is_expired())
-                    .map(|entry| entry.config.clone());
-
-                let resolved = if let Some(config) = cached_hit {
-                    Some(config)
-                } else {
-                    // Cache miss or expired — query DB for user entity.
-                    // Remove stale entry if present.
-                    cache.remove(&pubkey);
-
-                    match UserRepository::get(&pubkey, &mut sql_db.pool().into()).await {
-                        Ok(user) => {
-                            // The DB is the source of truth: every user row has explicit
-                            // limits (set during signup or backfilled by migration).
-                            // All-NULL columns = all unlimited.
-                            let resolved = user.limits();
-                            // Evict expired entries if at capacity to prevent unbounded growth.
-                            if cache.len() >= MAX_CACHED_USER_LIMITS {
-                                cache.retain(|_, entry| !entry.is_expired());
-                            }
-                            cache.insert(pubkey, CachedUserLimits::new(resolved.clone()));
-                            Some(resolved)
-                        }
-                        // User not found — no limits to insert. Downstream layers
-                        // will see no extension and skip enforcement.
-                        // Not cached so a subsequent signup can populate it.
-                        Err(sqlx::Error::RowNotFound) => None,
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to query user limits for {}: {e}; skipping",
-                                pubkey.z32()
-                            );
-                            None
-                        }
-                    }
-                };
-
-                if let Some(config) = resolved {
+                if let Some(config) = resolve_limits(&pubkey, &cache, &sql_db).await {
                     req.extensions_mut().insert(config);
                 }
             }
-
             inner.call(req).await
         })
     }
@@ -219,8 +232,13 @@ mod tests {
         // No user in DB → no limits extension inserted
         assert_eq!(body, "no_limits");
 
-        // Unknown user should NOT be cached
-        assert!(!cache.contains_key(&pubkey));
+        // Unknown user should be negatively cached (short TTL) to prevent DB amplification
+        assert!(cache.contains_key(&pubkey));
+        let entry = cache.get(&pubkey).unwrap();
+        assert!(
+            entry.config.is_none(),
+            "negative cache entry should have no config"
+        );
     }
 
     #[tokio::test]

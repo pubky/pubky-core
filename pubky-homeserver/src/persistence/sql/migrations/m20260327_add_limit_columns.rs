@@ -127,7 +127,7 @@ mod tests {
 
     /// Helper: run all prior migrations, optionally including the limit columns migration.
     async fn run_migrations(db: &SqlDb, limit_defaults: Option<UserLimitConfig>) {
-        let migrator = Migrator::new(db, limit_defaults.clone().unwrap_or_default());
+        let migrator = Migrator::new(db);
         let mut migrations: Vec<Box<dyn crate::persistence::sql::migration::MigrationTrait>> = vec![
             Box::new(M20250806CreateUserMigration),
             Box::new(M20250812CreateSignupCodeMigration),
@@ -230,7 +230,7 @@ mod tests {
             ),
             rate_write: None,
         };
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
                 defaults,
@@ -270,7 +270,7 @@ mod tests {
             .await
             .unwrap();
 
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
                 defaults: UserLimitConfig::default(),
@@ -317,7 +317,7 @@ mod tests {
             ),
             rate_write: None,
         };
-        let migrator = Migrator::new(&db, UserLimitConfig::default());
+        let migrator = Migrator::new(&db);
         migrator
             .run_migrations(vec![Box::new(M20260327AddLimitColumnsMigration {
                 defaults,

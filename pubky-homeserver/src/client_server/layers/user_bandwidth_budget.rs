@@ -13,13 +13,12 @@
 //!   cost is reserved; otherwise `MIN_WRITE_COST_BYTES` is reserved and streaming
 //!   chunks add on top. This prevents concurrent requests from all passing a
 //!   stale pre-check before any deduction is visible.
-//! - **Reads** use a best-effort pre-check (response size is unknown upfront),
-//!   then count response body bytes as they stream through. If a client disconnects
-//!   before consuming the full response, the uncounted tail bytes will not be charged.
+//! - **Reads** use the same atomic `try_reserve` pattern as writes: a minimum
+//!   cost ([`MIN_READ_COST_BYTES`]) is reserved atomically before the request
+//!   proceeds, then actual response body bytes are counted as they stream
+//!   through. This prevents concurrent reads from all passing a stale
+//!   pre-check before any deduction is visible.
 //! - In-memory only: counters reset on server restart.
-//! - Counters use `Relaxed` atomic ordering, which is sufficient for rate-limiting
-//!   purposes (no need for happens-before guarantees between budget checks and
-//!   unrelated memory accesses).
 
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -135,8 +134,6 @@ impl DirectionBudgetState {
 struct UserBudgetState {
     read: DirectionBudgetState,
     write: DirectionBudgetState,
-    /// Monotonic timestamp of last access, used for LRU-style eviction.
-    last_accessed: Mutex<Instant>,
 }
 
 impl UserBudgetState {
@@ -144,7 +141,6 @@ impl UserBudgetState {
         Self {
             read: DirectionBudgetState::new(read_budget),
             write: DirectionBudgetState::new(write_budget),
-            last_accessed: Mutex::new(Instant::now()),
         }
     }
 
@@ -154,14 +150,6 @@ impl UserBudgetState {
         } else {
             &self.read
         }
-    }
-
-    fn touch(&self) {
-        *self.last_accessed.lock().unwrap() = Instant::now();
-    }
-
-    fn last_accessed(&self) -> Instant {
-        *self.last_accessed.lock().unwrap()
     }
 
     /// Returns true if both direction windows have expired, meaning this entry can be evicted.
@@ -176,6 +164,9 @@ const MAX_TRACKED_USERS: usize = 100_000;
 /// Duration after which idle entries are eligible for cleanup.
 const CLEANUP_EXPIRY: Duration = Duration::from_secs(24 * 60 * 60); // 1 day
 
+/// How often the background task runs to evict expired entries.
+const CLEANUP_INTERVAL_SECS: u64 = 60;
+
 #[derive(Debug, Clone)]
 pub struct UserBandwidthBudgetLayer {
     budgets: Arc<DashMap<PublicKey, Arc<UserBudgetState>>>,
@@ -188,7 +179,7 @@ impl UserBandwidthBudgetLayer {
         // Periodic cleanup: remove entries whose windows have expired.
         let budgets_weak: Weak<DashMap<PublicKey, Arc<UserBudgetState>>> = Arc::downgrade(&budgets);
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
             interval.tick().await; // skip first immediate tick
             loop {
                 interval.tick().await;
@@ -229,19 +220,16 @@ fn is_write_method(method: &Method) -> bool {
 }
 
 /// Evict stale entries from the budget map when it reaches capacity.
-/// Falls back to removing the least-recently-accessed entry if no stale
-/// entries are found, preventing an attacker from resetting an arbitrary
-/// active user's counters.
+/// Falls back to removing a random entry if no stale entries are found,
+/// avoiding an O(n) scan that could cause latency spikes under load.
 fn evict_stale_entries(budgets: &DashMap<PublicKey, Arc<UserBudgetState>>) {
     budgets.retain(|_, v| !v.is_expired(CLEANUP_EXPIRY));
 
-    // If retain didn't free enough space, evict the least-recently-accessed entry.
+    // If retain didn't free enough space, evict a random entry.
+    // O(1) — just grabs the first entry from an arbitrary shard.
     if budgets.len() >= MAX_TRACKED_USERS {
-        let oldest = budgets
-            .iter()
-            .min_by_key(|entry| entry.value().last_accessed())
-            .map(|entry| entry.key().clone());
-        if let Some(key) = oldest {
+        let arbitrary_key = budgets.iter().next().map(|entry| entry.key().clone());
+        if let Some(key) = arbitrary_key {
             budgets.remove(&key);
         }
     }
@@ -264,6 +252,12 @@ fn budget_exceeded_response(retry_after_secs: u64) -> axum::response::Response {
 /// Minimum bytes charged per write request, even if the body is empty.
 /// Ensures bodyless mutations (e.g. DELETE) still consume budget.
 const MIN_WRITE_COST_BYTES: u64 = 256;
+
+/// Minimum bytes reserved atomically per read request before the response
+/// size is known. Actual response body bytes are counted on top as they
+/// stream through. This prevents concurrent reads from all passing a stale
+/// pre-check before any deduction is visible.
+const MIN_READ_COST_BYTES: u64 = 256;
 
 /// Deduct write bytes from the budget after the pre-check has passed.
 ///
@@ -300,6 +294,10 @@ where
 }
 
 /// Wrap the response body to count bytes read as they stream out.
+///
+/// `MIN_READ_COST_BYTES` was already reserved atomically by `try_reserve`
+/// in the caller. Response body bytes are counted on top as they stream
+/// through, so the total charge is `MIN_READ_COST_BYTES + response_body_bytes`.
 async fn count_read_bytes<S>(
     req: Request<Body>,
     state: &Arc<UserBudgetState>,
@@ -379,48 +377,40 @@ where
                     ))
                 })
                 .clone();
-            state.touch();
-
             let dir = state.direction(is_write);
-            let (_bytes_used, budget_bytes, seconds_remaining) =
-                dir.check_and_maybe_reset(budget);
+            let (_bytes_used, budget_bytes, seconds_remaining) = dir.check_and_maybe_reset(budget);
 
-            if is_write {
+            let direction_label = if is_write { "write" } else { "read" };
+            let reserve_cost = if is_write {
                 // Determine write cost upfront for atomic reservation.
                 let content_length = req
                     .headers()
                     .get(axum::http::header::CONTENT_LENGTH)
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok());
+                content_length
+                    .unwrap_or(MIN_WRITE_COST_BYTES)
+                    .max(MIN_WRITE_COST_BYTES)
+            } else {
+                MIN_READ_COST_BYTES
+            };
 
-                let (reserve_cost, fully_reserved) = match content_length {
-                    // Known size: reserve the full cost atomically.
-                    Some(cl) => (cl.max(MIN_WRITE_COST_BYTES), true),
-                    // Unknown size: reserve the minimum; streaming will add more.
-                    None => (MIN_WRITE_COST_BYTES, false),
-                };
+            if dir.try_reserve(reserve_cost, budget_bytes).is_err() {
+                let retry_after = seconds_remaining.max(1);
+                tracing::debug!(
+                    "Per-user bandwidth budget exceeded for {} ({direction_label}, budget={}B, retry_after={}s)",
+                    pubkey.z32(), budget_bytes, retry_after,
+                );
+                return Ok(budget_exceeded_response(retry_after));
+            }
 
-                if dir.try_reserve(reserve_cost, budget_bytes).is_err() {
-                    let retry_after = seconds_remaining.max(1);
-                    tracing::debug!(
-                        "Per-user bandwidth budget exceeded for {} (write, budget={}B, retry_after={}s)",
-                        pubkey.z32(), budget_bytes, retry_after,
-                    );
-                    return Ok(budget_exceeded_response(retry_after));
-                }
-
+            if is_write {
+                let fully_reserved = req
+                    .headers()
+                    .get(axum::http::header::CONTENT_LENGTH)
+                    .is_some();
                 count_write_bytes(req, &state, &mut inner, fully_reserved).await
             } else {
-                // Reads: pre-check current usage (can't know response size upfront).
-                let bytes_used = dir.bytes_used.load(Ordering::Relaxed);
-                if bytes_used >= budget_bytes {
-                    let retry_after = seconds_remaining.max(1);
-                    tracing::debug!(
-                        "Per-user bandwidth budget exceeded for {} (read, used={}B, budget={}B, retry_after={}s)",
-                        pubkey.z32(), bytes_used, budget_bytes, retry_after,
-                    );
-                    return Ok(budget_exceeded_response(retry_after));
-                }
                 count_read_bytes(req, &state, &mut inner).await
             }
         })
@@ -569,14 +559,6 @@ mod tests {
             ..Default::default()
         };
 
-        // Exhaust the read budget
-        let resp = app
-            .clone()
-            .oneshot(make_request(Method::GET, &pubkey, &limits))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
         // Exhaust write budget with a large body
         let resp = app
             .clone()
@@ -607,14 +589,15 @@ mod tests {
             "Write budget should be exhausted"
         );
 
-        // Read should still work (independent budget, reads count response bytes not request bytes)
+        // Read should still work (independent budget). Each read reserves
+        // MIN_READ_COST_BYTES (256) atomically. The handler returns an empty
+        // body, so total cost per read is 256 bytes. With a 1kb budget we
+        // can do 4 reads (4 × 256 = 1024).
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
             .await
             .unwrap();
-        // Read passes the pre-check because the handler returns an empty body,
-        // so bytes_used stays at 0 for reads (only response body bytes are counted).
         assert_eq!(
             resp.status(),
             StatusCode::OK,
@@ -830,9 +813,9 @@ mod tests {
             ..Default::default()
         };
 
-        // First GET: the response body is 2048 bytes, which exceeds the 1kb budget.
-        // The request passes the pre-check (0 < 1024) but the response body
-        // counting pushes bytes_used to 2048.
+        // First GET: atomically reserves MIN_READ_COST_BYTES (256), then the
+        // response body adds 2048 bytes via streaming. Total charge: 2304 bytes,
+        // which exceeds the 1kb (1024) budget.
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
@@ -842,7 +825,7 @@ mod tests {
         // Must consume the body so the counting stream runs.
         let _ = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
 
-        // Second GET: pre-check sees 2048 >= 1024 → 429.
+        // Second GET: try_reserve sees 2304 >= 1024 → rolls back → 429.
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
@@ -885,6 +868,44 @@ mod tests {
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
         }
+    }
+
+    #[tokio::test]
+    async fn test_read_budget_atomic_reservation_limits_concurrent_reads() {
+        // Each read reserves MIN_READ_COST_BYTES (256) atomically.
+        // With a 1kb budget (1024 bytes), at most 4 reads can pass the
+        // atomic reservation (4 × 256 = 1024). The 5th must be rejected.
+        let app = test_app(); // handler returns empty body
+        let pubkey = Keypair::random().public_key();
+        let limits = UserLimitConfig {
+            rate_read: budget("1kb/m"),
+            ..Default::default()
+        };
+
+        for i in 0..4 {
+            let resp = app
+                .clone()
+                .oneshot(make_request(Method::GET, &pubkey, &limits))
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "Read #{i} should succeed (within budget)"
+            );
+        }
+
+        // 5th read: budget exhausted (4 × 256 = 1024 >= 1024) → 429
+        let resp = app
+            .clone()
+            .oneshot(make_request(Method::GET, &pubkey, &limits))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "Read should be rejected after budget exhausted by atomic reservations"
+        );
     }
 
     #[tokio::test]
@@ -954,8 +975,8 @@ mod tests {
             ..Default::default()
         };
 
-        // First authenticated read: passes pre-check (0 < 1024) but response
-        // body is 2048 bytes, pushing usage over the budget.
+        // First authenticated read: atomically reserves MIN_READ_COST_BYTES
+        // (256), then the response body adds 2048 bytes. Total: 2304 > 1024.
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))
@@ -965,7 +986,7 @@ mod tests {
         // Must consume the body so the counting stream runs.
         let _ = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
 
-        // Second authenticated read: pre-check sees 2048 >= 1024 → 429
+        // Second authenticated read: try_reserve sees 2304 >= 1024 → 429
         let resp = app
             .clone()
             .oneshot(make_request(Method::GET, &pubkey, &limits))

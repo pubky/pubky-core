@@ -116,8 +116,8 @@ impl AppContext {
         default_user_limits
             .validate_rate_roundtrips()
             .map_err(|e| AppContextConversionError::Config(anyhow::anyhow!(e)))?;
-        Migrator::new(&sql_db, default_user_limits)
-            .run()
+        Migrator::new(&sql_db)
+            .run(default_user_limits)
             .await
             .map_err(AppContextConversionError::Migrations)?;
 
