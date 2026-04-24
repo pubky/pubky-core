@@ -37,7 +37,7 @@ pub(crate) struct SignupParams {
 
 fn grant_info_from_entity(g: GrantEntity) -> GrantInfo {
     GrantInfo {
-        grant_id: g.grant_id,
+        grant_id: g.id,
         client_id: g.client_id.to_string(),
         capabilities: g.capabilities.to_string(),
         issued_at: g.issued_at as u64,

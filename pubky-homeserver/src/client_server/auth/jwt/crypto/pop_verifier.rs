@@ -40,10 +40,12 @@ pub struct PopProofClaims {
 #[derive(Clone, Debug)]
 pub struct PopProof {
     /// Grant ID this proof is bound to.
+    #[allow(dead_code)]
     pub grant_id: GrantId,
     /// The nonce (needed for replay tracking in DB).
     pub nonce: PopNonce,
     /// When the proof was issued.
+    #[allow(dead_code)]
     pub issued_at: DateTime<Utc>,
 }
 

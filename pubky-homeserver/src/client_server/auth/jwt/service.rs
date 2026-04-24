@@ -225,7 +225,7 @@ impl AuthService {
     /// Look up a grant by ID. Returns `GrantNotFound` if missing.
     async fn get_grant(&self, grant_id: &GrantId) -> Result<GrantEntity, AuthServiceError> {
         map_not_found(
-            GrantRepository::get_by_grant_id(grant_id, &mut self.sql_db.pool().into()).await,
+            GrantRepository::get_by_id(grant_id, &mut self.sql_db.pool().into()).await,
             AuthServiceError::GrantNotFound,
         )
     }
@@ -356,7 +356,7 @@ impl AuthService {
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), AuthServiceError> {
         let new_grant = NewGrant {
-            grant_id: grant.jti.clone(),
+            id: grant.jti.clone(),
             user_id: user.id,
             client_id: grant.client_id.clone(),
             client_cnf_key: grant.cnf.z32(),

@@ -40,6 +40,7 @@ use pubky_common::capabilities::Action;
 /// ```
 #[derive(Clone, Debug)]
 pub struct WriteAccess {
+    #[allow(dead_code)]
     pub session: AuthSession,
 }
 

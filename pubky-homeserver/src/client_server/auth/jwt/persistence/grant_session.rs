@@ -167,7 +167,7 @@ mod tests {
         let now = chrono::Utc::now().timestamp() as u64;
         let grant_id = GrantId::generate();
         let new_grant = NewGrant {
-            grant_id: grant_id.clone(),
+            id: grant_id.clone(),
             user_id: user.id,
             client_id: ClientId::new("test.app").unwrap(),
             client_cnf_key: Keypair::random().public_key().z32(),
@@ -268,7 +268,7 @@ mod tests {
             .await
             .unwrap();
         let new_grant_b = NewGrant {
-            grant_id: grant_b_id.clone(),
+            id: grant_b_id.clone(),
             user_id: user.id,
             client_id: ClientId::new("other.app").unwrap(),
             client_cnf_key: Keypair::random().public_key().z32(),

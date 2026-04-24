@@ -96,6 +96,9 @@ pub enum SessionBearerError {
 ///
 /// Constructed via [`SessionBearer::hash`] or [`SessionTokenHash::try_from`] (for
 /// database row decoding). 32 bytes, so `Copy` is cheap.
+/// We store the hash instead of the bearer itself to mitigate damage from a database 
+/// leak: the hash cannot be reversed to yield a valid bearer, and the server 
+/// only ever compares hashes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SessionTokenHash([u8; 32]);
 

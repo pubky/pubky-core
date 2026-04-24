@@ -19,7 +19,7 @@ use crate::persistence::sql::{
 pub struct GrantRepository;
 
 impl GrantRepository {
-    /// Insert a grant. Ignores if grant_id already exists (idempotent).
+    /// Insert a grant. Ignores if a grant with the same id already exists (idempotent).
     pub async fn create<'a>(
         grant: &NewGrant,
         executor: &mut UnifiedExecutor<'a>,
@@ -27,7 +27,7 @@ impl GrantRepository {
         let statement = Query::insert()
             .into_table(GRANTS_TABLE)
             .columns([
-                GrantIden::GrantId,
+                GrantIden::Id,
                 GrantIden::User,
                 GrantIden::ClientId,
                 GrantIden::ClientCnfKey,
@@ -36,7 +36,7 @@ impl GrantRepository {
                 GrantIden::ExpiresAt,
             ])
             .values(vec![
-                SimpleExpr::Value(grant.grant_id.to_string().into()),
+                SimpleExpr::Value(grant.id.to_string().into()),
                 SimpleExpr::Value(grant.user_id.into()),
                 SimpleExpr::Value(grant.client_id.to_string().into()),
                 SimpleExpr::Value(grant.client_cnf_key.clone().into()),
@@ -46,7 +46,7 @@ impl GrantRepository {
             ])
             .expect("invariant: values count matches columns count")
             .on_conflict(
-                sea_query::OnConflict::column(GrantIden::GrantId)
+                sea_query::OnConflict::column(GrantIden::Id)
                     .do_nothing()
                     .to_owned(),
             )
@@ -58,8 +58,8 @@ impl GrantRepository {
         Ok(())
     }
 
-    /// Get a grant by its grant_id.
-    pub async fn get_by_grant_id<'a>(
+    /// Get a grant by its id.
+    pub async fn get_by_id<'a>(
         grant_id: &GrantId,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<GrantEntity, sqlx::Error> {
@@ -67,7 +67,6 @@ impl GrantRepository {
             .from(GRANTS_TABLE)
             .columns([
                 (GRANTS_TABLE, GrantIden::Id),
-                (GRANTS_TABLE, GrantIden::GrantId),
                 (GRANTS_TABLE, GrantIden::User),
                 (GRANTS_TABLE, GrantIden::ClientId),
                 (GRANTS_TABLE, GrantIden::ClientCnfKey),
@@ -83,7 +82,7 @@ impl GrantRepository {
                 Expr::col((GRANTS_TABLE, GrantIden::User))
                     .eq(Expr::col((USER_TABLE, UserIden::Id))),
             )
-            .and_where(Expr::col((GRANTS_TABLE, GrantIden::GrantId)).eq(grant_id.to_string()))
+            .and_where(Expr::col((GRANTS_TABLE, GrantIden::Id)).eq(grant_id.to_string()))
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -100,7 +99,7 @@ impl GrantRepository {
         let statement = Query::update()
             .table(GRANTS_TABLE)
             .value(GrantIden::RevokedAt, SimpleExpr::Value(now.into()))
-            .and_where(Expr::col(GrantIden::GrantId).eq(grant_id.to_string()))
+            .and_where(Expr::col(GrantIden::Id).eq(grant_id.to_string()))
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -117,7 +116,7 @@ impl GrantRepository {
         let statement = Query::select()
             .from(GRANTS_TABLE)
             .column(GrantIden::RevokedAt)
-            .and_where(Expr::col(GrantIden::GrantId).eq(grant_id.to_string()))
+            .and_where(Expr::col(GrantIden::Id).eq(grant_id.to_string()))
             .to_owned();
 
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -137,7 +136,6 @@ impl GrantRepository {
             .from(GRANTS_TABLE)
             .columns([
                 (GRANTS_TABLE, GrantIden::Id),
-                (GRANTS_TABLE, GrantIden::GrantId),
                 (GRANTS_TABLE, GrantIden::User),
                 (GRANTS_TABLE, GrantIden::ClientId),
                 (GRANTS_TABLE, GrantIden::ClientCnfKey),
@@ -166,7 +164,7 @@ impl GrantRepository {
 
 /// Data needed to create a new grant.
 pub struct NewGrant {
-    pub grant_id: GrantId,
+    pub id: GrantId,
     pub user_id: i32,
     pub client_id: ClientId,
     pub client_cnf_key: String,
@@ -178,11 +176,11 @@ pub struct NewGrant {
 /// A grant entity as stored in the database.
 #[derive(Debug, Clone)]
 pub struct GrantEntity {
-    pub id: i32,
-    pub grant_id: GrantId,
+    pub id: GrantId,
     pub user_id: i32,
     pub user_pubkey: PublicKey,
     pub client_id: ClientId,
+    #[allow(dead_code)]
     pub client_cnf_key: String,
     pub capabilities: Capabilities,
     pub issued_at: i64,
@@ -213,13 +211,11 @@ impl GrantEntity {
 
 impl FromRow<'_, PgRow> for GrantEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let (id, grant_id, user_id, user_pubkey, client_id, client_cnf_key) =
-            parse_identity_fields(row)?;
+        let (id, user_id, user_pubkey, client_id, client_cnf_key) = parse_identity_fields(row)?;
         let (capabilities, issued_at, expires_at, revoked_at, created_at) =
             parse_grant_metadata(row)?;
         Ok(GrantEntity {
             id,
-            grant_id,
             user_id,
             user_pubkey,
             client_id,
@@ -235,10 +231,9 @@ impl FromRow<'_, PgRow> for GrantEntity {
 
 fn parse_identity_fields(
     row: &PgRow,
-) -> Result<(i32, GrantId, i32, PublicKey, ClientId, String), sqlx::Error> {
-    let id: i32 = row.try_get(GrantIden::Id.to_string().as_str())?;
-    let grant_id: String = row.try_get(GrantIden::GrantId.to_string().as_str())?;
-    let grant_id = GrantId::parse(&grant_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
+) -> Result<(GrantId, i32, PublicKey, ClientId, String), sqlx::Error> {
+    let id: String = row.try_get(GrantIden::Id.to_string().as_str())?;
+    let id = GrantId::parse(&id).map_err(|e| sqlx::Error::Decode(e.into()))?;
     let user_id: i32 = row.try_get(GrantIden::User.to_string().as_str())?;
     let user_pubkey: String = row.try_get(UserIden::PublicKey.to_string().as_str())?;
     let user_pubkey: PublicKey = user_pubkey
@@ -247,14 +242,7 @@ fn parse_identity_fields(
     let client_id: String = row.try_get(GrantIden::ClientId.to_string().as_str())?;
     let client_id = ClientId::new(&client_id).map_err(|e| sqlx::Error::Decode(e.into()))?;
     let client_cnf_key: String = row.try_get(GrantIden::ClientCnfKey.to_string().as_str())?;
-    Ok((
-        id,
-        grant_id,
-        user_id,
-        user_pubkey,
-        client_id,
-        client_cnf_key,
-    ))
+    Ok((id, user_id, user_pubkey, client_id, client_cnf_key))
 }
 
 fn parse_grant_metadata(
@@ -295,7 +283,7 @@ mod tests {
     fn make_new_grant(user_id: i32) -> NewGrant {
         let now = chrono::Utc::now().timestamp() as u64;
         NewGrant {
-            grant_id: GrantId::generate(),
+            id: GrantId::generate(),
             user_id,
             client_id: ClientId::new("test.app").unwrap(),
             client_cnf_key: Keypair::random().public_key().z32(),
@@ -315,7 +303,7 @@ mod tests {
             .unwrap();
 
         let new_grant = make_new_grant(user.id);
-        let grant_id = new_grant.grant_id.clone();
+        let grant_id = new_grant.id.clone();
         let client_id = new_grant.client_id.clone();
         let caps = new_grant.capabilities.clone();
         let issued_at = new_grant.issued_at;
@@ -325,11 +313,11 @@ mod tests {
             .await
             .unwrap();
 
-        let entity = GrantRepository::get_by_grant_id(&grant_id, &mut db.pool().into())
+        let entity = GrantRepository::get_by_id(&grant_id, &mut db.pool().into())
             .await
             .unwrap();
 
-        assert_eq!(entity.grant_id, grant_id);
+        assert_eq!(entity.id, grant_id);
         assert_eq!(entity.user_id, user.id);
         assert_eq!(entity.user_pubkey, keypair.public_key());
         assert_eq!(entity.client_id, client_id);
@@ -366,7 +354,7 @@ mod tests {
             .unwrap();
 
         let new_grant = make_new_grant(user.id);
-        let grant_id = new_grant.grant_id.clone();
+        let grant_id = new_grant.id.clone();
         GrantRepository::create(&new_grant, &mut db.pool().into())
             .await
             .unwrap();
@@ -387,7 +375,7 @@ mod tests {
                 .unwrap()
         );
 
-        let entity = GrantRepository::get_by_grant_id(&grant_id, &mut db.pool().into())
+        let entity = GrantRepository::get_by_id(&grant_id, &mut db.pool().into())
             .await
             .unwrap();
         assert!(entity.revoked_at.is_some());
@@ -403,14 +391,14 @@ mod tests {
 
         // Active grant
         let active = make_new_grant(user.id);
-        let active_id = active.grant_id.clone();
+        let active_id = active.id.clone();
         GrantRepository::create(&active, &mut db.pool().into())
             .await
             .unwrap();
 
         // Revoked grant
         let revoked = make_new_grant(user.id);
-        let revoked_id = revoked.grant_id.clone();
+        let revoked_id = revoked.id.clone();
         GrantRepository::create(&revoked, &mut db.pool().into())
             .await
             .unwrap();
@@ -431,7 +419,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].grant_id, active_id);
+        assert_eq!(list[0].id, active_id);
     }
 
     #[tokio::test]
@@ -450,8 +438,7 @@ mod tests {
 
     fn make_grant_entity(expires_at: i64, revoked_at: Option<i64>) -> GrantEntity {
         GrantEntity {
-            id: 1,
-            grant_id: GrantId::generate(),
+            id: GrantId::generate(),
             user_id: 1,
             user_pubkey: Keypair::random().public_key(),
             client_id: ClientId::new("test.app").unwrap(),

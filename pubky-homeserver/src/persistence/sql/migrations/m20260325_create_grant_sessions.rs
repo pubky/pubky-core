@@ -36,15 +36,9 @@ impl M20260325CreateGrantSessionsMigration {
             .if_not_exists()
             .col(
                 ColumnDef::new(GrantIden::Id)
-                    .integer()
-                    .primary_key()
-                    .auto_increment(),
-            )
-            .col(
-                ColumnDef::new(GrantIden::GrantId)
                     .string_len(36)
                     .not_null()
-                    .unique_key(),
+                    .primary_key(),
             )
             .col(ColumnDef::new(GrantIden::User).integer().not_null())
             .col(
@@ -83,16 +77,6 @@ impl M20260325CreateGrantSessionsMigration {
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = fk.build(PostgresQueryBuilder);
-        sqlx::query(query.as_str()).execute(&mut **tx).await?;
-
-        // Index on grant_id (unique)
-        let idx = sea_query::Index::create()
-            .name("idx_grants_grant_id")
-            .table(GRANTS_TABLE)
-            .col(GrantIden::GrantId)
-            .index_type(sea_query::IndexType::BTree)
-            .to_owned();
-        let query = idx.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
         // Index on user
@@ -147,11 +131,11 @@ impl M20260325CreateGrantSessionsMigration {
         let query = statement.build(PostgresQueryBuilder);
         sqlx::query(query.as_str()).execute(&mut **tx).await?;
 
-        // Foreign key: grant_id → grants.grant_id
+        // Foreign key: grant_id → grants.id
         let fk = ForeignKey::create()
             .name("fk_grant_session_grant")
             .from(GRANT_SESSIONS_TABLE, GrantSessionIden::GrantId)
-            .to(GRANTS_TABLE, GrantIden::GrantId)
+            .to(GRANTS_TABLE, GrantIden::Id)
             .on_delete(ForeignKeyAction::Cascade)
             .to_owned();
         let query = fk.build(PostgresQueryBuilder);
@@ -209,7 +193,6 @@ impl M20260325CreateGrantSessionsMigration {
 #[derive(Iden)]
 pub enum GrantIden {
     Id,
-    GrantId,
     User,
     ClientId,
     ClientCnfKey,
