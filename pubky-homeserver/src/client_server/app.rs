@@ -5,6 +5,7 @@ use crate::MockDataDir;
 
 use crate::{
     app_context::{AppContext, AppContextConversionError},
+    data_directory::user_limit_config::UserLimitConfig,
     PersistentDataDir,
 };
 use anyhow::Result;
@@ -28,6 +29,7 @@ use tower_http::cors::CorsLayer;
 
 use super::layers::{
     pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
+    user_limit_resolver::UserLimitResolverLayer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
@@ -227,12 +229,20 @@ fn base() -> Router<AppState> {
 }
 
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
+    let default_user_limits =
+        UserLimitConfig::from_general_toml(&context.config_toml.general);
+
     let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
         .layer(RateLimiterLayer::new(
             context.config_toml.drive.rate_limits.clone(),
+        ))
+        .layer(UserLimitResolverLayer::new(
+            default_user_limits,
+            context.user_limits_cache.clone(),
+            context.sql_db.clone(),
         ))
         .layer(PubkyHostLayer)
         .with_state(state);

@@ -5,6 +5,10 @@
 //! - **Writes** (`PUT`/`DELETE`) require a valid session cookie whose capabilities
 //!   grant write access to the target path and whose user matches the tenant.
 //! - Non-public paths are forbidden for external requests.
+//!
+//! When a request has a valid session, an [`AuthenticatedSession`] marker is
+//! inserted into the request extensions so downstream layers (e.g. per-user
+//! rate limiting) can distinguish authenticated from anonymous requests.
 
 use crate::client_server::{extractors::PubkyHost, AppState};
 use crate::persistence::sql::session::{SessionRepository, SessionSecret};
@@ -20,6 +24,12 @@ use pubky_common::crypto::PublicKey;
 use std::{convert::Infallible, task::Poll};
 use tower::{Layer, Service};
 use tower_cookies::Cookies;
+
+/// Marker inserted into request extensions when the request has a valid session.
+/// Downstream middleware (e.g. per-user rate limiting) can check for this to
+/// distinguish authenticated from anonymous requests.
+#[derive(Debug, Clone)]
+pub struct AuthenticatedSession;
 
 /// A Tower Layer to handle authorization for write operations.
 #[derive(Debug, Clone)]
@@ -67,7 +77,7 @@ where
         self.inner.poll_ready(cx).map_err(|_| unreachable!()) // `Infallible` conversion
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<Body>) -> Self::Future {
         let state = self.state.clone();
         let mut inner = self.inner.clone();
 
@@ -95,9 +105,20 @@ where
             };
 
             // Authorize the request
-            if let Err(e) = authorize(&state, req.method(), cookies, pubky.public_key(), path).await
-            {
-                return Ok(e.into_response());
+            match authorize(&state, req.method(), cookies, pubky.public_key(), path).await {
+                Err(e) => return Ok(e.into_response()),
+                Ok(true) => {
+                    // Session was validated — mark as authenticated for downstream layers.
+                    req.extensions_mut().insert(AuthenticatedSession);
+                }
+                Ok(false) => {
+                    // Allowed without session (e.g. public read). Check if there
+                    // happens to be a valid session anyway so downstream layers
+                    // (per-user rate limiting) can offer authenticated-user quotas.
+                    if has_valid_session(&state, cookies, pubky.public_key()).await {
+                        req.extensions_mut().insert(AuthenticatedSession);
+                    }
+                }
             }
 
             // If authorized, proceed to the inner service
@@ -106,25 +127,26 @@ where
     }
 }
 
-/// Authorize write (PUT or DELETE) for Public paths.
+/// Authorize the request. Returns `Ok(true)` when a session was validated,
+/// `Ok(false)` when the request is allowed without a session (e.g. public read).
 async fn authorize(
     state: &AppState,
     method: &Method,
     cookies: &Cookies,
     public_key: &PublicKey,
     path: &str,
-) -> HttpResult<()> {
+) -> HttpResult<bool> {
     if path == "/session" {
         // Checking (or deleting) one's session is ok for everyone
-        return Ok(());
+        return Ok(false);
     } else if path.starts_with("/pub/") {
         if method == Method::GET || method == Method::HEAD {
-            return Ok(());
+            return Ok(false);
         }
     } else if path.starts_with("/dav/") {
         // XXX: at least for now
         // if method == Method::GET {
-        //     return Ok(());
+        //     return Ok(false);
         // }
     } else {
         tracing::warn!(
@@ -185,7 +207,7 @@ async fn authorize(
                 .actions
                 .contains(&pubky_common::capabilities::Action::Write)
     }) {
-        Ok(())
+        Ok(true)
     } else {
         tracing::warn!(
             "SessionInfo {} pubkey {} does not have write access to {}. Access forbidden",
@@ -196,6 +218,19 @@ async fn authorize(
         Err(HttpError::forbidden_with_message(
             "Session does not have write access to path",
         ))
+    }
+}
+
+/// Lightweight check: does the request carry a valid session cookie for this pubkey?
+/// Only performs a DB lookup if a session cookie is actually present, so anonymous
+/// requests incur no overhead.
+async fn has_valid_session(state: &AppState, cookies: &Cookies, public_key: &PublicKey) -> bool {
+    let Some(session_secret) = session_secret_from_cookies(cookies, public_key) else {
+        return false;
+    };
+    match SessionRepository::get_by_secret(&session_secret, &mut state.sql_db.pool().into()).await {
+        Ok(session) => &session.user_pubkey == public_key,
+        Err(_) => false,
     }
 }
 

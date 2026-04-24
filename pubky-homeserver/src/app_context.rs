@@ -8,6 +8,7 @@
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
+    data_directory::user_limit_config::UserLimitsCache,
     metrics_server::routes::metrics::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
@@ -80,6 +81,8 @@ pub struct AppContext {
     /// Enables cross-instance event propagation for /events-stream's SSE functionality.
     /// Kept alive for the background task, not for direct access.
     _pg_event_listener: Arc<PgEventListener>,
+    /// Shared cache for resolved per-user limits (used by both admin and client servers).
+    pub(crate) user_limits_cache: UserLimitsCache,
 }
 
 impl AppContext {
@@ -106,7 +109,11 @@ impl AppContext {
             .map_err(AppContextConversionError::Keypair)?;
 
         let sql_db = Self::connect_to_sql_db(&conf).await?;
-        Migrator::new(&sql_db)
+        let default_user_limits =
+            crate::data_directory::user_limit_config::UserLimitConfig::from_general_toml(
+                &conf.general,
+            );
+        Migrator::new(&sql_db, default_user_limits)
             .run()
             .await
             .map_err(AppContextConversionError::Migrations)?;
@@ -136,6 +143,7 @@ impl AppContext {
             events_service,
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),
+            user_limits_cache: Arc::new(dashmap::DashMap::new()),
         })
     }
 }

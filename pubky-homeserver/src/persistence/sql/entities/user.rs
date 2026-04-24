@@ -3,6 +3,7 @@ use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
+use crate::data_directory::user_limit_config::UserLimitConfig;
 use crate::persistence::sql::UnifiedExecutor;
 
 pub const USER_TABLE: &str = "users";
@@ -45,6 +46,10 @@ impl UserRepository {
                 UserIden::CreatedAt,
                 UserIden::Disabled,
                 UserIden::UsedBytes,
+                UserIden::LimitStorageQuotaMb,
+                UserIden::LimitMaxSessions,
+                UserIden::LimitRateRead,
+                UserIden::LimitRateWrite,
             ])
             .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
             .to_owned();
@@ -85,6 +90,10 @@ impl UserRepository {
                 UserIden::CreatedAt,
                 UserIden::Disabled,
                 UserIden::UsedBytes,
+                UserIden::LimitStorageQuotaMb,
+                UserIden::LimitMaxSessions,
+                UserIden::LimitRateRead,
+                UserIden::LimitRateWrite,
             ])
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
@@ -166,6 +175,75 @@ impl UserRepository {
         Ok(updated_user)
     }
 
+    /// Set per-user custom limits. Replaces any existing custom limits entirely.
+    pub async fn set_custom_limits<'a>(
+        user_id: i32,
+        config: &UserLimitConfig,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<(), sqlx::Error> {
+        let statement = Query::update()
+            .table(USER_TABLE)
+            .values(vec![
+                (
+                    UserIden::LimitStorageQuotaMb,
+                    SimpleExpr::Value(config.storage_quota_mb.map(|v| v as i64).into()),
+                ),
+                (
+                    UserIden::LimitMaxSessions,
+                    SimpleExpr::Value(config.max_sessions.map(|v| v as i32).into()),
+                ),
+                (
+                    UserIden::LimitRateRead,
+                    SimpleExpr::Value(config.rate_read.clone().into()),
+                ),
+                (
+                    UserIden::LimitRateWrite,
+                    SimpleExpr::Value(config.rate_write.clone().into()),
+                ),
+            ])
+            .and_where(Expr::col(UserIden::Id).eq(user_id))
+            .to_owned();
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
+        Ok(())
+    }
+
+    /// Clear per-user custom limits (revert to deploy-time defaults).
+    pub async fn clear_custom_limits<'a>(
+        user_id: i32,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<(), sqlx::Error> {
+        let statement = Query::update()
+            .table(USER_TABLE)
+            .values(vec![
+                (
+                    UserIden::LimitStorageQuotaMb,
+                    SimpleExpr::Value(Option::<i64>::None.into()),
+                ),
+                (
+                    UserIden::LimitMaxSessions,
+                    SimpleExpr::Value(Option::<i32>::None.into()),
+                ),
+                (
+                    UserIden::LimitRateRead,
+                    SimpleExpr::Value(Option::<String>::None.into()),
+                ),
+                (
+                    UserIden::LimitRateWrite,
+                    SimpleExpr::Value(Option::<String>::None.into()),
+                ),
+            ])
+            .and_where(Expr::col(UserIden::Id).eq(user_id))
+            .to_owned();
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        sqlx::query_with(&query, values).execute(con).await?;
+        Ok(())
+    }
+
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     #[cfg(test)]
@@ -194,6 +272,10 @@ pub enum UserIden {
     CreatedAt,
     Disabled,
     UsedBytes,
+    LimitStorageQuotaMb,
+    LimitMaxSessions,
+    LimitRateRead,
+    LimitRateWrite,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -203,6 +285,35 @@ pub struct UserEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
+    /// Per-user storage quota in MB. `None` = use deploy-time default (or unlimited if no custom config).
+    pub limit_storage_quota_mb: Option<i64>,
+    /// Per-user max sessions. `None` = use deploy-time default (or unlimited if no custom config).
+    pub limit_max_sessions: Option<i32>,
+    /// Per-user read rate limit. `None` = use deploy-time default (or unlimited if no custom config).
+    pub limit_rate_read: Option<String>,
+    /// Per-user write rate limit. `None` = use deploy-time default (or unlimited if no custom config).
+    pub limit_rate_write: Option<String>,
+}
+
+impl UserEntity {
+    /// Apply a custom limit config to this in-memory entity.
+    pub fn apply_custom_limits(&mut self, config: &UserLimitConfig) {
+        self.limit_storage_quota_mb = config.storage_quota_mb.map(|v| v as i64);
+        self.limit_max_sessions = config.max_sessions.map(|v| v as i32);
+        self.limit_rate_read = config.rate_read.clone();
+        self.limit_rate_write = config.rate_write.clone();
+    }
+
+    /// Extract custom limits, returning `None` if all limit columns are NULL
+    /// (user uses deploy-time defaults).
+    pub fn custom_limits(&self) -> Option<UserLimitConfig> {
+        UserLimitConfig::from_nullable_columns(
+            self.limit_storage_quota_mb,
+            self.limit_max_sessions,
+            self.limit_rate_read.clone(),
+            self.limit_rate_write.clone(),
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -223,12 +334,24 @@ impl FromRow<'_, PgRow> for UserEntity {
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(UserIden::CreatedAt.to_string().as_str())?;
+        let limit_storage_quota_mb: Option<i64> =
+            row.try_get(UserIden::LimitStorageQuotaMb.to_string().as_str())?;
+        let limit_max_sessions: Option<i32> =
+            row.try_get(UserIden::LimitMaxSessions.to_string().as_str())?;
+        let limit_rate_read: Option<String> =
+            row.try_get(UserIden::LimitRateRead.to_string().as_str())?;
+        let limit_rate_write: Option<String> =
+            row.try_get(UserIden::LimitRateWrite.to_string().as_str())?;
         Ok(UserEntity {
             id,
             public_key,
             created_at,
             disabled,
             used_bytes,
+            limit_storage_quota_mb,
+            limit_max_sessions,
+            limit_rate_read,
+            limit_rate_write,
         })
     }
 }
@@ -255,6 +378,7 @@ mod tests {
         assert!(!created_user.disabled);
         assert_eq!(created_user.used_bytes, 0);
         assert_eq!(created_user.id, 1);
+        assert_eq!(created_user.custom_limits(), None);
 
         // Test get user
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
@@ -386,5 +510,73 @@ mod tests {
         assert_eq!(overview.count, 3); // Total users
         assert_eq!(overview.disabled_count, 1); // One disabled user
         assert_eq!(overview.total_used_mb, 3072); // 1024 + 2048
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_set_and_clear_custom_limits() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Initially no custom limits
+        assert_eq!(user.custom_limits(), None);
+
+        // Set custom limits
+        let config = UserLimitConfig {
+            storage_quota_mb: Some(500),
+            max_sessions: Some(10),
+            rate_read: Some("100r/m".to_string()),
+            rate_write: Some("50r/s".to_string()),
+        };
+        UserRepository::set_custom_limits(user.id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Verify limits are persisted
+        let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.custom_limits(), Some(config));
+
+        // Clear custom limits
+        UserRepository::clear_custom_limits(user.id, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.custom_limits(), None);
+    }
+
+    #[test]
+    fn test_apply_custom_limits() {
+        let mut user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            limit_storage_quota_mb: None,
+            limit_max_sessions: None,
+            limit_rate_read: None,
+            limit_rate_write: None,
+        };
+
+        let config = UserLimitConfig {
+            storage_quota_mb: Some(500),
+            max_sessions: Some(10),
+            rate_read: Some("100r/m".to_string()),
+            rate_write: Some("50r/s".to_string()),
+        };
+        user.apply_custom_limits(&config);
+
+        assert_eq!(user.limit_storage_quota_mb, Some(500));
+        assert_eq!(user.limit_max_sessions, Some(10));
+        assert_eq!(user.limit_rate_read, Some("100r/m".to_string()));
+        assert_eq!(user.limit_rate_write, Some("50r/s".to_string()));
     }
 }

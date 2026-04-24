@@ -1,6 +1,7 @@
 use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
+use crate::data_directory::user_limit_config::{UserLimitConfig, UserLimitsCache};
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::ConfigToml;
 
@@ -19,10 +20,19 @@ pub(crate) struct AppState {
     pub(crate) admin_password: String,
     pub(crate) inner_dav_handler: DavHandler,
     pub(crate) metadata: AdminMetadata,
+    /// Deploy-time default user limits.
+    pub(crate) default_user_limits: UserLimitConfig,
+    /// Shared cache for resolved user limits (same instance used by client server).
+    pub(crate) user_limits_cache: UserLimitsCache,
 }
 
 impl AppState {
-    pub fn new(sql_db: SqlDb, file_service: FileService, admin_password: &str) -> Self {
+    pub fn new(
+        sql_db: SqlDb,
+        file_service: FileService,
+        admin_password: &str,
+        user_limits_cache: UserLimitsCache,
+    ) -> Self {
         let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
@@ -36,6 +46,8 @@ impl AppState {
             admin_password: admin_password.to_string(),
             inner_dav_handler,
             metadata: AdminMetadata::default(),
+            default_user_limits: UserLimitConfig::default(),
+            user_limits_cache,
         }
     }
 
@@ -51,6 +63,7 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
+        self.default_user_limits = UserLimitConfig::from_general_toml(&config.general);
         self
     }
 }

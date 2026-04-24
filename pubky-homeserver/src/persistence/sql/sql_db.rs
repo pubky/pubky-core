@@ -163,9 +163,10 @@ impl SqlDb {
     /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
     /// If the DB_CONNECTION_STRING environment variable is set, the migrations are run on the existing database
     pub async fn test() -> Self {
+        use crate::data_directory::user_limit_config::UserLimitConfig;
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_without_migrations().await;
-        let migrator = Migrator::new(&db);
+        let migrator = Migrator::new(&db, UserLimitConfig::default());
         migrator.run().await.expect("Failed to run migrations");
         db
     }

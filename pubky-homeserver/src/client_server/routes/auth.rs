@@ -20,6 +20,7 @@ use axum::{
     http::StatusCode,
     http::{header, HeaderValue},
     response::IntoResponse,
+    Extension,
 };
 use axum_extra::extract::Host;
 use bytes::Bytes;
@@ -27,6 +28,23 @@ use pubky_common::capabilities::Capabilities;
 use pubky_common::crypto::PublicKey;
 use pubky_common::session::SessionInfo;
 use std::collections::HashMap;
+
+use crate::data_directory::user_limit_config::UserLimitConfig;
+
+/// Resolve the effective max_sessions for a user.
+///
+/// If the user has custom limits, uses those. Otherwise falls back to the
+/// middleware-resolved deploy-time defaults (if present in request extensions).
+fn resolve_max_sessions(
+    user: &UserEntity,
+    user_limits: &Option<Extension<UserLimitConfig>>,
+) -> Option<u32> {
+    if let Some(custom) = user.custom_limits() {
+        return custom.max_sessions;
+    }
+    user_limits.as_ref().and_then(|ext| ext.0.max_sessions)
+}
+
 use tower_cookies::{
     cookie::time::{Duration, OffsetDateTime},
     cookie::SameSite,
@@ -46,6 +64,7 @@ pub async fn signup(
     State(state): State<AppState>,
     cookies: Cookies,
     Host(host): Host,
+    user_limits: Option<Extension<UserLimitConfig>>,
     Query(params): Query<HashMap<String, String>>, // for extracting `signup_token` if needed
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
@@ -107,14 +126,27 @@ pub async fn signup(
         }
 
         SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
+
+        // 4) Create the new user record, applying custom limits from the token if present
+        let mut user = UserRepository::create(public_key, uexecutor!(tx)).await?;
+        if let Some(custom_limits) = &code.custom_limits() {
+            UserRepository::set_custom_limits(user.id, custom_limits, uexecutor!(tx)).await?;
+            user.apply_custom_limits(custom_limits);
+        }
+        tx.commit().await?;
+
+        let max_sessions = resolve_max_sessions(&user, &user_limits);
+        return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions)
+            .await;
     }
 
-    // 4) Create the new user record
+    // 4) Create the new user record (open signup, no token)
     let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
     tx.commit().await?;
 
     // 5) Create session & set cookie
-    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
+    let max_sessions = resolve_max_sessions(&user, &user_limits);
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
 }
 
 /// Fails if user doesn’t exist, otherwise logs them in by creating a session.
@@ -122,6 +154,7 @@ pub async fn signin(
     State(state): State<AppState>,
     cookies: Cookies,
     Host(host): Host,
+    user_limits: Option<Extension<UserLimitConfig>>,
     body: Bytes,
 ) -> HttpResult<impl IntoResponse> {
     // 1) Verify the AuthToken in the request body
@@ -132,19 +165,45 @@ pub async fn signin(
     let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
 
     // 3) Create the session & set cookie
-    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
+    let max_sessions = resolve_max_sessions(&user, &user_limits);
+    create_session_and_cookie(&state, cookies, &host, &user, token.capabilities(), max_sessions).await
 }
 
 /// Creates and stores a session, sets the cookie, returns session as JSON/string.
+///
+/// Uses a transaction with `FOR UPDATE` on the user row to serialize concurrent
+/// session creation and prevent the max_sessions limit from being bypassed.
 async fn create_session_and_cookie(
     state: &AppState,
     cookies: Cookies,
     host: &str,
     user: &UserEntity,
     capabilities: &Capabilities,
+    max_sessions: Option<u32>,
 ) -> HttpResult<impl IntoResponse> {
+    let mut tx = state.sql_db.pool().begin().await?;
+
+    if let Some(max) = max_sessions {
+        // Lock the user row for the duration of this transaction to serialize
+        // concurrent session creation attempts for the same user.
+        sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
+            .bind(user.id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+        let count =
+            SessionRepository::count_by_user_id(user.id, uexecutor!(tx)).await?;
+        if count >= i64::from(max) {
+            return Err(HttpError::new_with_message(
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("Maximum sessions ({max}) reached"),
+            ));
+        }
+    }
+
     let session_secret =
-        SessionRepository::create(user.id, capabilities, &mut state.sql_db.pool().into()).await?;
+        SessionRepository::create(user.id, capabilities, uexecutor!(tx)).await?;
+    tx.commit().await?;
 
     // 3) Build and set cookie
     let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());

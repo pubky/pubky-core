@@ -9,9 +9,23 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-# Maximum storage a single user may occupy (in MB).
-# Set it to 0 for unlimited.
+# Maximum storage a single user may occupy (in MB).
+# Deprecated: use `storage_limit_mb` instead. Kept for backward compatibility.
+# Set it to 0 for unlimited.
 user_storage_quota_mb = 0
+
+# Default per-user storage quota in MB. Omit for unlimited.
+# Takes precedence over `user_storage_quota_mb` if both are set.
+# storage_limit_mb = 500
+
+# Default maximum concurrent sessions per user. Omit for unlimited.
+# max_sessions = 10
+
+# Default per-user read rate limit (e.g. "100r/m"). Omit for unlimited.
+# user_rate_read = "100r/m"
+
+# Default per-user write rate limit (e.g. "50r/m"). Omit for unlimited.
+# user_rate_write = "50r/m"
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.

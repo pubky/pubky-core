@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root,
+    generate_signup_token, info, root, user_limits,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -24,12 +24,19 @@ fn create_protected_router(password: &str) -> Router<AppState> {
     Router::new()
         .route(
             "/generate_signup_token",
-            get(generate_signup_token::generate_signup_token),
+            get(generate_signup_token::generate_signup_token)
+                .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
+        .route(
+            "/users/{pubkey}/limits",
+            get(user_limits::get_user_limits)
+                .put(user_limits::put_user_limits)
+                .delete(user_limits::delete_user_limits),
+        )
         .layer(AdminAuthLayer::new(password.to_string()))
 }
 
@@ -108,6 +115,7 @@ impl AdminServer {
             context.sql_db.clone(),
             context.file_service.clone(),
             &password,
+            context.user_limits_cache.clone(),
         )
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
@@ -187,6 +195,7 @@ mod tests {
                 context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
+                context.user_limits_cache.clone(),
             ),
             "test",
         ))
@@ -372,5 +381,273 @@ mod tests {
             .expect_failure()
             .await;
         response.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_user_limits_crud() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        let url = format!("/users/{}/limits", pubkey.z32());
+
+        // GET defaults (no overrides set)
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        // PUT overrides
+        let body = serde_json::json!({
+            "storage_quota_mb": 500,
+            "max_sessions": 10,
+            "rate_read": "100r/m"
+        });
+        let response = server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        // GET reflects the overrides
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["storage_quota_mb"], 500);
+        assert_eq!(json["max_sessions"], 10);
+        assert_eq!(json["rate_read"], "100r/m");
+
+        // DELETE overrides
+        let response = server
+            .delete(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        // GET after delete should show defaults again (null = no limit)
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+        let json: serde_json::Value = response.json();
+        assert!(json["storage_quota_mb"].is_null());
+        assert!(json["max_sessions"].is_null());
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_user_limits_invalid_rate_rejected() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/limits", pubkey.z32());
+
+        // PUT with invalid rate string should be rejected
+        let body = serde_json::json!({
+            "rate_read": "garbage"
+        });
+        let response = server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_failure()
+            .await;
+        response.assert_status_bad_request();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_user_limits_nonexistent_user() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+
+        let url = format!("/users/{}/limits", pubkey.z32());
+
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_failure()
+            .await;
+        response.assert_status(axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_generate_signup_token_with_limits() {
+        use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // POST with custom limits
+        let body = serde_json::json!({
+            "storage_quota_mb": 1024,
+            "max_sessions": 5,
+            "rate_read": "200r/m"
+        });
+        let response = server
+            .post("/generate_signup_token")
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        // Verify the code was created with custom limits
+        let token_str = response.text();
+        let code_id = SignupCodeId::new(token_str).unwrap();
+        let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        let limits = code.custom_limits().expect("should have custom limits");
+        assert_eq!(limits.storage_quota_mb, Some(1024));
+        assert_eq!(limits.max_sessions, Some(5));
+        assert_eq!(limits.rate_read, Some("200r/m".to_string()));
+        assert_eq!(limits.rate_write, None);
+    }
+
+    /// PUT /users/{pubkey}/limits replaces the entire custom config.
+    /// Fields not included in the JSON body default to None (unlimited).
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_put_user_limits_replaces_all_fields() {
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+
+        UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        let url = format!("/users/{}/limits", pubkey.z32());
+
+        // 1) PUT all four fields
+        let body = serde_json::json!({
+            "storage_quota_mb": 500,
+            "max_sessions": 10,
+            "rate_read": "100r/m",
+            "rate_write": "50r/m"
+        });
+        server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+
+        // 2) PUT with only storage_quota_mb — the other three become unlimited (null)
+        let body = serde_json::json!({
+            "storage_quota_mb": 200
+        });
+        server
+            .put(&url)
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+
+        // 3) Verify: storage_quota_mb is 200, others are unlimited (null)
+        let response = server
+            .get(&url)
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["storage_quota_mb"], 200);
+        assert!(json["max_sessions"].is_null(), "max_sessions should be unlimited after PUT replace");
+        assert!(json["rate_read"].is_null(), "rate_read should be unlimited after PUT replace");
+        assert!(json["rate_write"].is_null(), "rate_write should be unlimited after PUT replace");
+    }
+
+    /// Verify that signup token custom limits are propagated to the user
+    /// entity when the token is redeemed.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_signup_token_limits_applied_to_user() {
+        use crate::data_directory::user_limit_config::UserLimitConfig;
+        use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+        use crate::persistence::sql::user::UserRepository;
+        use pubky_common::crypto::Keypair;
+
+        let context = AppContext::test().await;
+        let db = &context.sql_db;
+
+        // 1) Create a signup code with custom limits
+        let custom_limits = UserLimitConfig {
+            storage_quota_mb: Some(1024),
+            max_sessions: Some(5),
+            rate_read: Some("200r/m".to_string()),
+            rate_write: None,
+        };
+        let code_id = SignupCodeId::random();
+        let code = SignupCodeRepository::create(&code_id, Some(&custom_limits), &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // 2) Simulate the signup flow: create user, mark code used, apply limits
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let mut tx = db.pool().begin().await.unwrap();
+        let mut user = UserRepository::create(&pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        if let Some(token_limits) = &code.custom_limits() {
+            UserRepository::set_custom_limits(user.id, token_limits, &mut (&mut tx).into())
+                .await
+                .unwrap();
+            user.apply_custom_limits(token_limits);
+        }
+        tx.commit().await.unwrap();
+
+        // 3) Re-read from DB and verify limits were persisted
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let user_limits = user.custom_limits().expect("user should have custom limits");
+        assert_eq!(user_limits.storage_quota_mb, Some(1024));
+        assert_eq!(user_limits.max_sessions, Some(5));
+        assert_eq!(user_limits.rate_read, Some("200r/m".to_string()));
+        assert_eq!(user_limits.rate_write, None);
     }
 }

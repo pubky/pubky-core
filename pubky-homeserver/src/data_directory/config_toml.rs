@@ -85,8 +85,24 @@ pub struct AdminToml {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct GeneralToml {
     pub signup_mode: SignupMode,
+    /// Deprecated: use `storage_limit_mb` instead. Kept for backward compatibility.
+    /// Set to 0 for unlimited.
+    #[serde(default)]
     pub user_storage_quota_mb: u64,
     pub database_url: ConnectionString,
+    /// Default per-user storage quota in MB. None = unlimited.
+    /// Takes precedence over the deprecated `user_storage_quota_mb` if both are set.
+    #[serde(default)]
+    pub storage_limit_mb: Option<u64>,
+    /// Default maximum concurrent sessions per user. None = unlimited.
+    #[serde(default)]
+    pub max_sessions: Option<u32>,
+    /// Default per-user read rate limit (e.g. "100r/m"). None = unlimited.
+    #[serde(default)]
+    pub user_rate_read: Option<String>,
+    /// Default per-user write rate limit (e.g. "50r/m"). None = unlimited.
+    #[serde(default)]
+    pub user_rate_write: Option<String>,
 }
 
 /// A config for Homeserver tracing subscriber configuration
