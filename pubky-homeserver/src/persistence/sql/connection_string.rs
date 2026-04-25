@@ -31,7 +31,17 @@ impl ConnectionString {
     /// For postgres, this is the database name directly
     /// For sqlite, this is the path to the database file
     pub fn database_name(&self) -> &str {
-        self.0.path().trim_start_matches("/")
+        let db_name = self.0.path().trim_start_matches("/");
+
+        if db_name.contains("?") {
+            // If the path contains a query string, we need to remove it
+            db_name
+                .split("?")
+                .next()
+                .expect("checked to have the '?' character")
+        } else {
+            db_name
+        }
     }
 
     /// Set the database name

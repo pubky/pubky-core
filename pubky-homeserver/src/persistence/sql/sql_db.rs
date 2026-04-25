@@ -1,6 +1,6 @@
-use sqlx::postgres::PgPool;
-
 use crate::persistence::sql::connection_string::ConnectionString;
+use sqlx::postgres::PgPool;
+use std::sync::Arc;
 
 /// The SqlDb is a wrapper around the postgres connection pool.
 /// It is used to connect to the database and run queries.
@@ -14,9 +14,12 @@ use crate::persistence::sql::connection_string::ConnectionString;
 pub struct SqlDb {
     /// Connection pool to the database
     pool: PgPool,
+    /// Test helper for getting db info.
+    #[cfg(any(test, feature = "testing"))]
+    db_info: Option<Arc<TestDbInfo>>,
     /// Test helper for postgres to drop the test database after the test
     #[cfg(any(test, feature = "testing"))]
-    db_dropper: Option<std::sync::Arc<TestDbDropper>>,
+    db_dropper: Option<Arc<TestDbDropper>>,
 }
 
 impl std::fmt::Debug for SqlDb {
@@ -42,6 +45,8 @@ impl SqlDb {
         Ok(Self {
             pool,
             #[cfg(any(test, feature = "testing"))]
+            db_info: None,
+            #[cfg(any(test, feature = "testing"))]
             db_dropper: None,
         })
     }
@@ -56,13 +61,13 @@ impl SqlDb {
     /// The connection string is gathered from the db dropper, which is only set for test databases.
     #[cfg(any(test, feature = "testing"))]
     pub fn test_db_connection_string(&self) -> Option<TestDbConnectionWithName> {
-        let db_dropper = self.db_dropper.as_ref()?;
+        let db_info = self.db_info.as_ref()?;
 
-        let mut connection_string = ConnectionString::new(&db_dropper.connection_string)
+        let mut connection_string = ConnectionString::new(&db_info.connection_string)
             .expect("test connection is postgres; qed");
 
         // Add the database name to the connection string.
-        connection_string.add_test_db_name(&db_dropper.db_name);
+        connection_string.add_test_db_name(&db_info.db_name);
 
         // Set flag indicating that this is a test database.
         connection_string.add_test_db_flag();
@@ -83,37 +88,33 @@ impl TestDbConnectionWithName {
     }
 }
 
+/// Helper struct to store information about the test database, such as the database name and connection string.
+#[cfg(any(test, feature = "testing"))]
+struct TestDbInfo {
+    db_name: String,
+    connection_string: String,
+}
+
 /// Helper struct to drop the postgres test database after the db connection is dropped.
 #[cfg(any(test, feature = "testing"))]
 struct TestDbDropper {
-    db_name: String,
-    connection_string: String,
-    should_drop: bool,
+    db_info: Arc<TestDbInfo>,
 }
 
 #[cfg(any(test, feature = "testing"))]
 impl TestDbDropper {
-    pub fn new(db_name: String, connection_string: String, should_drop: bool) -> Self {
-        Self {
-            db_name,
-            connection_string,
-            should_drop,
-        }
+    pub fn new(db_info: Arc<TestDbInfo>) -> Self {
+        Self { db_info }
     }
 }
 
 #[cfg(any(test, feature = "testing"))]
 impl Drop for TestDbDropper {
     fn drop(&mut self) {
-        // Drop the database after the test if dropper switch is on,
-        // i.e. self.should_drop is `true`.
-        // This works in combination with the pubky_test macro.
-        if self.should_drop {
-            let _ = pubky_test_utils::register_db_to_drop(
-                self.db_name.clone(),
-                self.connection_string.clone(),
-            );
-        }
+        let _ = pubky_test_utils::register_db_to_drop(
+            self.db_info.db_name.clone(),
+            self.db_info.connection_string.clone(),
+        );
     }
 }
 
@@ -158,11 +159,15 @@ impl SqlDb {
 
         // Connect to the test database.
         let mut con = Self::connect_inner(&test_db_con_string).await?;
-        con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
-            test_db_con_string.database_name().to_string(),
-            admin_con_string.to_string(),
-            !admin_con_string.is_persistent(),
-        )));
+        let db_info = Arc::new(TestDbInfo {
+            db_name: test_db_con_string.database_name().to_string(),
+            connection_string: admin_con_string.to_string(),
+        });
+        con.db_info = Some(Arc::clone(&db_info));
+
+        if !admin_con_string.is_persistent() {
+            con.db_dropper = Some(Arc::new(TestDbDropper::new(db_info)));
+        }
 
         Ok(con)
     }
