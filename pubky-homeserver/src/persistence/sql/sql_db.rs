@@ -1,5 +1,7 @@
 use crate::persistence::sql::connection_string::ConnectionString;
 use sqlx::postgres::PgPool;
+
+#[cfg(any(test, feature = "testing"))]
 use std::sync::Arc;
 
 /// The SqlDb is a wrapper around the postgres connection pool.
