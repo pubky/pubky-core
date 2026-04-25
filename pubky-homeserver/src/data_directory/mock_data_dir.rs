@@ -59,11 +59,6 @@ impl MockDataDir {
         })
     }
 
-    /// Returns true if the root of this [`MockDataDir`] is a temporary directory.
-    pub fn is_temp(&self) -> bool {
-        matches!(self.root, MockDataDirKind::Temp(_))
-    }
-
     /// Creates a mock data directory with a config and keypair appropriate for testing.
     ///
     /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
@@ -74,21 +69,6 @@ impl MockDataDir {
         let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
 
         Self::new(config, Some(keypair)).expect("failed to create MockDataDir")
-    }
-
-    /// Creates a [`MockDataDir`] with a config and keypair for testing, backed by a real directory.
-    ///
-    /// Same as [`MockDataDir::test()`] but with a real directory that is not cleaned up on drop.
-    /// Use this for integration tests that need to verify persistence across process restarts.
-    #[cfg(any(test, feature = "testing"))]
-    pub fn test_persistent_data_dir(data_dir: PathBuf) -> Self {
-        let mut config = super::ConfigToml::default_test_config();
-        // Set storage to `FileSystem` for persistent data directory
-        config.storage = StorageConfigToml::FileSystem;
-        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
-
-        Self::new_persistent_data_dir(data_dir, config, Some(keypair))
-            .expect("failed to create MockDataDir")
     }
 }
 
@@ -119,8 +99,9 @@ impl DataDir for MockDataDir {
                 let test_file_path = path.join(format!("test_write_{}", Uuid::new_v4().simple()));
                 std::fs::write(test_file_path.clone(), b"test")
                     .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {err}"))?;
-                std::fs::remove_file(test_file_path)
-                    .map_err(|err| anyhow::anyhow!("Failed to remove from data directory: {err}"))?;
+                std::fs::remove_file(test_file_path).map_err(|err| {
+                    anyhow::anyhow!("Failed to remove from data directory: {err}")
+                })?;
 
                 Ok(())
             }
