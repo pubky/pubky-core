@@ -47,10 +47,11 @@ impl MockDataDir {
         let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
         std::fs::create_dir_all(&data_dir)?;
 
-        debug_assert!(
-            matches!(config_toml.storage, StorageConfigToml::FileSystem),
-            "MockDataDir with persistent data directory should use FileSystem storage config"
-        );
+        if matches!(config_toml.storage, StorageConfigToml::FileSystem) {
+            anyhow::bail!(
+                "MockDataDir with persistent data directory should use FileSystem storage config"
+            );
+        }
 
         Ok(Self {
             root: MockDataDirKind::Persistent(data_dir),
