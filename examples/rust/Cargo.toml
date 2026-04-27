@@ -45,7 +45,7 @@ embedded-postgres = ["pubky-testnet/embedded-postgres"]
 futures-util = "0.3.31"
 anyhow.workspace = true
 base64 = "0.22.1"
-clap = { version = "4.5.48", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 pubky = { path = "../../pubky-sdk" , version = "0.7.0" }
 pubky-testnet = { path = "../../pubky-testnet" , version = "0.7.0" }
 pubky-common = { path = "../../pubky-common" , version = "0.7.0" }

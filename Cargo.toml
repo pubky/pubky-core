@@ -40,7 +40,7 @@ opt-level = 'z'
 # Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
 pkarr = { version = "5.0.3", default-features = false }
 mainline = { version = "6.1.1" }
-pkarr-relay = { version = "0.11.4" }
+pkarr-relay = { version = "0.11.5" }
 log = "0.4.29"
 url = "2.5.8"
 anyhow = "1.0.101"
@@ -48,9 +48,15 @@ axum = "0.8.8"
 axum-server = "0.8.0"
 reqwest = { version = "0.13.2", default-features = false }
 tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
+tracing-subscriber = "0.3.23"
 tokio = "1.49.0"
 tower-http = "0.6.8"
 thiserror = "2.0.18"
-clap = "4.5.58"
+clap = "4.6.0"
 http-relay = "0.7.0"
+rand = "0.10"
+
+# Transitive dependency of pkarr
+# Pinned until pubky-homeserver key-republisher code supports newer versions
+# After that time, this pin can be removed
+simple-dns = "=0.9.3"
