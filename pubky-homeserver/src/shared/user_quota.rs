@@ -13,6 +13,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::data_directory::quota_config::BandwidthRate;
+use crate::data_directory::DefaultQuotasToml;
 
 /// Maximum length of the VARCHAR column used for rate strings in the DB.
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_quota_columns` migration.
@@ -319,6 +320,55 @@ impl UserQuota {
     /// Rate-write burst as DB-column type (`INTEGER`).
     pub fn rate_write_burst_i32(&self) -> Option<i32> {
         burst_to_i32("rate_write_burst", self.rate_write_burst)
+    }
+
+    /// Resolve all `Default` fields against system-wide defaults.
+    ///
+    /// After resolution every field is either `Value(…)` or `Unlimited`,
+    /// so `skip_serializing_if = "is_default"` will *not* omit any field —
+    /// the caller gets the full effective quota in the JSON response.
+    pub fn resolve_with_defaults(
+        &self,
+        default_storage_mb: Option<u64>,
+        default_quotas: &DefaultQuotasToml,
+    ) -> Self {
+        fn resolve_u64(field: &QuotaOverride<u64>, default: Option<u64>) -> QuotaOverride<u64> {
+            match field {
+                QuotaOverride::Default => match default {
+                    Some(v) => QuotaOverride::Value(v),
+                    None => QuotaOverride::Unlimited,
+                },
+                other => other.clone(),
+            }
+        }
+        fn resolve_bw(
+            field: &QuotaOverride<BandwidthRate>,
+            default: Option<&BandwidthRate>,
+        ) -> QuotaOverride<BandwidthRate> {
+            match field {
+                QuotaOverride::Default => match default {
+                    Some(v) => QuotaOverride::Value(v.clone()),
+                    None => QuotaOverride::Unlimited,
+                },
+                other => other.clone(),
+            }
+        }
+
+        Self {
+            storage_quota_mb: resolve_u64(&self.storage_quota_mb, default_storage_mb),
+            rate_read: resolve_bw(&self.rate_read, default_quotas.rate_read.as_ref()),
+            rate_write: resolve_bw(&self.rate_write, default_quotas.rate_write.as_ref()),
+            rate_read_burst: self.rate_read_burst.or(if self.rate_read.is_default() {
+                default_quotas.rate_read_burst
+            } else {
+                None
+            }),
+            rate_write_burst: self.rate_write_burst.or(if self.rate_write.is_default() {
+                default_quotas.rate_write_burst
+            } else {
+                None
+            }),
+        }
     }
 
     /// Check that the quota fields are internally consistent:

@@ -1,6 +1,7 @@
 use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
+use crate::data_directory::DefaultQuotasToml;
 use crate::persistence::{files::FileService, sql::SqlDb};
 use crate::services::user_service::UserService;
 use crate::ConfigToml;
@@ -22,6 +23,9 @@ pub(crate) struct AppState {
     pub(crate) metadata: AdminMetadata,
     /// User service for quota cache eviction on admin updates.
     pub(crate) user_service: UserService,
+    /// System-wide default quotas for resolving effective values.
+    pub(crate) default_storage_mb: Option<u64>,
+    pub(crate) default_quotas: DefaultQuotasToml,
 }
 
 impl AppState {
@@ -45,6 +49,8 @@ impl AppState {
             inner_dav_handler,
             metadata: AdminMetadata::default(),
             user_service,
+            default_storage_mb: None,
+            default_quotas: DefaultQuotasToml::default(),
         }
     }
 
@@ -60,6 +66,8 @@ impl AppState {
             pkarr_icann_domain: pkarr_icann_domain(config),
             version: version.to_string(),
         };
+        self.default_storage_mb = config.storage.default_quota_mb;
+        self.default_quotas = config.default_quotas.clone();
         self
     }
 }
