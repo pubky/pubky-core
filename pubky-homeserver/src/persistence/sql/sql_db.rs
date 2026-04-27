@@ -1,6 +1,8 @@
+use crate::persistence::sql::connection_string::ConnectionString;
 use sqlx::postgres::PgPool;
 
-use crate::persistence::sql::connection_string::ConnectionString;
+#[cfg(any(test, feature = "testing"))]
+use std::sync::Arc;
 
 /// The SqlDb is a wrapper around the postgres connection pool.
 /// It is used to connect to the database and run queries.
@@ -14,9 +16,12 @@ use crate::persistence::sql::connection_string::ConnectionString;
 pub struct SqlDb {
     /// Connection pool to the database
     pool: PgPool,
+    /// Test helper for getting db info.
+    #[cfg(any(test, feature = "testing"))]
+    db_info: Option<Arc<TestDbInfo>>,
     /// Test helper for postgres to drop the test database after the test
     #[cfg(any(test, feature = "testing"))]
-    db_dropper: Option<std::sync::Arc<TestDbDropper>>,
+    db_dropper: Option<Arc<TestDbDropper>>,
 }
 
 impl std::fmt::Debug for SqlDb {
@@ -42,6 +47,8 @@ impl SqlDb {
         Ok(Self {
             pool,
             #[cfg(any(test, feature = "testing"))]
+            db_info: None,
+            #[cfg(any(test, feature = "testing"))]
             db_dropper: None,
         })
     }
@@ -50,39 +57,68 @@ impl SqlDb {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
+
+    /// Gets connection string for the test database.
+    ///
+    /// The connection string is gathered from the db dropper, which is only set for test databases.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_db_connection_string(&self) -> Option<TestDbConnectionWithName> {
+        let db_info = self.db_info.as_ref()?;
+
+        let mut connection_string = ConnectionString::new(&db_info.connection_string)
+            .expect("test connection is postgres; qed");
+
+        // Add the database name to the connection string.
+        connection_string.add_test_db_name(&db_info.db_name);
+
+        // Set flag indicating that this is a test database.
+        connection_string.add_test_db_flag();
+
+        Some(TestDbConnectionWithName(connection_string))
+    }
+}
+
+/// Helper struct that wraps connection string with a database name param used for testing.
+#[cfg(any(test, feature = "testing"))]
+pub struct TestDbConnectionWithName(ConnectionString);
+
+#[cfg(any(test, feature = "testing"))]
+impl TestDbConnectionWithName {
+    /// Gets the inner connection string.
+    pub fn into_inner(self) -> ConnectionString {
+        self.0
+    }
+}
+
+/// Helper struct to store information about the test database, such as the database name and connection string.
+#[cfg(any(test, feature = "testing"))]
+struct TestDbInfo {
+    db_name: String,
+    connection_string: String,
 }
 
 /// Helper struct to drop the postgres test database after the db connection is dropped.
 #[cfg(any(test, feature = "testing"))]
 struct TestDbDropper {
-    db_name: String,
-    connection_string: String,
+    db_info: Arc<TestDbInfo>,
 }
 
 #[cfg(any(test, feature = "testing"))]
 impl TestDbDropper {
-    pub fn new(db_name: String, connection_string: String) -> Self {
-        Self {
-            db_name,
-            connection_string,
-        }
+    pub fn new(db_info: Arc<TestDbInfo>) -> Self {
+        Self { db_info }
     }
 }
 
 #[cfg(any(test, feature = "testing"))]
 impl Drop for TestDbDropper {
     fn drop(&mut self) {
-        // Drop the database after the test.
-        // This works in combination with the pubky_test macro.
         let _ = pubky_test_utils::register_db_to_drop(
-            self.db_name.clone(),
-            self.connection_string.clone(),
+            self.db_info.db_name.clone(),
+            self.db_info.connection_string.clone(),
         );
     }
 }
-
-#[cfg(any(test, feature = "testing"))]
-const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
@@ -99,7 +135,7 @@ impl SqlDb {
         let test_db_name = format!("pubky_test_{}", Uuid::new_v4().as_simple());
         let query = format!("CREATE DATABASE {}", test_db_name);
         sqlx::query(&query).execute(admin_con.pool()).await?;
-        let mut test_db_con_string = admin_con_string.clone();
+        let mut test_db_con_string = admin_con_string;
         test_db_con_string.set_database_name(&test_db_name);
         Ok(test_db_con_string)
     }
@@ -113,14 +149,28 @@ impl SqlDb {
     ) -> Result<Self, sqlx::Error> {
         let admin_con_string = Self::derive_connection_string(admin_con_string);
 
-        let test_db_con_string = Self::create_test_database(admin_con_string.clone()).await?;
+        // If the connection has a db name defined, we assume that the test database already exists and we can connect to it directly.
+        let test_db_con_string = if let Some(db_name) = admin_con_string.test_db_name() {
+            let mut test_db_con_string = admin_con_string.clone();
+            test_db_con_string.set_database_name(&db_name);
+
+            test_db_con_string
+        } else {
+            Self::create_test_database(admin_con_string.clone()).await?
+        };
 
         // Connect to the test database.
         let mut con = Self::connect_inner(&test_db_con_string).await?;
-        con.db_dropper = Some(std::sync::Arc::new(TestDbDropper::new(
-            test_db_con_string.database_name().to_string(),
-            admin_con_string.to_string(),
-        )));
+        let db_info = Arc::new(TestDbInfo {
+            db_name: test_db_con_string.database_name().to_string(),
+            connection_string: admin_con_string.to_string(),
+        });
+        con.db_info = Some(Arc::clone(&db_info));
+
+        if !admin_con_string.is_persistent() {
+            con.db_dropper = Some(Arc::new(TestDbDropper::new(db_info)));
+        }
+
         Ok(con)
     }
 
@@ -146,13 +196,16 @@ impl SqlDb {
         }
 
         // If no connection string is passed, use the default test connection string.
-        ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING)
-            .expect("Default test connection string is valid")
+        ConnectionString::default_test_db()
     }
 
     /// Create a test database without running migrations
     /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
     /// If the DB_CONNECTION_STRING environment variable is set, the test database is created on the existing database
+    ///
+    /// Note: callers are in `#[cfg(test)]` blocks which are excluded when this crate is compiled
+    /// as a dependency with `feature = "testing"`, so the dead_code lint is suppressed intentionally.
+    #[allow(dead_code)]
     pub async fn test_without_migrations() -> Self {
         Self::test_postgres_db(None)
             .await
@@ -162,12 +215,24 @@ impl SqlDb {
     /// Create a test database and run migrations
     /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
     /// If the DB_CONNECTION_STRING environment variable is set, the migrations are run on the existing database
+    #[allow(dead_code)]
     pub async fn test() -> Self {
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_without_migrations().await;
         let migrator = Migrator::new(&db);
         migrator.run().await.expect("Failed to run migrations");
         db
+    }
+
+    pub async fn test_with_connection(
+        admin_con_string: ConnectionString,
+    ) -> Result<Self, sqlx::Error> {
+        use crate::persistence::sql::migrator::Migrator;
+        let db = Self::test_postgres_db(Some(admin_con_string)).await?;
+        let migrator = Migrator::new(&db);
+        migrator.run().await.expect("Failed to run migrations");
+
+        Ok(db)
     }
 }
 

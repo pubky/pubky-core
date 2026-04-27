@@ -12,9 +12,9 @@ use crate::republishers::{
     HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisher,
 };
 use crate::tracing::init_tracing_logs_with_config_if_set;
-#[cfg(any(test, feature = "testing"))]
-use crate::MockDataDir;
 use crate::{app_context::AppContext, data_directory::PersistentDataDir};
+#[cfg(any(test, feature = "testing"))]
+use crate::{persistence::sql::TestDbConnectionWithName, MockDataDir};
 use anyhow::Result;
 use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
@@ -150,5 +150,11 @@ impl HomeserverApp {
     /// Returns the `https://<server public key>` url
     pub fn icann_http_url(&self) -> url::Url {
         url::Url::parse(&self.client_server.icann_http_url_string()).expect("valid url")
+    }
+
+    /// Return db connection string for test databases, if available.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_db_connection(&self) -> Option<TestDbConnectionWithName> {
+        self.context.sql_db.test_db_connection_string()
     }
 }

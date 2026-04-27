@@ -1,15 +1,16 @@
-use std::path::Path;
-
 use super::DataDir;
+use crate::storage_config::StorageConfigToml;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 /// Mock data directory for testing.
 ///
-/// It uses a temporary directory to store all data in. The data is removed as soon as the object is dropped.
-///
-
+/// By default it uses a temporary directory that is removed when the value is dropped.
+/// Use [`MockDataDir::new_persistent_data_dir`] to point at a real directory that
+/// survives across restarts.
 #[derive(Debug, Clone)]
 pub struct MockDataDir {
-    pub(crate) temp_dir: std::sync::Arc<tempfile::TempDir>,
+    root: MockDataDirKind,
     /// The configuration for the homeserver.
     pub config_toml: super::ConfigToml,
     /// The keypair for the homeserver.
@@ -17,7 +18,7 @@ pub struct MockDataDir {
 }
 
 impl MockDataDir {
-    /// Create a new DataDirMock with a temporary directory.
+    /// Create a new [`MockDataDir`] with an ephemeral temporary directory.
     ///
     /// If keypair is not provided, a new one will be generated.
     pub fn new(
@@ -25,8 +26,35 @@ impl MockDataDir {
         keypair: Option<pubky_common::crypto::Keypair>,
     ) -> anyhow::Result<Self> {
         let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
+
         Ok(Self {
-            temp_dir: std::sync::Arc::new(tempfile::TempDir::new()?),
+            root: MockDataDirKind::Temp(std::sync::Arc::new(tempfile::TempDir::new()?)),
+            config_toml,
+            keypair,
+        })
+    }
+
+    /// Create a [`MockDataDir`] backed by an existing (persistent) directory.
+    ///
+    /// The directory is **not** cleaned up on drop. Use this when you need
+    /// data to survive across process restarts (e.g. integration tests that
+    /// verify persistence).
+    pub fn new_persistent_data_dir(
+        data_dir: PathBuf,
+        config_toml: super::ConfigToml,
+        keypair: Option<pubky_common::crypto::Keypair>,
+    ) -> anyhow::Result<Self> {
+        let keypair = keypair.unwrap_or_else(pubky_common::crypto::Keypair::random);
+        std::fs::create_dir_all(&data_dir)?;
+
+        if !matches!(config_toml.storage, StorageConfigToml::FileSystem) {
+            anyhow::bail!(
+                "MockDataDir with persistent data directory should use FileSystem storage config"
+            );
+        }
+
+        Ok(Self {
+            root: MockDataDirKind::Persistent(data_dir),
             config_toml,
             keypair,
         })
@@ -40,6 +68,7 @@ impl MockDataDir {
     pub fn test() -> Self {
         let config = super::ConfigToml::default_test_config();
         let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
+
         Self::new(config, Some(keypair)).expect("failed to create MockDataDir")
     }
 }
@@ -52,11 +81,32 @@ impl Default for MockDataDir {
 
 impl DataDir for MockDataDir {
     fn path(&self) -> &Path {
-        self.temp_dir.path()
+        match &self.root {
+            MockDataDirKind::Temp(temp_dir) => temp_dir.path(),
+            MockDataDirKind::Persistent(path) => path.as_path(),
+        }
     }
 
     fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
-        Ok(()) // Always ok because this is validated by the tempfile crate.
+        match &self.root {
+            MockDataDirKind::Temp(_) => {
+                // Always ok because this is validated by the tempfile crate.
+                Ok(())
+            }
+            MockDataDirKind::Persistent(path) => {
+                std::fs::create_dir_all(path)?;
+
+                // Check if we can write to the data directory
+                let test_file_path = path.join(format!("test_write_{}", Uuid::new_v4().simple()));
+                std::fs::write(test_file_path.clone(), b"test")
+                    .map_err(|err| anyhow::anyhow!("Failed to write to data directory: {err}"))?;
+                std::fs::remove_file(test_file_path).map_err(|err| {
+                    anyhow::anyhow!("Failed to remove from data directory: {err}")
+                })?;
+
+                Ok(())
+            }
+        }
     }
 
     fn read_or_create_config_file(&self) -> anyhow::Result<super::ConfigToml> {
@@ -66,4 +116,12 @@ impl DataDir for MockDataDir {
     fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
         Ok(self.keypair.clone())
     }
+}
+
+/// Backing storage for a [`MockDataDir`]: either a temporary directory that is
+/// cleaned up on drop, or a caller-supplied persistent path.
+#[derive(Debug, Clone)]
+enum MockDataDirKind {
+    Temp(std::sync::Arc<tempfile::TempDir>),
+    Persistent(PathBuf),
 }

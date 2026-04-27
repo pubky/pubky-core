@@ -19,5 +19,7 @@ pub use entities::*;
 pub use migrator::Migrator;
 pub(crate) use pg_event_listener::PgEventListener;
 pub use sql_db::SqlDb;
+#[cfg(any(test, feature = "testing"))]
+pub use sql_db::TestDbConnectionWithName;
 pub(crate) use unified_executor::uexecutor;
 pub(crate) use unified_executor::UnifiedExecutor;

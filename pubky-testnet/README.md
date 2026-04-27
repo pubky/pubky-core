@@ -136,7 +136,7 @@ When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts 
 
 The recommended pattern is to start **one** embedded postgres instance and share its connection string across all tests:
 
-```rust
+```rust,ignore
 use pubky_testnet::EphemeralTestnet;
 use pubky_testnet::embedded_postgres::EmbeddedPostgres;
 use tokio::sync::OnceCell;
