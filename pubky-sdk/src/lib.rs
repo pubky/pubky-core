@@ -30,15 +30,24 @@ pub use pubky::Pubky;
 pub use client::core::{PubkyHttpClient, PubkyHttpClientBuilder};
 // High level actors
 #[doc(inline)]
+pub use actors::AuthFlowKind;
+#[doc(inline)]
 pub use actors::Pkdns;
+#[doc(inline)]
+#[allow(deprecated, reason = "Re-exporting deprecated public API")]
+pub use actors::PubkyCookieAuthFlow;
+#[doc(inline)]
+pub use actors::PubkyJwtAuthFlow;
 #[doc(inline)]
 pub use actors::PubkySession;
 #[doc(inline)]
 pub use actors::PubkySigner;
 #[doc(inline)]
+pub use actors::SessionInfo;
+#[doc(inline)]
 pub use actors::deep_links;
 #[doc(inline)]
-pub use actors::{AuthFlowKind, PubkyAuthFlow};
+pub use actors::{CookieCredential, CookieSessionView, JwtCredential, JwtSessionView};
 #[doc(inline)]
 pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
 #[doc(inline)]
@@ -71,9 +80,15 @@ pub use pkarr;
 // Re-exports
 #[doc(inline)]
 pub use pubky_common::{
-    auth::AuthToken,
+    auth::{
+        AuthToken,
+        grant::GrantClaims,
+        grant_session::{GrantInfo, GrantSessionInfo, GrantSessionResponse},
+        jws::{ClientId, GrantId, PopNonce},
+    },
     capabilities::{Capabilities, Capability},
     crypto::{Keypair, PublicKey},
     recovery_file,
+    session::CookieSessionRecord,
 };
 pub use reqwest::{Method, StatusCode};

@@ -54,10 +54,12 @@ use std::str::FromStr;
 
 use crate::PublicKey;
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
+use crate::PubkyCookieAuthFlow;
 use crate::{
-    Capabilities, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient,
-    PubkySigner, PublicStorage, Result, actors::AuthFlowKind, deep_links::DeepLink,
-    errors::AuthError,
+    Capabilities, ClientId, EventCursor, EventStreamBuilder, Pkdns, PubkyHttpClient,
+    PubkyJwtAuthFlow, PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
+    deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -103,23 +105,50 @@ impl Pubky {
         Self { client }
     }
 
-    /// Start an end-to-end auth flow (QR/deeplink).
+    /// Start an end-to-end **legacy (cookie)** auth flow (QR/deeplink).
     /// Depending on the auth kind, the flow will be different.
     /// - `AuthFlowKind::SignIn` - Sign in to an existing account.
     /// - `AuthFlowKind::SignUp` - Sign up for a new account.
     ///
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
-    /// or `try_poll_once()` (non-blocking UI loops).
+    /// or `try_poll_once()` (non-blocking UI loops). Raw credentials are
+    /// available via `await_credential()` / `try_poll_credential_once()`.
+    ///
+    /// For long-lived, mirror-friendly sessions prefer [`Self::start_jwt_auth_flow`].
     ///
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
     ///   fails (e.g., malformed relay URL when configured via the builder).
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
     pub fn start_auth_flow(
         &self,
         caps: &Capabilities,
         auth_kind: AuthFlowKind,
-    ) -> Result<PubkyAuthFlow> {
-        PubkyAuthFlow::builder(caps, auth_kind)
+    ) -> Result<PubkyCookieAuthFlow> {
+        PubkyCookieAuthFlow::builder(caps, auth_kind)
+            .client(self.client.clone())
+            .start()
+    }
+
+    /// Start an end-to-end **JWT (grant + `PoP`)** auth flow (QR/deeplink).
+    ///
+    /// The resulting [`PubkyJwtAuthFlow`] emits a deep link with `cid` and `cpk`
+    /// query params; the signer signs a `pubky-grant` JWS and the SDK exchanges
+    /// it for a self-refreshing JWT-backed session.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
+    ///   fails (e.g., malformed relay URL when configured via the builder).
+    pub fn start_jwt_auth_flow(
+        &self,
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+        client_id: ClientId,
+    ) -> Result<PubkyJwtAuthFlow> {
+        PubkyJwtAuthFlow::builder(caps, auth_kind, client_id)
             .client(self.client.clone())
             .start()
     }
@@ -141,10 +170,14 @@ impl Pubky {
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if the URL cannot be parsed
     ///   or is not a signin/signup deep link.
-    pub fn resume_auth_flow(&self, authorization_url: &str) -> Result<PubkyAuthFlow> {
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
+    pub fn resume_auth_flow(&self, authorization_url: &str) -> Result<PubkyCookieAuthFlow> {
         let (caps, relay, secret, auth_kind) = parse_auth_deep_link(authorization_url)?;
 
-        PubkyAuthFlow::builder(&caps, auth_kind)
+        PubkyCookieAuthFlow::builder(&caps, auth_kind)
             .client_secret(secret)
             .relay(relay)
             .client(self.client.clone())
@@ -323,6 +356,11 @@ fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], 
             *s.secret(),
             AuthFlowKind::signup(s.homeserver().clone(), s.signup_token()),
         )),
+        DeepLink::SigninJwt(_) | DeepLink::SignupJwt(_) => Err(AuthError::Validation(
+            "JWT auth flows cannot be resumed via resume_auth_flow; this API is legacy cookie only."
+                .into(),
+        )
+        .into()),
         DeepLink::SeedExport(_) => {
             Err(AuthError::Validation("Only signin and signup URLs can be resumed.".into()).into())
         }

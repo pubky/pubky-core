@@ -1,5 +1,7 @@
 use crate::PublicKey;
+use crate::actors::session::credential::SessionCredential;
 use reqwest::{Method, RequestBuilder};
+use std::sync::Arc;
 
 use super::resource::{IntoPubkyResource, IntoResourcePath, PubkyResource, ResourcePath};
 use crate::{
@@ -17,8 +19,10 @@ use crate::{
 pub struct SessionStorage {
     pub(crate) client: PubkyHttpClient,
     pub(crate) user: PublicKey,
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie: String,
+    /// Cloned credential — sharing the same `Arc<dyn SessionCredential>` as
+    /// the parent session is cheap and gives the storage layer access to the
+    /// latest authentication material (with auto-refresh for JWT).
+    pub(crate) credential: Arc<dyn SessionCredential>,
 }
 
 impl SessionStorage {
@@ -29,9 +33,8 @@ impl SessionStorage {
     pub fn new(session: &PubkySession) -> Self {
         Self {
             client: session.client.clone(),
-            user: session.info.public_key().clone(),
-            #[cfg(not(target_arch = "wasm32"))]
-            cookie: session.cookie.clone(),
+            user: session.info().public_key().clone(),
+            credential: Arc::clone(session.credential()),
         }
     }
 
@@ -46,8 +49,8 @@ impl SessionStorage {
     /// Build a request for this storage.
     ///
     /// - Paths are **absolute** (session-scoped).
-    /// - On native targets, the session cookie is attached **always** as the URL points
-    ///   to this user’s homeserver (cookies never leak across users).
+    /// - The session credential attaches the right authentication header
+    ///   (cookie or bearer JWT) and refreshes the JWT proactively if needed.
     pub(crate) async fn request<P: IntoResourcePath>(
         &self,
         method: Method,
@@ -58,20 +61,12 @@ impl SessionStorage {
         let url = resource.to_transport_url()?;
         cross_log!(debug, "Session storage {} request {}", method, url);
         let rb = self.client.cross_request(method, url).await?;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let rb = self.with_session_cookie(rb);
-
-        Ok(rb)
+        self.attach_credential(rb).await
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn with_session_cookie(&self, rb: RequestBuilder) -> RequestBuilder {
-        let cookie_name = self.user.z32();
-        rb.header(
-            reqwest::header::COOKIE,
-            format!("{cookie_name}={}", self.cookie),
-        )
+    /// Attach the session credential to a request builder.
+    pub(crate) async fn attach_credential(&self, rb: RequestBuilder) -> Result<RequestBuilder> {
+        self.credential.attach(rb, &self.client).await
     }
 }
 

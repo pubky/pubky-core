@@ -189,9 +189,9 @@ Request an authorization URL and await approval.
 
 **Typical usage:**
 
-1. Start an auth flow with `pubky.start_auth_flow(&caps)` (or use the `PubkyAuthFlow::builder()` to set a custom relay).
+1. Start an auth flow with `pubky.start_jwt_auth_flow(&caps, ..)` (or `pubky.start_auth_flow(&caps, ..)` for the deprecated cookie variant). You can also use `PubkyJwtAuthFlow::builder()` / `PubkyCookieAuthFlow::builder()` to set a custom relay.
 2. Show `authorization_url()` (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) — [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756) / [Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
-3. Await `await_approval()` to obtain a session-bound `PubkySession`.
+3. Await `await_approval()` to obtain a session-bound `PubkySession`, or `await_credential()` for a raw `JwtCredential`/`CookieCredential` that you can persist, inspect, or lift into a session later via `PubkySession::from_{jwt,cookie}_credential`.
 
 ```rust
 # use pubky::{Pubky, Capabilities, Keypair, AuthFlowKind};
@@ -223,18 +223,19 @@ See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-
 
 #### Relay & reliability
 
-- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- If you don’t specify a relay, the auth flow defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
 - For production and larger apps, run **your own relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
   The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
 
 **Custom relay example**
 
 ```rust
-# use pubky::{Pubky, PubkyAuthFlow, Capabilities, AuthFlowKind};
+# use pubky::{Pubky, PubkyJwtAuthFlow, Capabilities, AuthFlowKind, ClientId};
 # async fn custom_relay() -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read("pub/example.com/").finish();
-let auth_flow = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
+let client_id = ClientId::new("my.app").unwrap();
+let auth_flow = PubkyJwtAuthFlow::builder(&caps, AuthFlowKind::signin(), client_id)
     .client(pubky.client().clone())
     .relay(url::Url::parse("http://localhost:8080/inbox/")?) // your relay
     .start()?;

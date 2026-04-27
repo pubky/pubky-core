@@ -1,4 +1,4 @@
-//! Pubky homeserver session struct.
+//! Pubky homeserver session types.
 
 use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
@@ -12,9 +12,15 @@ use crate::{
     timestamp::Timestamp,
 };
 
+/// Cookie-specific session record with binary (postcard) serialization.
+///
+/// This is the legacy wire format used by the cookie auth flow. It carries
+/// deprecated fields (`name`, `user_agent`) and a `version` byte for backward
+/// compatibility with existing clients.
+///
+/// When the cookie flow is retired, this struct can be deleted.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
-/// Pubky homeserver session struct.
-pub struct SessionInfo {
+pub struct CookieSessionRecord {
     version: usize,
     public_key: PublicKey,
     created_at: u64,
@@ -25,8 +31,8 @@ pub struct SessionInfo {
     capabilities: Vec<Capability>,
 }
 
-impl SessionInfo {
-    /// Create a new session.
+impl CookieSessionRecord {
+    /// Create a new cookie session record.
     pub fn new(
         public_key: &PublicKey,
         capabilities: Capabilities,
@@ -78,7 +84,7 @@ impl SessionInfo {
 
     /// Serialize this session to its canonical binary representation.
     pub fn serialize(&self) -> Vec<u8> {
-        to_allocvec(self).expect("SessionInfo::serialize")
+        to_allocvec(self).expect("CookieSessionRecord::serialize")
     }
 
     /// Deserialize this session from its canonical binary representation.
@@ -98,7 +104,7 @@ impl SessionInfo {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
-/// Error deserializing a [SessionInfo].
+/// Error deserializing a [CookieSessionRecord].
 pub enum Error {
     #[error("Empty payload")]
     /// Empty payload
@@ -123,7 +129,7 @@ mod tests {
         let public_key = keypair.public_key();
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
 
-        let session = SessionInfo {
+        let session = CookieSessionRecord {
             user_agent: "foo".to_string(),
             capabilities: capabilities.to_vec(),
             created_at: 0,
@@ -143,14 +149,14 @@ mod tests {
             ]
         );
 
-        let deserialized = SessionInfo::deserialize(&serialized).unwrap();
+        let deserialized = CookieSessionRecord::deserialize(&serialized).unwrap();
 
         assert_eq!(deserialized, session)
     }
 
     #[test]
     fn deserialize() {
-        let result = SessionInfo::deserialize(&[]);
+        let result = CookieSessionRecord::deserialize(&[]);
 
         assert_eq!(result, Err(Error::EmptyPayload));
     }

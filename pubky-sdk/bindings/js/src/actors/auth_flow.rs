@@ -1,4 +1,9 @@
-use pubky::PubkyAuthFlow;
+#![allow(
+    deprecated,
+    reason = "JS binding wraps the deprecated cookie auth flow; JWT wrapper will ship in a follow-up"
+)]
+
+use pubky::PubkyCookieAuthFlow;
 use pubky_common::capabilities::Capabilities;
 use std::{cell::RefCell, rc::Rc};
 use url::Url;
@@ -21,7 +26,7 @@ use crate::{
 /// 3) `awaitApproval()` to receive a ready `Session`
 #[wasm_bindgen]
 pub struct AuthFlow {
-    inner: RefCell<Option<Rc<PubkyAuthFlow>>>,
+    inner: RefCell<Option<Rc<PubkyCookieAuthFlow>>>,
     in_flight: RefCell<bool>,
     authorization_url: String,
 }
@@ -81,7 +86,7 @@ impl AuthFlow {
         let caps = Capabilities::try_from(normalized.as_str())?;
 
         // 3) Build the flow with optional relay and optional client
-        let mut builder = PubkyAuthFlow::builder(&caps, kind.0);
+        let mut builder = PubkyCookieAuthFlow::builder(&caps, kind.0);
         if let Some(c) = client {
             builder = builder.client(c);
         }
@@ -202,8 +207,8 @@ impl AuthFlow {
     }
 }
 
-impl From<PubkyAuthFlow> for AuthFlow {
-    fn from(flow: PubkyAuthFlow) -> Self {
+impl From<PubkyCookieAuthFlow> for AuthFlow {
+    fn from(flow: PubkyCookieAuthFlow) -> Self {
         let auth_url = flow.authorization_url().as_str().to_string();
         AuthFlow {
             authorization_url: auth_url,
@@ -226,7 +231,7 @@ impl AuthFlow {
         }
     }
 
-    fn borrow_inner(&self) -> JsResult<Rc<PubkyAuthFlow>> {
+    fn borrow_inner(&self) -> JsResult<Rc<PubkyCookieAuthFlow>> {
         self.inner
             .borrow()
             .as_ref()
@@ -234,14 +239,14 @@ impl AuthFlow {
             .ok_or_else(|| self.consumed_error())
     }
 
-    fn take_inner(&self, caller: &str) -> JsResult<Rc<PubkyAuthFlow>> {
+    fn take_inner(&self, caller: &str) -> JsResult<Rc<PubkyCookieAuthFlow>> {
         self.inner
             .borrow_mut()
             .take()
             .ok_or_else(|| self.already_taken_error(caller))
     }
 
-    fn restore_inner(&self, flow: Rc<PubkyAuthFlow>) {
+    fn restore_inner(&self, flow: Rc<PubkyCookieAuthFlow>) {
         let mut inner = self.inner.borrow_mut();
         *inner = Some(flow);
     }

@@ -1,183 +1,113 @@
-use reqwest::{Method, StatusCode};
+use std::sync::Arc;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use pubky_common::session::SessionInfo;
+use pubky_common::crypto::PublicKey;
 
-use crate::actors::storage::resource::resolve_pubky;
-use crate::errors::AuthError;
-use crate::errors::RequestError;
-use crate::{
-    AuthToken, Error, PubkyHttpClient, Result, SessionStorage, cross_log, util::check_http_status,
-};
+use super::SessionInfo;
+
+use super::credential::SessionCredential;
+use crate::errors::Error;
+use crate::{PubkyHttpClient, Result, SessionStorage, cross_log};
 
 /// Stateful, per-identity API driver built on a shared [`PubkyHttpClient`].
 ///
-/// An `PubkySession` represents one user/identity. It optionally holds a `Keypair` (for
-/// self-signed flows like `signin()`/`signup()`), and always tracks the user’s `pubky`
-/// (either from the keypair or learned later via the pubkyauth flow). On native targets,
-/// each agent also owns exactly one session cookie secret; cookies never leak across agents.
+/// A `PubkySession` represents one user/identity authenticated to a homeserver.
+/// It hides the choice of credential (legacy cookie vs grant-based JWT) behind
+/// a single API: callers always go through `info()`, `storage()`, `revalidate()`,
+/// `signout()`, etc., and the SDK dispatches to the right wire format internally
+/// via an internal credential trait.
 ///
 /// What it does:
-/// - Attaches the correct session cookie to requests that target this agent’s homeserver
-///   (`https://_pubky.<pubky>/...`), and to nothing else.
+/// - Attaches the correct authentication header (`Cookie` or `Authorization: Bearer`)
+///   to requests targeting this user's homeserver.
 /// - Exposes homeserver verbs (`get/put/post/patch/delete/head`) scoped to this identity.
 /// - Implements identity flows: `signup`, `signin`, `signout`, `session`, and pubkyauth.
 ///
-/// When to use:
-/// - Use `PubkySession` whenever you’re acting “as a user” against a Pubky homeserver.
-/// - Use `PubkyHttpClient` only for raw transport or unauthenticated/public operations.
+/// To access JWT-only or cookie-only operations (grant management, secret
+/// export), use the capability-view accessors [`Self::as_jwt`] and
+/// [`Self::as_cookie`].
+///
+/// Credential-specific factory functions live alongside each auth flow:
+/// - Cookie: [`crate::actors::auth::cookie`] — `CookieCredential::from_auth_token`
+///   and the `secret` module for rehydration helpers.
+/// - JWT: [`crate::actors::auth::jwt::grant_exchange`] —
+///   `credential_from_grant_exchange`, `credential_from_grant_signup`.
+///
+/// Thin delegations on `PubkySession` (`export`, `import`, `import_secret`,
+/// `from_secret_file`) preserve the public API surface.
 ///
 /// Concurrency:
-/// - `PubkySession` is cheap to clone and thread-safe; it shares the underlying `PubkyHttpClient`.
+/// - `PubkySession` is cheap to clone and thread-safe; it shares the underlying
+///   [`PubkyHttpClient`] and credential state via `Arc`.
 #[derive(Clone)]
 pub struct PubkySession {
     pub(crate) client: PubkyHttpClient,
-
-    /// Known session for this session.
-    pub(crate) info: SessionInfo,
-
-    /// Native-only, single session cookie secret for `_pubky.<pubky>`. Never shared across agents.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) cookie: String,
+    pub(crate) credential: Arc<dyn SessionCredential>,
 }
 
 impl PubkySession {
-    /// Establish a session from a signed [`AuthToken`].
-    ///
-    /// This POSTs the resolved homeserver session endpoint with the token, validates the response
-    /// and constructs a new session-bound [`PubkySession`]
-    pub(crate) async fn new(token: &AuthToken, client: PubkyHttpClient) -> Result<Self> {
-        let url = format!("pubky://{}/session", token.public_key().z32());
-        cross_log!(
-            info,
-            "Establishing new session exchange for {}",
-            token.public_key()
-        );
-        let resolved = resolve_pubky(&url)?;
-        let response = client
-            .cross_request(Method::POST, resolved)
-            .await?
-            .body(token.serialize())
-            .send()
-            .await?;
-
-        let response = check_http_status(response).await?;
-        cross_log!(
-            info,
-            "Session exchange for {} succeeded; constructing session",
-            token.public_key()
-        );
-        Self::new_from_response(client.clone(), response).await
-    }
-
-    /// Construct a session **from a successful `/session` or `/signup` response**.
-    ///
-    /// - Reads the `SessionInfo` body (to learn the user pubky).
-    /// - On native, selects `<pubky>=<secret>` from the saved `Set-Cookie` headers.
-    pub(crate) async fn new_from_response(
+    /// Build a session from a fully-formed credential. Used by the JWT-mode
+    /// constructors in [`crate::actors::auth::jwt::grant_exchange`] and the
+    /// cookie constructors in [`crate::actors::auth::cookie`].
+    pub(crate) fn from_credential(
         client: PubkyHttpClient,
-        response: reqwest::Response,
-    ) -> Result<Self> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // WASM: cookies are browser-managed; just parse the session body.
-            let bytes = response.bytes().await?;
-            let info = SessionInfo::deserialize(&bytes)?;
-            cross_log!(info, "Hydrated WASM session for {}", info.public_key());
-            Ok(Self { client, info })
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // 1) Snapshot all Set-Cookie header values before consuming the body.
-            let mut raw_set_cookies = Vec::new();
-            for val in &response.headers().get_all(reqwest::header::SET_COOKIE) {
-                if let Ok(raw) = std::str::from_utf8(val.as_bytes()) {
-                    raw_set_cookies.push(raw.to_owned());
-                }
-            }
-
-            // 2) Read and parse the session body (this consumes the response).
-            let bytes = response.bytes().await?;
-            let info = SessionInfo::deserialize(&bytes)?;
-
-            // 3) Find the cookie named exactly as the user's pubky.
-            let cookie_name = info.public_key().z32();
-            let cookie = raw_set_cookies
-                .iter()
-                .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
-                .find(|c| c.name() == cookie_name)
-                .map(|c| c.value().to_string())
-                .ok_or_else(|| AuthError::Validation("missing session cookie".into()))?;
-
-            cross_log!(info, "Hydrated native session for {}", info.public_key());
-            Ok(Self {
-                client,
-                info,
-                cookie,
-            })
-        }
+        credential: Arc<dyn SessionCredential>,
+    ) -> Self {
+        Self { client, credential }
     }
 
-    /// Returns the session info
+    /// Returns the current session info.
+    ///
+    /// `SessionInfo` is small and `Clone`-cheap; this method returns by value
+    /// so the API is uniform across credential types.
     #[must_use]
-    pub const fn info(&self) -> &SessionInfo {
-        &self.info
+    pub fn info(&self) -> SessionInfo {
+        self.credential.info()
     }
 
-    /// Returns a reference to the internal `PubkyHttpClient`
-    /// Raw transport handle. No per-session cookie injection. Use `storage()` for
-    /// authenticated, session-scoped requests.
+    /// Returns a reference to the internal `PubkyHttpClient`.
+    ///
+    /// Raw transport handle. No per-session credential injection. Use `storage()`
+    /// for authenticated, session-scoped requests.
     #[must_use]
     pub const fn client(&self) -> &PubkyHttpClient {
         &self.client
     }
 
-    /// Round-trip the current session with the homeserver to verify it’s still valid.
+    /// Internal accessor for the credential.
+    pub(crate) fn credential(&self) -> &Arc<dyn SessionCredential> {
+        &self.credential
+    }
+
+    /// Generic downcast of the active credential to a concrete adapter type.
+    ///
+    /// Auth-side view accessors use this to reach a concrete credential
+    /// without the session layer naming it directly.
+    pub(crate) fn try_downcast_credential<T: SessionCredential + 'static>(&self) -> Option<&T> {
+        self.credential.as_any().downcast_ref::<T>()
+    }
+
+    /// User public key for this session (cheap clone of the cached snapshot).
+    #[must_use]
+    pub fn public_key(&self) -> PublicKey {
+        self.info().public_key().clone()
+    }
+
+    /// Round-trip the current session with the homeserver to verify it's still valid.
     ///
     /// Returns:
     /// - `Ok(Some(session))` if the server recognizes and returns the session (still valid).
     /// - `Ok(None)` if the session no longer exists (expired/invalidated).
     /// - `Err(_)` for transport or server errors unrelated to validity.
     ///
-    /// This does *not* mutate the session; it’s a sanity/validity check.
+    /// This does *not* mutate the session; it's a sanity/validity check.
     ///
     /// # Errors
     /// - Propagates transport failures from the session endpoint.
     /// - Returns [`crate::errors::Error::Authentication`] if the homeserver rejects the request.
     pub async fn revalidate(&self) -> Result<Option<SessionInfo>> {
-        cross_log!(info, "Revalidating session for {}", self.info.public_key());
-        let response = self.send_revalidate_request().await?;
-        if Self::session_missing(&response) {
-            cross_log!(
-                warn,
-                "Session for {} no longer valid (404)",
-                self.info.public_key()
-            );
-            return Ok(None);
-        }
-        let info = Self::parse_session_info(response).await?;
-        cross_log!(info, "Session for {} remains valid", self.info.public_key());
-        Ok(Some(info))
-    }
-
-    async fn send_revalidate_request(&self) -> Result<reqwest::Response> {
-        self.storage()
-            .request(Method::GET, "/session")
-            .await?
-            .send()
-            .await
-            .map_err(Error::from)
-    }
-
-    fn session_missing(response: &reqwest::Response) -> bool {
-        response.status() == StatusCode::NOT_FOUND
-    }
-
-    async fn parse_session_info(response: reqwest::Response) -> Result<SessionInfo> {
-        let response = check_http_status(response).await?;
-        let bytes = response.bytes().await?;
-        Ok(SessionInfo::deserialize(&bytes)?)
+        let user = self.info().public_key().clone();
+        cross_log!(info, "Revalidating session for {}", user);
+        self.credential.revalidate(&self.client, &user).await
     }
 
     /// Sign out and invalidate this session server-side.
@@ -189,101 +119,30 @@ impl PubkySession {
     /// - Returns the original [`crate::errors::Error`] alongside `self` when the transport
     ///   request fails or the homeserver responds with a non-success status.
     pub async fn signout(self) -> std::result::Result<(), (Error, Self)> {
-        cross_log!(info, "Signing out session for {}", self.info.public_key());
-        let resp = match self.storage().delete("/session").await {
-            Ok(r) => r,
-            Err(e) => return Err((e, self)),
-        };
-        if let Err(e) = check_http_status(resp).await {
-            cross_log!(
-                error,
-                "Signout for {} failed: {}",
-                self.info.public_key(),
-                e
-            );
+        cross_log!(info, "Signing out session for {}", self.info().public_key());
+        if let Err(e) = self.credential.signout(&self.client).await {
+            cross_log!(error, "Signout failed: {}", e);
             return Err((e, self));
         }
-        cross_log!(info, "Session for {} signed out", self.info.public_key());
-        Ok(()) // success => `self` is consumed
+        cross_log!(info, "Session signed out");
+        Ok(())
     }
 
-    /// Export session metadata for rehydrating after a tab refresh or process restart.
-    ///
-    /// The returned string contains **no secrets**; it is a base64 encoding of the
-    /// public `SessionInfo`. The caller remains responsible for persisting the
-    /// HTTP-only session cookie; `export()` merely captures the metadata needed to
-    /// reconstruct a `PubkySession` handle.
-    #[must_use]
-    pub fn export(&self) -> String {
-        cross_log!(info, "Exporting session for {}", self.info.public_key());
-        STANDARD.encode(self.info.serialize())
-    }
-
-    /// Restore a session from an `export()` string. No secrets are read or written;
-    /// the HTTP-only cookie jar must still contain the session cookie.
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
-    /// - Returns [`crate::errors::AuthError::RequestExpired`] if the cookie is missing/expired.
-    /// - Propagates transport failures while revalidating the session with the homeserver.
-    #[cfg(target_arch = "wasm32")]
-    pub async fn import(export: &str, client: Option<PubkyHttpClient>) -> Result<Self> {
-        let client = match client {
-            Some(c) => c,
-            None => PubkyHttpClient::new()?,
-        };
-
-        let bytes = STANDARD
-            .decode(export)
-            .map_err(|e| RequestError::Validation {
-                message: format!("invalid session export: {e}"),
-            })?;
-        let info = SessionInfo::deserialize(&bytes).map_err(|e| RequestError::Validation {
-            message: format!("invalid session export: {e}"),
-        })?;
-
-        let mut session = Self { client, info };
-        let info = session
-            .revalidate()
-            .await?
-            .ok_or(AuthError::RequestExpired)?;
-        session.info = info;
-        cross_log!(info, "Rehydrated session for {}", session.info.public_key());
-        Ok(session)
-    }
-
-    /// Restore a session from an `export()` string (unsupported on native targets).
-    ///
-    /// Use [`Self::import_secret`] on native to restore a session using the secret token instead.
-    ///
-    /// # Errors
-    /// - Returns [`crate::errors::RequestError::Validation`] because exports are only supported on WASM.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[allow(
-        clippy::unused_async,
-        reason = "keep async signature aligned with WASM build"
-    )]
-    pub async fn import(_export: &str, _client: Option<PubkyHttpClient>) -> Result<Self> {
-        Err(RequestError::Validation {
-            message: "session import is only supported on WASM targets".into(),
-        }
-        .into())
-    }
+    // `as_jwt()` / `as_cookie()` view accessors are defined in
+    // `actors/auth/jwt/view.rs` and `actors/auth/cookie/view.rs` via inherent
+    // `impl PubkySession { … }` blocks. This keeps session/core.rs ignorant
+    // of concrete credential adapters while preserving the discoverable
+    // method syntax on `PubkySession`.
 
     /// Create a **session-mode** Storage bound to this user session.
     ///
     /// - Relative paths (e.g. `"pub/my-cool-app/file"`) are resolved to **this** user.
-    /// - Requests that target this user’s homeserver automatically carry the
-    ///   session cookie.
+    /// - Requests that target this user's homeserver automatically carry the
+    ///   session cookie or bearer JWT, depending on the credential.
     ///
     /// See [`SessionStorage`] for usage examples.
     #[must_use]
     pub fn storage(&self) -> SessionStorage {
-        cross_log!(
-            debug,
-            "Creating session storage handle for {}",
-            self.info.public_key()
-        );
         SessionStorage::new(self)
     }
 }
@@ -292,9 +151,8 @@ impl std::fmt::Debug for PubkySession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("PubkySession");
         ds.field("client", &self.client);
-        ds.field("info", &self.info);
-        #[cfg(not(target_arch = "wasm32"))]
-        ds.field("cookie", &"<redacted>");
+        ds.field("credential", &self.credential);
+        ds.field("info", &self.info());
         ds.finish()
     }
 }

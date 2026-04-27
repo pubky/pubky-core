@@ -1,3 +1,5 @@
-pub mod core;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod persist;
+pub(crate) mod core;
+pub(crate) mod credential;
+mod info;
+
+pub use info::SessionInfo;

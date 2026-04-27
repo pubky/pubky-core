@@ -8,23 +8,29 @@ use futures_util::stream::StreamExt;
 
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState,
+        auth::{has_write_permission, AuthSession},
+        err_if_user_is_invalid::get_user_or_http_error,
+        middleware::pubky_host::PubkyHost,
+        AppState,
     },
     persistence::{
         files::WriteStreamError,
         sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
     },
     shared::{
-        webdav::{EntryPath, WebDavPathPubAxum},
+        webdav::{EntryPath, WebDavPathAxum},
         HttpError, HttpResult,
     },
 };
 
 pub async fn delete(
     State(state): State<AppState>,
+    session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
@@ -35,10 +41,13 @@ pub async fn delete(
 
 pub async fn put(
     State(state): State<AppState>,
+    session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());

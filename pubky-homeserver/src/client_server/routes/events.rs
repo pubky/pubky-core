@@ -22,7 +22,7 @@ use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
 
 use crate::{
-    client_server::{extractors::ListQueryParams, AppState},
+    client_server::{query_params::ListQueryParams, AppState},
     metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},

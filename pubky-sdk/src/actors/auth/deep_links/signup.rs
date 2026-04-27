@@ -6,9 +6,13 @@ use url::Url;
 use crate::PublicKey;
 use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
 
-/// A deep link for signing up to a Pubky homeserver.
-/// Supported formats:
-/// - <pubkyauth://signup?caps={}&relay={}&secret={base64_encoded_secret}&hs={homeserver_public_key}&st={signup_token}>    
+/// A deep link for signing up to a Pubky homeserver via the legacy
+/// [`AuthToken`](pubky_common::auth::AuthToken) flow (cookie-based session).
+///
+/// Format: `pubkyauth://signup?caps=…&relay=…&secret=…&hs=…&st=…`.
+///
+/// For the grant + JWT flow, use [`SignupJwtDeepLink`](super::SignupJwtDeepLink)
+/// instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignupDeepLink {
     capabilities: Capabilities,
@@ -20,13 +24,6 @@ pub struct SignupDeepLink {
 
 impl SignupDeepLink {
     /// Create a new signup deep link.
-    ///
-    /// # Arguments
-    /// * `capabilities` - The capabilities to use for the signup flow.
-    /// * `relay` - The relay to use for the signup flow.
-    /// * `secret` - The secret to use for the signup flow.
-    /// * `homeserver` - The homeserver to use for the signup flow.
-    /// * `signup_token` - The signup token to use for the signup flow.
     #[must_use]
     pub fn new(
         capabilities: Capabilities,

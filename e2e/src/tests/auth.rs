@@ -1,6 +1,9 @@
 use pubky_testnet::pubky::deep_links::DeepLink;
+#[allow(deprecated, reason = "E2E tests cover the deprecated cookie flow")]
+use pubky_testnet::pubky::PubkyCookieAuthFlow;
 use pubky_testnet::pubky::{
-    AuthFlowKind, Keypair, Method, PubkyAuthFlow, PubkyHttpClient, PubkySession, StatusCode,
+    AuthFlowKind, ClientId, Keypair, Method, PubkyHttpClient, PubkyJwtAuthFlow, PubkySession,
+    StatusCode,
 };
 use pubky_testnet::pubky_common::capabilities::{Capabilities, Capability};
 use pubky_testnet::{
@@ -111,6 +114,7 @@ async fn disabled_user() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn authz() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -125,7 +129,7 @@ async fn authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
+    let auth = PubkyCookieAuthFlow::builder(&caps, AuthFlowKind::signin())
         .relay(http_relay_url)
         .client(pubky.client().clone())
         .start()
@@ -189,6 +193,7 @@ async fn authz() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn signup_authz() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -203,7 +208,7 @@ async fn signup_authz() {
         .finish();
 
     // Third-party app (keyless)
-    let auth = PubkyAuthFlow::builder(
+    let auth = PubkyCookieAuthFlow::builder(
         &caps,
         AuthFlowKind::signup(server.public_key(), Some("1234567890".to_string())),
     )
@@ -292,8 +297,9 @@ async fn persist_and_restore_info() {
         .await
         .unwrap();
 
-    // Export session's secret and drop the session (simulate restart)
-    let secret_token = session.export_secret();
+    // Export session's secret and drop the session (simulate restart).
+    // On native the cookie secret is always captured, so unwrap is safe.
+    let secret_token = session.as_cookie().unwrap().export_secret().unwrap();
     drop(session);
 
     // Save to disk or however you want to persist `exported`
@@ -339,6 +345,7 @@ async fn multiple_users() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+#[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn authz_timeout_reconnect() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -360,7 +367,7 @@ async fn authz_timeout_reconnect() {
 
     // set custom global client with timeout of 1 sec
     // Start pairing auth flow using our custom client + local relay
-    let auth = PubkyAuthFlow::builder(&capabilities, AuthFlowKind::signin())
+    let auth = PubkyCookieAuthFlow::builder(&capabilities, AuthFlowKind::signin())
         .client(client)
         .relay(http_relay_url)
         .start()
@@ -738,4 +745,428 @@ async fn test_republish_homeserver() {
         .as_u64();
 
     assert!(ts3 > ts2, "record should be republished when stale");
+}
+
+// =====================================================================
+// JWT (grant + Proof-of-Possession) auth flow tests
+// =====================================================================
+//
+// These exercise the full client_id / cpk pipeline: PubkyJwtAuthFlow generates a client keypair, the signer
+// (Ring) signs a `pubky-grant` JWS, the homeserver mints an Access JWT, and
+// the SDK transparently attaches `Authorization: Bearer ...` on every
+// subsequent request.
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn authz_jwt_happy_path() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    // 1. Signer (Ring) creates the user via the legacy signup path.
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    // 2. Third-party app starts an auth flow with a `client_id` — this
+    //    uses PubkyJwtAuthFlow (grant + JWT mode) which emits a deep link
+    //    with `cid` and `cpk` query params.
+    let caps = Capabilities::builder()
+        .read_write("/pub/pubky.app/")
+        .read("/pub/foo.bar/file")
+        .finish();
+    let app_kp = Keypair::random();
+    let auth = PubkyJwtAuthFlow::builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new("test.app").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .client_keypair(app_kp.clone())
+    .start()
+    .unwrap();
+
+    // The deep link should advertise both `cid` and `cpk`.
+    let url = auth.authorization_url();
+    let query_string = url.query().unwrap_or_default();
+    assert!(
+        query_string.contains("cid=test.app"),
+        "deep link must contain cid: {query_string}"
+    );
+    assert!(
+        query_string.contains(&format!("cpk={}", app_kp.public_key().z32())),
+        "deep link must contain cpk: {query_string}"
+    );
+
+    // 3. Signer approves — produces a `pubky-grant` JWS.
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+
+    // 4. App receives the grant and exchanges it for a JWT session.
+    let session = auth.await_approval().await.unwrap();
+    assert_eq!(session.info().public_key(), &signer.public_key());
+
+    // 5. JWT-backed storage operations work — bearer header is attached.
+    session
+        .storage()
+        .put("/pub/pubky.app/foo", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    // 6. Out-of-scope writes are rejected by the server's authorization layer.
+    let err = session
+        .storage()
+        .put("/pub/pubky.app", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
+    );
+
+    let err = session
+        .storage()
+        .put("/pub/foo.bar/file", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN)
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_proactive_refresh_produces_fresh_token() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    // Sign up + obtain a JWT-backed session.
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let caps = Capabilities::builder().cap(Capability::root()).finish();
+    let auth = PubkyJwtAuthFlow::builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new("refresh.test").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+    let session = auth.await_approval().await.unwrap();
+
+    let token_before = session.as_jwt().unwrap().current_bearer().await;
+
+    // Force a refresh and verify the JWT changed.
+    session.as_jwt().unwrap().force_refresh().await.unwrap();
+    let token_after = session.as_jwt().unwrap().current_bearer().await;
+
+    assert_ne!(
+        token_before, token_after,
+        "force_refresh must mint a new bearer token"
+    );
+
+    // The refreshed session continues to work for storage ops.
+    session
+        .storage()
+        .put("/pub/refresh.test/hello", b"world".to_vec())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_signout_kills_grant() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    // Sign up so the user exists.
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    // Authorise app A with root caps so we can use it to inspect grants below.
+    let session_a = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url.clone(),
+        "app.a",
+        Capabilities::builder().cap(Capability::root()).finish(),
+    )
+    .await;
+
+    // Authorise app B with a scoped capability — distinct grant on the server.
+    let session_b = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url,
+        "app.b",
+        Capabilities::builder().read_write("/pub/app.b/").finish(),
+    )
+    .await;
+
+    // Both sessions should appear in the root session's grant list.
+    let grants_before = session_a.as_jwt().unwrap().list_grants().await.unwrap();
+    assert!(
+        grants_before.len() >= 2,
+        "expected at least 2 grants, got {}",
+        grants_before.len()
+    );
+
+    // Sign out app B — this revokes its grant.
+    session_b.signout().await.unwrap();
+
+    // App A is unaffected.
+    session_a
+        .storage()
+        .put("/pub/app.a/keepalive", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    // The revoked grant no longer shows up in the active list.
+    let grants_after = session_a.as_jwt().unwrap().list_grants().await.unwrap();
+    assert!(
+        grants_after.len() < grants_before.len(),
+        "signout should drop the revoked grant from list_grants()"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn cookie_signout_is_idempotent() {
+    let testnet = build_full_testnet().await;
+    let homeserver = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&homeserver.public_key(), None).await.unwrap();
+
+    // First signout succeeds and invalidates the cookie server-side.
+    session.clone().signout().await.unwrap();
+
+    // A second signout with the now-stale cookie must be a 200 no-op.
+    session
+        .signout()
+        .await
+        .expect("second signout must be idempotent");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_signout_is_idempotent() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let session = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url,
+        "app.idempotent",
+        Capabilities::builder().cap(Capability::root()).finish(),
+    )
+    .await;
+
+    // First signout revokes the grant.
+    session.clone().signout().await.unwrap();
+
+    // A second signout with the now-revoked bearer must be a 200 no-op.
+    session
+        .signout()
+        .await
+        .expect("second JWT signout must be idempotent");
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_list_and_revoke_grants_root_only() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    // Root session — used as the management surface.
+    let root_session = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url.clone(),
+        "root.app",
+        Capabilities::builder().cap(Capability::root()).finish(),
+    )
+    .await;
+
+    // Scoped session — the one we'll revoke.
+    let scoped_session = jwt_signin_helper(
+        &pubky,
+        &signer,
+        http_relay_url,
+        "scoped.app",
+        Capabilities::builder()
+            .read_write("/pub/scoped.app/")
+            .finish(),
+    )
+    .await;
+
+    // The scoped session can write inside its scope before revocation.
+    scoped_session
+        .storage()
+        .put("/pub/scoped.app/before", Vec::<u8>::new())
+        .await
+        .unwrap();
+
+    // Non-root sessions cannot enumerate grants — homeserver returns 403.
+    let err = scoped_session
+        .as_jwt()
+        .unwrap()
+        .list_grants()
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN),
+        "non-root list_grants must be forbidden, got {err:?}"
+    );
+
+    // Root can list grants — both sessions appear.
+    let grants = root_session.as_jwt().unwrap().list_grants().await.unwrap();
+    assert!(
+        grants.len() >= 2,
+        "expected ≥2 grants, got {}",
+        grants.len()
+    );
+
+    let scoped_gid = scoped_session.as_jwt().unwrap().grant_id().await;
+    assert!(
+        grants.iter().any(|g| g.grant_id == scoped_gid),
+        "scoped grant id should be present in list"
+    );
+
+    // Root revokes the scoped grant.
+    root_session
+        .as_jwt()
+        .unwrap()
+        .revoke_grant(&scoped_gid)
+        .await
+        .unwrap();
+
+    // Scoped session's bearer JWT is now invalid — the next request gets 401.
+    let err = scoped_session
+        .storage()
+        .put("/pub/scoped.app/after", Vec::<u8>::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::UNAUTHORIZED),
+        "revoked grant must yield 401, got {err:?}"
+    );
+
+    // Root keeps working.
+    root_session
+        .storage()
+        .put("/pub/root.app/still-here", Vec::<u8>::new())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn jwt_signup_grant_flow() {
+    use pubky_testnet::pubky_homeserver::SignupMode;
+    use pubky_testnet::{pubky_homeserver::ConfigToml, EphemeralTestnet};
+
+    // Open signups make this test self-contained.
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::Open;
+    let testnet = EphemeralTestnet::builder()
+        .with_http_relay()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let http_relay_url = testnet.http_relay().local_link_url();
+
+    // App initiates a signup-shaped flow with grant binding.
+    let caps = Capabilities::builder()
+        .read_write("/pub/signup.app/")
+        .finish();
+    let auth = PubkyJwtAuthFlow::builder(
+        &caps,
+        AuthFlowKind::signup(server.public_key(), None),
+        ClientId::new("signup.app").unwrap(),
+    )
+    .relay(http_relay_url)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
+
+    // Signer approves — same flow as signin, but the session call hits
+    // /auth/jwt/signup which creates the user.
+    let signer = pubky.signer(Keypair::random());
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+
+    // For grant-based signup the SDK posts directly to the homeserver host, so the
+    // user's `_pubky` PKARR record doesn't exist yet. The signer (which holds the
+    // user keypair) publishes it now so subsequent storage requests can resolve
+    // the user's homeserver.
+    signer
+        .pkdns()
+        .publish_homeserver_force(Some(&server.public_key()))
+        .await
+        .unwrap();
+
+    let session = auth.await_approval().await.unwrap();
+    assert_eq!(session.info().public_key(), &signer.public_key());
+
+    // The freshly created user can write inside the grant's scope.
+    session
+        .storage()
+        .put("/pub/signup.app/welcome", b"hello".to_vec())
+        .await
+        .unwrap();
+}
+
+/// Helper: run a full grant-based signin flow for a previously signed-up
+/// user, returning the resulting JWT session.
+async fn jwt_signin_helper(
+    pubky: &pubky_testnet::pubky::Pubky,
+    signer: &pubky_testnet::pubky::PubkySigner,
+    relay: url::Url,
+    client_id: &'static str,
+    caps: Capabilities,
+) -> PubkySession {
+    let auth = PubkyJwtAuthFlow::builder(
+        &caps,
+        AuthFlowKind::signin(),
+        ClientId::new(client_id).unwrap(),
+    )
+    .relay(relay)
+    .client(pubky.client().clone())
+    .start()
+    .unwrap();
+    signer
+        .approve_auth(&auth.authorization_url())
+        .await
+        .unwrap();
+    auth.await_approval().await.unwrap()
 }

@@ -18,7 +18,7 @@ async fn put_get_delete() {
     let signer = pubky.signer(Keypair::random());
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let public_key = session.info().public_key();
+    let public_key = session.public_key();
 
     // relative URL is always based over own user homeserver
     let path = "/pub/foo.txt";
@@ -49,7 +49,7 @@ async fn put_get_delete() {
     let regular_url = format!(
         "{}pub/foo.txt?pubky-host={}",
         server.icann_http_url(),
-        session.info().public_key().z32()
+        session.public_key().z32()
     );
 
     // We set `non.pubky.host` header as otherwise he client will use by default
@@ -94,7 +94,7 @@ async fn put_then_get_json_roundtrip() {
     let signer = pubky.signer(Keypair::random());
 
     let session = signer.signup(&server.public_key(), None).await.unwrap();
-    let public_key = session.info().public_key();
+    let public_key = session.public_key();
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct Payload {
@@ -292,7 +292,7 @@ async fn list_deep() {
     // Owner user
     let owner = pubky.signer(Keypair::random());
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
-    let public_key = owner_session.info().public_key();
+    let public_key = owner_session.public_key();
     // Write files to the server
     let mut paths = vec![
         format!("/pub/a.wrong/a.txt"),
@@ -428,7 +428,7 @@ async fn list_shallow() {
     // Owner user
     let owner = pubky.signer(Keypair::random());
     let owner_session = owner.signup(&server.public_key(), None).await.unwrap();
-    let public_key = owner_session.info().public_key();
+    let public_key = owner_session.public_key();
 
     // Write files to the server
     let mut urls = vec![

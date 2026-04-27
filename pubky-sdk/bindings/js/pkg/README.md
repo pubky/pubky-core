@@ -252,7 +252,7 @@ surface precise feedback to the user.
 
 #### Http Relay & reliability
 
-- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- If you don’t specify a relay, the auth flow defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
 - For production and larger apps, run **your own http relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
   The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
 

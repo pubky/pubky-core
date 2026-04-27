@@ -1,12 +1,10 @@
-use pubky_common::session;
-
 use wasm_bindgen::prelude::*;
 
 use super::keys::PublicKey;
 
 /// Static snapshot of session metadata.
 #[wasm_bindgen]
-pub struct SessionInfo(pub(crate) session::SessionInfo);
+pub struct SessionInfo(pub(crate) pubky::SessionInfo);
 
 #[wasm_bindgen]
 impl SessionInfo {
