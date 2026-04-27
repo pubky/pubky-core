@@ -188,13 +188,13 @@ mod tests {
     use axum_test::TestServer;
     use base64::Engine;
 
-    use crate::data_directory::quota_config::BandwidthRate;
+    use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
 
     use super::*;
 
-    fn bw(s: &str) -> BandwidthRate {
-        BandwidthRate::from_str(s).unwrap()
+    fn bw(s: &str) -> BandwidthQuota {
+        BandwidthQuota::from_str(s).unwrap()
     }
 
     fn create_test_server(context: &AppContext) -> TestServer {

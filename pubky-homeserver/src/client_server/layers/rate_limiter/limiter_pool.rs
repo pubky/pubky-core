@@ -12,8 +12,8 @@ use governor::clock::QuantaClock;
 use governor::state::keyed::DashMapStateStore;
 use governor::{Quota, RateLimiter};
 
-use crate::data_directory::quota_config::BandwidthRate;
-use crate::quota_config::{LimitKey, LimitKeyType, PathLimit, RateUnit};
+use crate::data_directory::quota_config::BandwidthQuota;
+use crate::quota_config::{LimitKey, LimitKeyType, PathLimit};
 
 use super::extract_ip::extract_ip;
 use super::CLEANUP_INTERVAL_SECS;
@@ -25,7 +25,7 @@ pub(super) type KeyedRateLimiter = RateLimiter<LimitKey, DashMapStateStore<Limit
 
 /// Pool key for per-user speed limiters: rate + optional burst override.
 /// Users with the same (rate, burst) share a limiter instance.
-type SpeedLimitKey = (BandwidthRate, Option<u32>);
+type SpeedLimitKey = (BandwidthQuota, Option<u32>);
 
 /// Shared pool of keyed rate limiters, grouped by (rate, burst).
 ///
@@ -61,7 +61,11 @@ impl LimiterPool {
     }
 
     /// Get or create a keyed rate limiter for a specific bandwidth rate + burst.
-    pub fn get_or_create(&self, rate: &BandwidthRate, burst: Option<u32>) -> Arc<KeyedRateLimiter> {
+    pub fn get_or_create(
+        &self,
+        rate: &BandwidthQuota,
+        burst: Option<u32>,
+    ) -> Arc<KeyedRateLimiter> {
         self.0
             .entry((rate.clone(), burst))
             .or_insert_with(|| {
@@ -130,11 +134,6 @@ impl LimitTuple {
         let method_match = self.limit.method.0 == req.method();
         glob_match && method_match
     }
-
-    /// Check if the request matches and is a request-count limit.
-    pub fn is_request_count_match(&self, req: &Request<Body>) -> bool {
-        self.is_match(req) && self.limit.quota.rate_unit == RateUnit::Request
-    }
 }
 
 #[cfg(test)]
@@ -145,7 +144,7 @@ mod tests {
     async fn test_pool_same_rate_shares_limiter() {
         let pool = LimiterPool::new();
 
-        let rate: BandwidthRate = "5mb/s".parse().unwrap();
+        let rate: BandwidthQuota = "5mb/s".parse().unwrap();
         let limiter1 = pool.get_or_create(&rate, None);
         let limiter2 = pool.get_or_create(&rate, None);
 
@@ -157,10 +156,10 @@ mod tests {
     async fn test_pool_different_rate_different_limiter() {
         let pool = LimiterPool::new();
 
-        let rate: BandwidthRate = "5mb/s".parse().unwrap();
+        let rate: BandwidthQuota = "5mb/s".parse().unwrap();
         let limiter1 = pool.get_or_create(&rate, None);
 
-        let other_rate: BandwidthRate = "10mb/s".parse().unwrap();
+        let other_rate: BandwidthQuota = "10mb/s".parse().unwrap();
         let limiter2 = pool.get_or_create(&other_rate, None);
         assert!(!Arc::ptr_eq(&limiter1, &limiter2));
     }
@@ -169,7 +168,7 @@ mod tests {
     async fn test_pool_different_burst_different_limiter() {
         let pool = LimiterPool::new();
 
-        let rate: BandwidthRate = "5mb/s".parse().unwrap();
+        let rate: BandwidthQuota = "5mb/s".parse().unwrap();
         let limiter1 = pool.get_or_create(&rate, None);
         let limiter2 = pool.get_or_create(&rate, Some(50));
         assert!(!Arc::ptr_eq(&limiter1, &limiter2));

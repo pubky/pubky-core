@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::data_directory::quota_config::BandwidthRate;
+use crate::data_directory::quota_config::BandwidthQuota;
 use crate::data_directory::DefaultQuotasToml;
 
 /// Maximum length of the VARCHAR column used for rate strings in the DB.
@@ -147,16 +147,16 @@ impl QuotaOverride<u64> {
     }
 }
 
-impl QuotaOverride<BandwidthRate> {
-    /// Resolve to an effective `Option<BandwidthRate>` using a system default.
+impl QuotaOverride<BandwidthQuota> {
+    /// Resolve to an effective `Option<BandwidthQuota>` using a system default.
     ///
     /// - `Default`   → `system_default`
     /// - `Unlimited` → `None`
     /// - `Value(v)`  → `Some(v)`
     pub fn resolve_with_default(
         &self,
-        system_default: Option<&BandwidthRate>,
-    ) -> Option<BandwidthRate> {
+        system_default: Option<&BandwidthQuota>,
+    ) -> Option<BandwidthQuota> {
         match self {
             QuotaOverride::Default => system_default.cloned(),
             QuotaOverride::Unlimited => None,
@@ -200,9 +200,9 @@ fn burst_to_i32(label: &str, value: Option<u32>) -> Option<i32> {
     })
 }
 
-/// Validate that a `BandwidthRate` value can be persisted: its string form
+/// Validate that a `BandwidthQuota` value can be persisted: its string form
 /// must fit the DB column and parse back to the same rate.
-fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthRate>) -> Result<(), String> {
+fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthQuota>) -> Result<(), String> {
     if let QuotaOverride::Value(ref b) = field {
         let s = b.to_string();
         if s.len() > MAX_RATE_COLUMN_LEN {
@@ -210,7 +210,7 @@ fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthRate>) -> Res
                 "{label} string \"{s}\" exceeds DB column limit of {MAX_RATE_COLUMN_LEN} characters"
             ));
         }
-        s.parse::<BandwidthRate>()
+        s.parse::<BandwidthQuota>()
             .map_err(|e| format!("{label} roundtrip validation failed for \"{s}\": {e}"))?;
     }
     Ok(())
@@ -233,7 +233,7 @@ fn validate_burst_value(label: &str, burst: Option<u32>) -> Result<(), String> {
 fn validate_burst(
     label: &str,
     burst: Option<u32>,
-    rate: &QuotaOverride<BandwidthRate>,
+    rate: &QuotaOverride<BandwidthQuota>,
 ) -> Result<(), String> {
     if burst.is_some() && !matches!(rate, QuotaOverride::Value(_)) {
         return Err(format!(
@@ -248,8 +248,8 @@ fn validate_burst(
 /// | Field | Default means | Example Value |
 /// |---|---|---|
 /// | `storage_quota_mb` | use `storage.default_quota_mb` from config | `Value(500)` = 500 MB |
-/// | `rate_read` | use `default_quotas.rate_read` from config | `Value(BandwidthRate)` |
-/// | `rate_write` | use `default_quotas.rate_write` from config | `Value(BandwidthRate)` |
+/// | `rate_read` | use `default_quotas.rate_read` from config | `Value(BandwidthQuota)` |
+/// | `rate_write` | use `default_quotas.rate_write` from config | `Value(BandwidthQuota)` |
 /// | `rate_read_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
 /// | `rate_write_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -259,10 +259,10 @@ pub struct UserQuota {
     pub storage_quota_mb: QuotaOverride<u64>,
     /// Per-user read speed limit override (e.g. "10mb/s").
     #[serde(default, skip_serializing_if = "QuotaOverride::is_default")]
-    pub rate_read: QuotaOverride<BandwidthRate>,
+    pub rate_read: QuotaOverride<BandwidthQuota>,
     /// Per-user write speed limit override (e.g. "5mb/s").
     #[serde(default, skip_serializing_if = "QuotaOverride::is_default")]
-    pub rate_write: QuotaOverride<BandwidthRate>,
+    pub rate_write: QuotaOverride<BandwidthQuota>,
     /// Burst override for read speed limit, in the rate's natural unit
     /// (MB for "…mb/s", KB for "…kb/s"). `None` = burst equals rate (default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -290,8 +290,8 @@ impl UserQuota {
                 "quota_storage_mb",
                 storage_quota_mb,
             ),
-            rate_read: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_read", rate_read),
-            rate_write: QuotaOverride::<BandwidthRate>::from_db_varchar("rate_write", rate_write),
+            rate_read: QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_read", rate_read),
+            rate_write: QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_write", rate_write),
             rate_read_burst: rate_read_burst.and_then(|v| u32::try_from(v).ok()),
             rate_write_burst: rate_write_burst.and_then(|v| u32::try_from(v).ok()),
         }
@@ -342,9 +342,9 @@ impl UserQuota {
             }
         }
         fn resolve_bw(
-            field: &QuotaOverride<BandwidthRate>,
-            default: Option<&BandwidthRate>,
-        ) -> QuotaOverride<BandwidthRate> {
+            field: &QuotaOverride<BandwidthQuota>,
+            default: Option<&BandwidthQuota>,
+        ) -> QuotaOverride<BandwidthQuota> {
             match field {
                 QuotaOverride::Default => match default {
                     Some(v) => QuotaOverride::Value(v.clone()),
@@ -443,10 +443,10 @@ pub struct UserQuotaPatch {
     pub storage_quota_mb: Option<QuotaOverride<u64>>,
     /// Per-user read rate limit.
     #[serde(default, deserialize_with = "deserialize_patch_override")]
-    pub rate_read: Option<QuotaOverride<BandwidthRate>>,
+    pub rate_read: Option<QuotaOverride<BandwidthQuota>>,
     /// Per-user write rate limit.
     #[serde(default, deserialize_with = "deserialize_patch_override")]
-    pub rate_write: Option<QuotaOverride<BandwidthRate>>,
+    pub rate_write: Option<QuotaOverride<BandwidthQuota>>,
     /// Burst for read speed limit (in the rate's natural unit). null = reset to default.
     #[serde(default, deserialize_with = "deserialize_patch_option_u32")]
     pub rate_read_burst: Option<Option<u32>>,
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_quota_field_default() {
-        let field: QuotaOverride<BandwidthRate> = QuotaOverride::default();
+        let field: QuotaOverride<BandwidthQuota> = QuotaOverride::default();
         assert!(field.is_default());
         assert!(!field.is_unlimited());
         assert_eq!(field.as_value(), None);
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_quota_field_unlimited() {
-        let field: QuotaOverride<BandwidthRate> = QuotaOverride::Unlimited;
+        let field: QuotaOverride<BandwidthQuota> = QuotaOverride::Unlimited;
         assert!(!field.is_default());
         assert!(field.is_unlimited());
         assert_eq!(field.as_value(), None);
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_quota_field_value() {
-        let rate = BandwidthRate::from_str("100mb/m").unwrap();
+        let rate = BandwidthQuota::from_str("100mb/m").unwrap();
         let field = QuotaOverride::Value(rate.clone());
         assert!(!field.is_default());
         assert!(!field.is_unlimited());
@@ -509,25 +509,25 @@ mod tests {
     #[test]
     fn test_varchar_roundtrip() {
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::from_db_varchar("rate_read", None),
+            QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_read", None),
             QuotaOverride::Default
         );
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::from_db_varchar(
+            QuotaOverride::<BandwidthQuota>::from_db_varchar(
                 "rate_read",
                 Some("unlimited".to_string())
             ),
             QuotaOverride::Unlimited
         );
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::from_db_varchar(
+            QuotaOverride::<BandwidthQuota>::from_db_varchar(
                 "rate_read",
                 Some("100mb/m".to_string())
             ),
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
         );
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::from_db_varchar(
+            QuotaOverride::<BandwidthQuota>::from_db_varchar(
                 "rate_read",
                 Some("rubbish".to_string())
             ),
@@ -535,15 +535,15 @@ mod tests {
         );
 
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::Default.to_db_varchar(),
+            QuotaOverride::<BandwidthQuota>::Default.to_db_varchar(),
             None
         );
         assert_eq!(
-            QuotaOverride::<BandwidthRate>::Unlimited.to_db_varchar(),
+            QuotaOverride::<BandwidthQuota>::Unlimited.to_db_varchar(),
             Some("unlimited".to_string())
         );
         assert_eq!(
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()).to_db_varchar(),
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()).to_db_varchar(),
             Some("100mb/m".to_string())
         );
     }
@@ -614,7 +614,7 @@ mod tests {
         assert_eq!(q.storage_quota_mb, QuotaOverride::Value(500));
         assert_eq!(
             q.rate_read,
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
         );
         assert_eq!(q.rate_write, QuotaOverride::Default);
     }
@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(q.storage_quota_mb, QuotaOverride::Default);
         assert_eq!(
             q.rate_read,
-            QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap())
         );
         assert_eq!(q.rate_write, QuotaOverride::Default);
     }
@@ -657,7 +657,7 @@ mod tests {
         assert_eq!(q.rate_read, QuotaOverride::Default);
         assert_eq!(
             q.rate_write,
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
         );
     }
 
@@ -678,7 +678,7 @@ mod tests {
     fn test_serde_roundtrip() {
         let q = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
@@ -764,8 +764,8 @@ mod tests {
         let budgets = ["100mb/m", "1gb/d", "500kb/s", "10mb/h", "999gb/d", "1kb/s"];
         for s in budgets {
             let q = UserQuota {
-                rate_read: QuotaOverride::Value(BandwidthRate::from_str(s).unwrap()),
-                rate_write: QuotaOverride::Value(BandwidthRate::from_str(s).unwrap()),
+                rate_read: QuotaOverride::Value(BandwidthQuota::from_str(s).unwrap()),
+                rate_write: QuotaOverride::Value(BandwidthQuota::from_str(s).unwrap()),
                 ..Default::default()
             };
             q.validate().unwrap_or_else(|e| {
@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(
             patch.rate_write,
             Some(QuotaOverride::Value(
-                BandwidthRate::from_str("10mb/s").unwrap()
+                BandwidthQuota::from_str("10mb/s").unwrap()
             ))
         );
         assert!(patch.rate_read.is_none());
@@ -830,8 +830,8 @@ mod tests {
     fn test_merge_applies_only_present_fields() {
         let mut base = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthQuota::from_str("50mb/s").unwrap()),
             ..Default::default()
         };
 
@@ -844,7 +844,7 @@ mod tests {
         assert_eq!(base.storage_quota_mb, QuotaOverride::Value(200));
         assert_eq!(
             base.rate_read,
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
         ); // unchanged
         assert_eq!(base.rate_write, QuotaOverride::Unlimited); // patched
     }
@@ -853,7 +853,7 @@ mod tests {
     fn test_merge_null_resets_to_default() {
         let mut base = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
             ..Default::default()
         };
 
@@ -869,7 +869,7 @@ mod tests {
     fn test_merge_empty_patch_is_noop() {
         let original = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
             rate_write: QuotaOverride::Unlimited,
             ..Default::default()
         };
@@ -882,7 +882,7 @@ mod tests {
     #[test]
     fn test_burst_valid_with_rate() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(50),
             ..Default::default()
         };
@@ -892,7 +892,7 @@ mod tests {
     #[test]
     fn test_burst_zero_rejected() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(0),
             ..Default::default()
         };
@@ -904,7 +904,7 @@ mod tests {
     #[test]
     fn test_burst_exceeds_i32_max_rejected() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(i32::MAX as u32 + 1),
             ..Default::default()
         };
@@ -916,7 +916,7 @@ mod tests {
     #[test]
     fn test_burst_at_i32_max_accepted() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(i32::MAX as u32),
             ..Default::default()
         };
@@ -951,7 +951,7 @@ mod tests {
         for rate in [
             QuotaOverride::Default,
             QuotaOverride::Unlimited,
-            QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
         ] {
             let q = UserQuota {
                 rate_read: rate,
@@ -986,9 +986,9 @@ mod tests {
     #[test]
     fn test_burst_serde_roundtrip() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(50),
-            rate_write: QuotaOverride::Value(BandwidthRate::from_str("5mb/s").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthQuota::from_str("5mb/s").unwrap()),
             rate_write_burst: Some(25),
             ..Default::default()
         };
@@ -1002,7 +1002,7 @@ mod tests {
     #[test]
     fn test_burst_db_roundtrip() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(50),
             rate_write: QuotaOverride::Default,
             rate_write_burst: None,
@@ -1022,7 +1022,7 @@ mod tests {
     #[test]
     fn test_burst_absent_from_json_when_none() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: None,
             ..Default::default()
         };
@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     fn test_burst_present_in_json_when_set() {
         let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("10mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
             rate_read_burst: Some(50),
             ..Default::default()
         };

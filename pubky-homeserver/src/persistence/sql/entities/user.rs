@@ -191,7 +191,7 @@ impl UserRepository {
 
     /// Set per-user custom limits. Replaces any existing custom limits entirely.
     ///
-    /// Rate limit strings are validated by roundtripping through `BandwidthRate`
+    /// Rate limit strings are validated by roundtripping through `BandwidthQuota`
     /// parsing to ensure only well-formed values reach the database.
     pub async fn set_quota<'a>(
         user_id: i32,
@@ -526,7 +526,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_set_quota() {
-        use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::quota_config::BandwidthQuota;
         use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
@@ -542,8 +542,8 @@ mod tests {
         // Set custom limits
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
-            rate_read: QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap()),
-            rate_write: QuotaOverride::Value(BandwidthRate::from_str("50mb/s").unwrap()),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthQuota::from_str("50mb/s").unwrap()),
             ..Default::default()
         };
         UserRepository::set_quota(user.id, &config, &mut db.pool().into())
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_limits_mixed_null_and_values() {
-        use crate::data_directory::quota_config::BandwidthRate;
+        use crate::data_directory::quota_config::BandwidthQuota;
         use crate::shared::user_quota::QuotaOverride;
         use std::str::FromStr;
 
@@ -612,7 +612,7 @@ mod tests {
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(500));
         assert_eq!(
             limits.rate_read,
-            QuotaOverride::Value(BandwidthRate::from_str("100mb/m").unwrap())
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
         );
         assert_eq!(limits.rate_write, QuotaOverride::Default);
     }

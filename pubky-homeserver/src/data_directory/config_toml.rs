@@ -6,7 +6,7 @@
 
 use super::{
     domain_port::DomainPort,
-    quota_config::{BandwidthRate, PathLimit},
+    quota_config::{BandwidthQuota, PathLimit},
     storage_config::{StorageConfigToml, StorageToml},
     Domain, SignupMode,
 };
@@ -79,15 +79,15 @@ pub struct DriveToml {
 /// `unauthenticated_ip_rate_read` is a fixed server-level limit for
 /// anonymous requests (not overridable per-user).
 ///
-/// Consumed by `RateLimiterLayer`.
+/// Consumed by `BandwidthQuotaLimitLayer`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct DefaultQuotasToml {
     /// Default bandwidth limit for user reads / downloads (e.g. "10mb/s").
     /// Per-user DB overrides take precedence. `None` means no read throttling.
-    pub rate_read: Option<BandwidthRate>,
+    pub rate_read: Option<BandwidthQuota>,
     /// Default bandwidth limit for user writes / uploads (e.g. "5mb/s").
     /// Per-user DB overrides take precedence. `None` means no write throttling.
-    pub rate_write: Option<BandwidthRate>,
+    pub rate_write: Option<BandwidthQuota>,
     /// Default burst for read rate, in the rate's natural unit (e.g. MB for "…mb/s").
     /// Per-user DB overrides take precedence. `None` means burst equals rate.
     pub rate_read_burst: Option<u32>,
@@ -96,7 +96,7 @@ pub struct DefaultQuotasToml {
     pub rate_write_burst: Option<u32>,
     /// Server-level bandwidth limit for unauthenticated IP reads (e.g. "1mb/s").
     /// `None` means no read throttling for unauthenticated requests.
-    pub unauthenticated_ip_rate_read: Option<BandwidthRate>,
+    pub unauthenticated_ip_rate_read: Option<BandwidthQuota>,
 }
 
 /// Admin server configuration

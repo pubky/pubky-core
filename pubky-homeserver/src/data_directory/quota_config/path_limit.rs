@@ -1,4 +1,4 @@
-use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, QuotaValue, RateUnit};
+use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, RequestCountQuota};
 use axum::http::Method;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -20,8 +20,8 @@ pub struct PathLimit {
     pub path: GlobPattern,
     /// The method to limit.
     pub method: HttpMethod,
-    /// The limit to apply.
-    pub quota: QuotaValue,
+    /// The request-count quota to apply (e.g. "10r/m").
+    pub quota: RequestCountQuota,
     /// The key to limit.
     pub key: LimitKeyType,
     /// The burst to apply.
@@ -36,7 +36,7 @@ impl PathLimit {
     pub fn new(
         path: GlobPattern,
         method: Method,
-        quota: QuotaValue,
+        quota: RequestCountQuota,
         key: LimitKeyType,
         burst: Option<NonZeroU32>,
     ) -> Self {
@@ -57,18 +57,6 @@ impl PathLimit {
 
     /// Validate the path limit.
     pub fn validate(&self) -> anyhow::Result<()> {
-        // Path limits only support request-count quotas.
-        // Bandwidth throttling is configured via [default_quotas]:
-        //   rate_read, rate_write, unauthenticated_ip_rate_read
-        if self.quota.rate_unit != RateUnit::Request {
-            return Err(anyhow::anyhow!(
-                "Path limit '{}' uses bandwidth quota '{}', but path limits only support \
-                 request-count quotas (e.g. \"10r/m\"). Use [default_quotas] for bandwidth \
-                 throttling (rate_read, rate_write, unauthenticated_ip_rate_read).",
-                self.path.0,
-                self.quota
-            ));
-        }
         if let Some(k) = self.whitelist.iter().find(|k| k.get_type() != self.key) {
             let should_type = self.key.to_string();
             let is_type = k.get_type().to_string();
@@ -119,7 +107,7 @@ mod tests {
         let mut limit = PathLimit::new(
             GlobPattern::new("*"),
             Method::GET,
-            QuotaValue::from_str("10r/s").unwrap(),
+            RequestCountQuota::from_str("10r/s").unwrap(),
             LimitKeyType::Ip,
             None,
         );

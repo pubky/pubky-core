@@ -27,7 +27,9 @@ use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
 use super::layers::{
-    pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
+    pubky_host::PubkyHostLayer,
+    rate_limiter::{BandwidthQuotaLimitLayer, RequestRateLimitLayer},
+    trace::with_trace_layer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
@@ -224,10 +226,12 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CorsLayer::very_permissive())
-        .layer(RateLimiterLayer::new(
-            context.config_toml.drive.rate_limits.clone(),
+        .layer(BandwidthQuotaLimitLayer::new(
             context.user_service.clone(),
             context.config_toml.default_quotas.clone(),
+        ))
+        .layer(RequestRateLimitLayer::new(
+            context.config_toml.drive.rate_limits.clone(),
         ))
         .layer(CookieManagerLayer::new())
         .layer(PubkyHostLayer)

@@ -77,7 +77,7 @@ mod tests {
 
     use super::*;
     use crate::admin_server::app::create_app;
-    use crate::data_directory::quota_config::BandwidthRate;
+    use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
     use crate::AppContext;
 
@@ -106,8 +106,8 @@ mod tests {
         );
         state.default_storage_mb = Some(100);
         state.default_quotas = DefaultQuotasToml {
-            rate_read: Some(BandwidthRate::from_str("10mb/s").unwrap()),
-            rate_write: Some(BandwidthRate::from_str("5mb/s").unwrap()),
+            rate_read: Some(BandwidthQuota::from_str("10mb/s").unwrap()),
+            rate_write: Some(BandwidthQuota::from_str("5mb/s").unwrap()),
             ..Default::default()
         };
         TestServer::new(create_app(state, "test")).unwrap()
