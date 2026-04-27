@@ -205,7 +205,7 @@ impl UserRepository {
             .values(vec![
                 (
                     UserIden::QuotaStorageMb,
-                    SimpleExpr::Value(config.storage_quota_mb_i64().into()),
+                    SimpleExpr::Value(config.storage_quota_mb_i32().into()),
                 ),
                 (
                     UserIden::QuotaRateRead,
@@ -298,7 +298,7 @@ pub struct UserEntity {
     pub disabled: bool,
     pub used_bytes: u64,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
-    pub quota_storage_mb: Option<i64>,
+    pub quota_storage_mb: Option<i32>,
     /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
@@ -342,7 +342,7 @@ impl FromRow<'_, PgRow> for UserEntity {
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(UserIden::CreatedAt.to_string().as_str())?;
-        let quota_storage_mb: Option<i64> =
+        let quota_storage_mb: Option<i32> =
             row.try_get(UserIden::QuotaStorageMb.to_string().as_str())?;
         let quota_rate_read: Option<String> =
             row.try_get(UserIden::QuotaRateRead.to_string().as_str())?;

@@ -40,7 +40,7 @@ impl SignupCodeRepository {
             ])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
-                SimpleExpr::Value(limits.storage_quota_mb_i64().into()),
+                SimpleExpr::Value(limits.storage_quota_mb_i32().into()),
                 SimpleExpr::Value(limits.rate_read_str().into()),
                 SimpleExpr::Value(limits.rate_write_str().into()),
                 SimpleExpr::Value(limits.rate_read_burst_i32().into()),
@@ -224,7 +224,7 @@ pub struct SignupCodeEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub used_by: Option<PublicKey>,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
-    pub quota_storage_mb: Option<i64>,
+    pub quota_storage_mb: Option<i32>,
     /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
     pub quota_rate_read: Option<String>,
     /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
@@ -267,7 +267,7 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             })
             .transpose()?;
 
-        let quota_storage_mb: Option<i64> =
+        let quota_storage_mb: Option<i32> =
             row.try_get(SignupCodeIden::QuotaStorageMb.to_string().as_str())?;
         let quota_rate_read: Option<String> =
             row.try_get(SignupCodeIden::QuotaRateRead.to_string().as_str())?;

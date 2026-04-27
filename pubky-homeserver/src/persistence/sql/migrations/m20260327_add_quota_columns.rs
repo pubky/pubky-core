@@ -15,7 +15,7 @@ async fn add_quota_columns(
     table: &str,
 ) -> anyhow::Result<()> {
     for (col, typ) in [
-        ("quota_storage_mb", "BIGINT"),
+        ("quota_storage_mb", "INTEGER"),
         ("quota_rate_read", "VARCHAR(32)"),
         ("quota_rate_write", "VARCHAR(32)"),
         ("quota_rate_read_burst", "INTEGER"),
@@ -98,7 +98,7 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
@@ -128,7 +128,7 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())
@@ -188,7 +188,7 @@ mod tests {
             .unwrap();
 
         // Existing user should have all NULLs (= Default)
-        let row: (Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(row, (None, None, None, None, None));
 
         // Existing signup code should have all NULLs (= Default)
-        let row: (Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())

@@ -20,7 +20,7 @@ use crate::data_directory::DefaultQuotasToml;
 pub const MAX_RATE_COLUMN_LEN: usize = 32;
 
 /// Sentinel value stored in BIGINT columns to represent "Unlimited".
-const DB_UNLIMITED_SENTINEL: i64 = -1;
+const DB_UNLIMITED_SENTINEL: i32 = -1;
 
 /// A three-state override for per-user quota fields.
 ///
@@ -111,17 +111,17 @@ impl<'de, T: serde::de::DeserializeOwned> Deserialize<'de> for QuotaOverride<T> 
 }
 
 impl QuotaOverride<u64> {
-    /// Encode to DB BIGINT column: Default → NULL, Unlimited → -1, Value → positive.
-    pub fn to_db_bigint(&self) -> Option<i64> {
+    /// Encode to DB INTEGER column: Default → NULL, Unlimited → -1, Value → positive.
+    pub fn to_db_int(&self) -> Option<i32> {
         match self {
             QuotaOverride::Default => None,
             QuotaOverride::Unlimited => Some(DB_UNLIMITED_SENTINEL),
-            QuotaOverride::Value(v) => Some(i64::try_from(*v).unwrap_or(i64::MAX)),
+            QuotaOverride::Value(v) => Some(i32::try_from(*v).unwrap_or(i32::MAX)),
         }
     }
 
-    /// Decode from DB BIGINT column: NULL → Default, -1 → Unlimited, positive → Value.
-    pub fn from_db_bigint(column: &str, val: Option<i64>) -> Self {
+    /// Decode from DB INTEGER column: NULL → Default, -1 → Unlimited, positive → Value.
+    pub fn from_db_int(column: &str, val: Option<i32>) -> Self {
         match val {
             None => QuotaOverride::Default,
             Some(DB_UNLIMITED_SENTINEL) => QuotaOverride::Unlimited,
@@ -279,14 +279,14 @@ impl UserQuota {
     /// - Integer columns: NULL → Default, -1 → Unlimited, positive → Value.
     /// - VARCHAR columns: NULL → Default, "unlimited" → Unlimited, value → Value.
     pub fn from_nullable_columns(
-        storage_quota_mb: Option<i64>,
+        storage_quota_mb: Option<i32>,
         rate_read: Option<String>,
         rate_write: Option<String>,
         rate_read_burst: Option<i32>,
         rate_write_burst: Option<i32>,
     ) -> Self {
         Self {
-            storage_quota_mb: QuotaOverride::<u64>::from_db_bigint(
+            storage_quota_mb: QuotaOverride::<u64>::from_db_int(
                 "quota_storage_mb",
                 storage_quota_mb,
             ),
@@ -297,9 +297,9 @@ impl UserQuota {
         }
     }
 
-    /// Storage quota as the DB-column type (`BIGINT`).
-    pub fn storage_quota_mb_i64(&self) -> Option<i64> {
-        self.storage_quota_mb.to_db_bigint()
+    /// Storage quota as the DB-column type (`INTEGER`).
+    pub fn storage_quota_mb_i32(&self) -> Option<i32> {
+        self.storage_quota_mb.to_db_int()
     }
 
     /// Rate-read as the DB-column type (`VARCHAR`).
@@ -551,29 +551,29 @@ mod tests {
     #[test]
     fn test_bigint_roundtrip() {
         assert_eq!(
-            QuotaOverride::<u64>::from_db_bigint("quota_storage_mb", None),
+            QuotaOverride::<u64>::from_db_int("quota_storage_mb", None),
             QuotaOverride::Default
         );
         assert_eq!(
-            QuotaOverride::<u64>::from_db_bigint("quota_storage_mb", Some(-1)),
+            QuotaOverride::<u64>::from_db_int("quota_storage_mb", Some(-1)),
             QuotaOverride::Unlimited
         );
         assert_eq!(
-            QuotaOverride::<u64>::from_db_bigint("quota_storage_mb", Some(500)),
+            QuotaOverride::<u64>::from_db_int("quota_storage_mb", Some(500)),
             QuotaOverride::Value(500)
         );
         assert_eq!(
-            QuotaOverride::<u64>::from_db_bigint("quota_storage_mb", Some(0)),
+            QuotaOverride::<u64>::from_db_int("quota_storage_mb", Some(0)),
             QuotaOverride::Value(0)
         );
         assert_eq!(
-            QuotaOverride::<u64>::from_db_bigint("quota_storage_mb", Some(-5)),
+            QuotaOverride::<u64>::from_db_int("quota_storage_mb", Some(-5)),
             QuotaOverride::Default
         );
 
-        assert_eq!(QuotaOverride::<u64>::Default.to_db_bigint(), None);
-        assert_eq!(QuotaOverride::<u64>::Unlimited.to_db_bigint(), Some(-1));
-        assert_eq!(QuotaOverride::Value(500u64).to_db_bigint(), Some(500));
+        assert_eq!(QuotaOverride::<u64>::Default.to_db_int(), None);
+        assert_eq!(QuotaOverride::<u64>::Unlimited.to_db_int(), Some(-1));
+        assert_eq!(QuotaOverride::Value(500u64).to_db_int(), Some(500));
     }
 
     #[test]
@@ -1010,7 +1010,7 @@ mod tests {
         };
         // Simulate DB write/read cycle
         let reconstructed = UserQuota::from_nullable_columns(
-            q.storage_quota_mb_i64(),
+            q.storage_quota_mb_i32(),
             q.rate_read_str(),
             q.rate_write_str(),
             q.rate_read_burst_i32(),

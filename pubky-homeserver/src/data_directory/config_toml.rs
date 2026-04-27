@@ -351,11 +351,7 @@ mod tests {
         assert_eq!(c.pkdns.dht_request_timeout_ms, None);
         assert_eq!(c.drive.rate_limits.len(), 1);
         assert_eq!(c.drive.rate_limits[0].path.0, "/signup_tokens/*");
-        assert_eq!(c.default_quotas.unauthenticated_ip_rate_read, None);
-        assert_eq!(c.default_quotas.rate_read, Some("10mb/s".parse().unwrap()));
-        assert_eq!(c.default_quotas.rate_write, Some("5mb/s".parse().unwrap()));
-        assert_eq!(c.default_quotas.rate_read_burst, None);
-        assert_eq!(c.default_quotas.rate_write_burst, None);
+        assert_eq!(c.default_quotas, DefaultQuotasToml::default());
         assert_eq!(c.storage.default_quota_mb, None);
         assert_eq!(c.storage.backend, StorageConfigToml::FileSystem);
         assert_eq!(
