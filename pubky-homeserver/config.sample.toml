@@ -66,12 +66,12 @@ whitelist = [
 #   PATCH /users/{pubkey}/quota
 
 # Default bandwidth limit for user reads (downloads).
-rate_read = "10mb/s"
+# rate_read = "10mb/s"
 # Default bandwidth limit for user writes (uploads).
-rate_write = "5mb/s"
+# rate_write = "5mb/s"
 # Bandwidth limit for unauthenticated IP reads (downloads).
-# Not per-user — applies to all anonymous requests by IP.
-unauthenticated_ip_rate_read = "1mb/s"
+# Not per-user. Applies to all anonymous requests by IP.
+# unauthenticated_ip_rate_read = "1mb/s"
 
 [storage]
 # Defines where the files are stored.
