@@ -1,5 +1,6 @@
+use axum::http::HeaderMap;
 use axum::{
-    body::{Body, HttpBody},
+    body::Body,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
@@ -42,6 +43,7 @@ pub async fn put(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
+    headers: HeaderMap,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
@@ -51,10 +53,14 @@ pub async fn put(
         .await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    // Early fail: check Content-Length against the user's storage quota so we
-    // can reject before streaming the entire body.
+    // Early fail: check Content-Length header against the user's storage quota
+    // so we can reject before streaming the entire body.
+    // We read from the header rather than body.size_hint() because middleware
+    // layers (e.g. bandwidth throttling) may replace the body with a stream
+    // that loses the size hint.
+    let content_length = content_length_from_headers(&headers);
     fail_if_size_hint_exceeds_quota(
-        body.size_hint().exact(),
+        content_length,
         &user,
         state.default_storage_mb,
         &entry_path,
@@ -72,6 +78,16 @@ pub async fn put(
         .write_stream(&entry_path, converted_stream)
         .await?;
     Ok((StatusCode::CREATED, ()))
+}
+
+/// Parse the `Content-Length` header into a `u64`, returning `None` if absent or unparseable.
+fn content_length_from_headers(headers: &HeaderMap) -> Option<u64> {
+    headers
+        .get(axum::http::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
 }
 
 /// Check whether the Content-Length size hint would exceed the user's storage quota.
