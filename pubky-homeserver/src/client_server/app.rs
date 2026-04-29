@@ -27,7 +27,9 @@ use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
 use super::layers::{
-    pubky_host::PubkyHostLayer, rate_limiter::RateLimiterLayer, trace::with_trace_layer,
+    pubky_host::PubkyHostLayer,
+    rate_limiter::{BandwidthQuotaLimitLayer, RequestRateLimitLayer},
+    trace::with_trace_layer,
 };
 use super::routes::{auth, events, root, signup_tokens, tenants};
 
@@ -112,21 +114,15 @@ impl ClientServer {
     }
 
     pub(crate) fn create_router(context: &AppContext) -> Router {
-        let quota_mb = context.config_toml.general.user_storage_quota_mb;
-        let quota_bytes = if quota_mb == 0 {
-            None
-        } else {
-            Some(quota_mb * 1024 * 1024)
-        };
-
         let state = AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),
-            user_quota_bytes: quota_bytes,
             metrics: context.metrics.clone(),
             events_service: context.events_service.clone(),
+            user_service: context.user_service.clone(),
+            default_storage_mb: context.config_toml.storage.default_quota_mb,
         };
         super::create_app(state.clone(), context)
     }
@@ -229,11 +225,15 @@ fn base() -> Router<AppState> {
 pub fn create_app(state: AppState, context: &AppContext) -> Router {
     let app = base()
         .merge(tenants::router(state.clone()))
-        .layer(CookieManagerLayer::new())
         .layer(CorsLayer::very_permissive())
-        .layer(RateLimiterLayer::new(
+        .layer(BandwidthQuotaLimitLayer::new(
+            context.user_service.clone(),
+            context.config_toml.default_quotas.clone(),
+        ))
+        .layer(RequestRateLimitLayer::new(
             context.config_toml.drive.rate_limits.clone(),
         ))
+        .layer(CookieManagerLayer::new())
         .layer(PubkyHostLayer)
         .with_state(state);
 

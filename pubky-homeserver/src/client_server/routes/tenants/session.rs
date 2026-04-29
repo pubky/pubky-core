@@ -8,9 +8,8 @@ use tower_cookies::{Cookie, Cookies};
 
 use crate::{
     client_server::{
-        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost,
-        layers::authz::session_secret_from_cookies, routes::auth::configure_session_cookie,
-        AppState,
+        extractors::PubkyHost, layers::authz::session_secret_from_cookies,
+        routes::auth::configure_session_cookie, AppState,
     },
     persistence::sql::session::SessionRepository,
     shared::{HttpError, HttpResult},
@@ -21,7 +20,10 @@ pub async fn session(
     cookies: Cookies,
     pubky: PubkyHost,
 ) -> HttpResult<impl IntoResponse> {
-    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+    state
+        .user_service
+        .get_or_http_error(pubky.public_key(), false)
+        .await?;
 
     if let Some(secret) = session_secret_from_cookies(&cookies, pubky.public_key()) {
         if let Ok(session) =

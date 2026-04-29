@@ -149,7 +149,7 @@ async fn put_quota_applied() {
     let pubky = testnet.sdk().unwrap();
 
     let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.general.user_storage_quota_mb = 1; // 1 MB
+    mock_dir.config_toml.storage.default_quota_mb = Some(1); // 1 MB
     let server = testnet
         .create_homeserver_app_with_mock(mock_dir)
         .await
@@ -804,6 +804,56 @@ async fn stream() {
     let err = session.storage().get(path).await.unwrap_err();
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::NOT_FOUND)
+    );
+}
+
+/// Regression test: quota early-rejection still works when bandwidth throttling
+/// is active. The bandwidth middleware wraps the request body in a throttled
+/// stream that loses `body.size_hint()`. The fix reads Content-Length from
+/// headers instead.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn put_quota_applied_with_bandwidth_throttling() {
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+
+    let mut mock_dir = MockDataDir::test();
+    mock_dir.config_toml.storage.default_quota_mb = Some(1); // 1 MB
+                                                             // Enable bandwidth throttling so the BandwidthQuotaLimitLayer wraps the body.
+    mock_dir.config_toml.default_quotas.rate_write = Some("10mb/s".parse().unwrap());
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+
+    // First 600 KB → OK (201)
+    let data_600k: Vec<u8> = vec![0; 600_000];
+    let resp = session
+        .storage()
+        .put("/pub/data", data_600k.clone())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Write another 600 KB at a different path (total 1.2 MB) → should be rejected
+    // early via Content-Length header check, even though the bandwidth layer
+    // has already replaced the body stream (losing size_hint).
+    let err = session
+        .storage()
+        .put("/pub/data2", data_600k)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Request(RequestError::Server { status, .. })
+                if status == StatusCode::INSUFFICIENT_STORAGE
+        ),
+        "Expected 507 INSUFFICIENT_STORAGE but got: {:?}",
+        err
     );
 }
 

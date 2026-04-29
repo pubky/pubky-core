@@ -6,7 +6,6 @@
 
 mod app;
 pub(crate) mod app_state;
-mod err_if_user_is_invalid;
 mod extractors;
 mod layers;
 pub(crate) mod routes;

@@ -128,7 +128,7 @@ impl Testnet {
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
-        mock_dir.config_toml.storage = StorageConfigToml::InMemory;
+        mock_dir.config_toml.storage.backend = StorageConfigToml::InMemory;
         let homeserver = HomeserverApp::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self

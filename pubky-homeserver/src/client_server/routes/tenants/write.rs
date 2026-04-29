@@ -1,5 +1,6 @@
+use axum::http::HeaderMap;
 use axum::{
-    body::{Body, HttpBody},
+    body::Body,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
@@ -7,13 +8,15 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    client_server::{
-        err_if_user_is_invalid::get_user_or_http_error, extractors::PubkyHost, AppState,
-    },
+    client_server::{extractors::PubkyHost, AppState},
     persistence::{
-        files::WriteStreamError,
-        sql::{entry::EntryRepository, user::UserRepository, UnifiedExecutor},
+        files::{
+            user_quota_layer::{resolve_storage_max_bytes, would_exceed_limit},
+            WriteStreamError,
+        },
+        sql::{entry::EntryRepository, user::UserEntity, UnifiedExecutor},
     },
+    services::user_service::FILE_METADATA_SIZE,
     shared::{
         webdav::{EntryPath, WebDavPathPubAxum},
         HttpError, HttpResult,
@@ -26,7 +29,10 @@ pub async fn delete(
     Path(path): Path<WebDavPathPubAxum>,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(pubky.public_key(), &mut state.sql_db.pool().into(), false).await?;
+    state
+        .user_service
+        .get_or_http_error(public_key, false)
+        .await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
     state.file_service.delete(&entry_path).await?;
@@ -37,17 +43,26 @@ pub async fn put(
     State(state): State<AppState>,
     pubky: PubkyHost,
     Path(path): Path<WebDavPathPubAxum>,
+    headers: HeaderMap,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
     let public_key = pubky.public_key();
-    get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), true).await?;
+    let user = state
+        .user_service
+        .get_or_http_error(public_key, true)
+        .await?;
     let entry_path = EntryPath::new(public_key.clone(), path.inner().to_owned());
 
-    // Check if the size hint exceeds the quota so we can fail early
-    let content_size_hint = body.size_hint().exact();
-    fail_if_size_hint_bigger_than_user_quota(
-        content_size_hint,
-        state.user_quota_bytes,
+    // Early fail: check Content-Length header against the user's storage quota
+    // so we can reject before streaming the entire body.
+    // We read from the header rather than body.size_hint() because middleware
+    // layers (e.g. bandwidth throttling) may replace the body with a stream
+    // that loses the size hint.
+    let content_length = content_length_from_headers(&headers);
+    fail_if_size_hint_exceeds_quota(
+        content_length,
+        &user,
+        state.default_storage_mb,
         &entry_path,
         &mut state.sql_db.pool().into(),
     )
@@ -65,43 +80,46 @@ pub async fn put(
     Ok((StatusCode::CREATED, ()))
 }
 
-/// Checks if the size hint exceeds the quota so we can fail early.
-/// Will return an error if the size hint exceeds the quota.
-/// Will return Ok if the size hint is smaller than the quota.
-/// Will return Ok if there is no quota.
-/// Will return Ok if there is no size hint.
-pub async fn fail_if_size_hint_bigger_than_user_quota<'a>(
+/// Parse the `Content-Length` header into a `u64`, returning `None` if absent or unparseable.
+fn content_length_from_headers(headers: &HeaderMap) -> Option<u64> {
+    headers
+        .get(axum::http::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
+}
+
+/// Check whether the Content-Length size hint would exceed the user's storage quota.
+/// Returns Ok if there is no size hint, no quota, or the hint fits within the quota.
+async fn fail_if_size_hint_exceeds_quota<'a>(
     content_size_hint: Option<u64>,
-    user_quota_bytes: Option<u64>,
+    user: &UserEntity,
+    default_storage_mb: Option<u64>,
     entry_path: &EntryPath,
     executor: &mut UnifiedExecutor<'a>,
 ) -> HttpResult<()> {
     let content_size_hint = match content_size_hint {
-        Some(size_hint) => size_hint,
-        None => return Ok(()), // No size hint, so we can't check
-    };
-    let max_allowed_bytes = match user_quota_bytes {
-        Some(user_quota_bytes) => user_quota_bytes,
-        None => return Ok(()), // No quota, so all good
+        Some(size) => size,
+        None => return Ok(()),
     };
 
-    let existing_entry_bytes = EntryRepository::get_by_path(entry_path, executor)
+    let existing_entry = EntryRepository::get_by_path(entry_path, executor)
         .await
-        .map(|entry| entry.content_length)
-        .unwrap_or(0);
-    let user_already_used_bytes = UserRepository::get(entry_path.pubkey(), executor)
-        .await
-        .map(|user| user.used_bytes)?;
+        .ok();
+    let existing_entry_bytes = existing_entry.as_ref().map_or(0, |e| e.content_length);
+    let is_new_file = existing_entry.is_none();
 
-    let is_quota_exceeded = user_already_used_bytes
-        + content_size_hint.saturating_sub(existing_entry_bytes)
-        > max_allowed_bytes;
+    let mut bytes_delta = content_size_hint as i64 - existing_entry_bytes as i64;
+    if is_new_file {
+        bytes_delta += FILE_METADATA_SIZE as i64;
+    }
 
-    if is_quota_exceeded {
-        let max_allowed_mb = max_allowed_bytes as f64 / 1024.0 / 1024.0;
+    let max_bytes = resolve_storage_max_bytes(user, default_storage_mb);
+    if would_exceed_limit(user.used_bytes, bytes_delta, max_bytes) {
         return Err(HttpError::new_with_message(
             StatusCode::INSUFFICIENT_STORAGE,
-            format!("Disk space quota of {max_allowed_mb:.1} MB exceeded. Write operation failed."),
+            "Disk space quota exceeded. Write operation failed.",
         ));
     }
 
@@ -112,49 +130,104 @@ pub async fn fail_if_size_hint_bigger_than_user_quota<'a>(
 mod tests {
     use pubky_common::crypto::Keypair;
 
-    use crate::{persistence::sql::SqlDb, shared::webdav::WebDavPath};
+    use crate::persistence::sql::user::UserRepository;
+    use crate::persistence::sql::SqlDb;
+    use crate::shared::webdav::WebDavPath;
 
     use super::*;
 
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_if_size_hint_all_good() {
-        let db = SqlDb::test().await;
-        let pubkey = Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
-        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
-        let body = Body::from("test");
-
-        fail_if_size_hint_bigger_than_user_quota(
-            body.size_hint().exact(),
-            Some(1024),
-            &entry,
+    /// Helper to build the function args and call `fail_if_size_hint_exceeds_quota`.
+    async fn check_hint(
+        db: &SqlDb,
+        user: &UserEntity,
+        default_storage_mb: Option<u64>,
+        path: &str,
+        size_hint: Option<u64>,
+    ) -> HttpResult<()> {
+        let entry_path = EntryPath::new(user.public_key.clone(), WebDavPath::new(path).unwrap());
+        fail_if_size_hint_exceeds_quota(
+            size_hint,
+            user,
+            default_storage_mb,
+            &entry_path,
             &mut db.pool().into(),
         )
         .await
-        .expect("should not fail");
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_if_size_hint_bigger_than_quota() {
+    async fn test_no_size_hint_always_ok() {
         let db = SqlDb::test().await;
-        let pubkey = Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // No size hint → always OK regardless of quota
+        check_hint(&db, &user, None, "/test.txt", None)
+            .await
+            .expect("no size hint should always pass");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_small_hint_within_quota() {
+        let db = SqlDb::test().await;
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // 100 bytes + FILE_METADATA_SIZE is well within 1 MB
+        check_hint(&db, &user, None, "/test.txt", Some(100))
+            .await
+            .expect("small file should be within 1 MB quota");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_hint_exceeds_quota() {
+        let db = SqlDb::test().await;
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        // 1 MB content + FILE_METADATA_SIZE > 1 MB quota
+        check_hint(&db, &user, None, "/test.txt", Some(1024 * 1024))
+            .await
+            .expect_err("content + metadata should exceed 1 MB quota");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_new_file_accounts_for_metadata_overhead() {
+        let db = SqlDb::test().await;
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
+
+        let one_mb = 1024u64 * 1024;
+        let max_content = one_mb - FILE_METADATA_SIZE;
+
+        // Exactly at limit: content + metadata == quota → OK
+        check_hint(&db, &user, None, "/test.txt", Some(max_content))
+            .await
+            .expect("content + metadata exactly at quota should pass");
+
+        // One byte over: content + metadata > quota → fail
+        check_hint(&db, &user, None, "/test.txt", Some(max_content + 1))
+            .await
+            .expect_err("content + metadata one byte over quota should fail");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_unlimited_quota_allows_anything() {
+        let db = SqlDb::test().await;
+        // No system default → unlimited for Default users
+        let pk = Keypair::random().public_key();
+        let user = UserRepository::create(&pk, &mut db.pool().into())
             .await
             .unwrap();
-        let entry = EntryPath::new(pubkey, WebDavPath::new("/test.txt").unwrap());
-        let body = Body::from("test");
 
-        fail_if_size_hint_bigger_than_user_quota(
-            body.size_hint().exact(),
-            Some(1),
-            &entry,
-            &mut db.pool().into(),
-        )
-        .await
-        .expect_err("should fail");
+        // Even a huge hint should pass with unlimited quota
+        check_hint(&db, &user, None, "/test.txt", Some(10 * 1024 * 1024 * 1024))
+            .await
+            .expect("unlimited quota should accept any size");
     }
 }

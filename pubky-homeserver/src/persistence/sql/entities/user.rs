@@ -4,8 +4,24 @@ use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::persistence::sql::UnifiedExecutor;
+use crate::shared::user_quota::UserQuota;
 
 pub const USER_TABLE: &str = "users";
+
+/// All columns needed to construct a `UserEntity` from a row.
+/// Single source of truth — used by `get`, `get_for_update`, and `get_all`.
+const ALL_USER_COLUMNS: [UserIden; 10] = [
+    UserIden::Id,
+    UserIden::PublicKey,
+    UserIden::CreatedAt,
+    UserIden::Disabled,
+    UserIden::UsedBytes,
+    UserIden::QuotaStorageMb,
+    UserIden::QuotaRateRead,
+    UserIden::QuotaRateWrite,
+    UserIden::QuotaRateReadBurst,
+    UserIden::QuotaRateWriteBurst,
+];
 
 /// Repository that handles all the queries regarding the UserEntity.
 pub struct UserRepository;
@@ -39,14 +55,27 @@ impl UserRepository {
     ) -> Result<UserEntity, sqlx::Error> {
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([
-                UserIden::Id,
-                UserIden::PublicKey,
-                UserIden::CreatedAt,
-                UserIden::Disabled,
-                UserIden::UsedBytes,
-            ])
+            .columns(ALL_USER_COLUMNS)
             .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
+            .to_owned();
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
+        Ok(user)
+    }
+
+    /// Get a user by their public key with a `FOR UPDATE` row lock.
+    ///
+    /// Must be called within a transaction to hold the lock.
+    pub async fn get_for_update<'a>(
+        public_key: &PublicKey,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<UserEntity, sqlx::Error> {
+        let statement = Query::select()
+            .from(USER_TABLE)
+            .columns(ALL_USER_COLUMNS)
+            .and_where(Expr::col(UserIden::PublicKey).eq(public_key.z32()))
+            .lock(sea_query::LockType::Update)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -79,13 +108,7 @@ impl UserRepository {
     ) -> Result<Vec<UserEntity>, sqlx::Error> {
         let statement = Query::select()
             .from(USER_TABLE)
-            .columns([
-                UserIden::Id,
-                UserIden::PublicKey,
-                UserIden::CreatedAt,
-                UserIden::Disabled,
-                UserIden::UsedBytes,
-            ])
+            .columns(ALL_USER_COLUMNS)
             .to_owned();
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
@@ -166,6 +189,51 @@ impl UserRepository {
         Ok(updated_user)
     }
 
+    /// Set per-user custom limits. Replaces any existing custom limits entirely.
+    ///
+    /// Rate limit strings are validated by roundtripping through `BandwidthQuota`
+    /// parsing to ensure only well-formed values reach the database.
+    pub async fn set_quota<'a>(
+        user_id: i32,
+        config: &UserQuota,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<UserEntity, sqlx::Error> {
+        config.validate().map_err(sqlx::Error::InvalidArgument)?;
+
+        let statement = Query::update()
+            .table(USER_TABLE)
+            .values(vec![
+                (
+                    UserIden::QuotaStorageMb,
+                    SimpleExpr::Value(config.storage_quota_mb_i32().into()),
+                ),
+                (
+                    UserIden::QuotaRateRead,
+                    SimpleExpr::Value(config.rate_read_str().into()),
+                ),
+                (
+                    UserIden::QuotaRateWrite,
+                    SimpleExpr::Value(config.rate_write_str().into()),
+                ),
+                (
+                    UserIden::QuotaRateReadBurst,
+                    SimpleExpr::Value(config.rate_read_burst_i32().into()),
+                ),
+                (
+                    UserIden::QuotaRateWriteBurst,
+                    SimpleExpr::Value(config.rate_write_burst_i32().into()),
+                ),
+            ])
+            .and_where(Expr::col(UserIden::Id).eq(user_id))
+            .returning_all()
+            .to_owned();
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let user: UserEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
+        Ok(user)
+    }
+
     /// Delete a user by their public key.
     /// The executor can either be db.pool() or a transaction.
     #[cfg(test)]
@@ -185,6 +253,27 @@ impl UserRepository {
     }
 }
 
+#[cfg(test)]
+impl UserRepository {
+    /// Test helper: create a user with a storage quota in MB.
+    pub async fn create_with_quota_mb(
+        db: &crate::persistence::sql::SqlDb,
+        pubkey: &pubky_common::crypto::PublicKey,
+        quota_mb: u64,
+    ) -> UserEntity {
+        use crate::shared::user_quota::QuotaOverride;
+        let user = Self::create(pubkey, &mut db.pool().into()).await.unwrap();
+        let config = UserQuota {
+            storage_quota_mb: QuotaOverride::Value(quota_mb),
+            ..Default::default()
+        };
+        Self::set_quota(user.id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
+        Self::get(pubkey, &mut db.pool().into()).await.unwrap()
+    }
+}
+
 /// Iden for the user table.
 /// Basically a list of columns in the user table
 #[derive(Iden)]
@@ -194,6 +283,11 @@ pub enum UserIden {
     CreatedAt,
     Disabled,
     UsedBytes,
+    QuotaStorageMb,
+    QuotaRateRead,
+    QuotaRateWrite,
+    QuotaRateReadBurst,
+    QuotaRateWriteBurst,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -203,6 +297,31 @@ pub struct UserEntity {
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub disabled: bool,
     pub used_bytes: u64,
+    /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
+    pub quota_storage_mb: Option<i32>,
+    /// Per-user read rate limit. `None` = Default (resolved from system config at enforcement time).
+    pub quota_rate_read: Option<String>,
+    /// Per-user write rate limit. `None` = Default (resolved from system config at enforcement time).
+    pub quota_rate_write: Option<String>,
+    /// Per-user read rate burst override. `None` = default (burst = rate).
+    pub quota_rate_read_burst: Option<i32>,
+    /// Per-user write rate burst override. `None` = default (burst = rate).
+    pub quota_rate_write_burst: Option<i32>,
+}
+
+impl UserEntity {
+    /// Build a `UserQuota` directly from the DB columns.
+    /// Integer columns: NULL → Default, -1 → Unlimited, positive → Value.
+    /// VARCHAR columns: NULL → Default, "unlimited" → Unlimited, value → Value.
+    pub fn quota(&self) -> UserQuota {
+        UserQuota::from_nullable_columns(
+            self.quota_storage_mb,
+            self.quota_rate_read.clone(),
+            self.quota_rate_write.clone(),
+            self.quota_rate_read_burst,
+            self.quota_rate_write_burst,
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -223,12 +342,27 @@ impl FromRow<'_, PgRow> for UserEntity {
         let used_bytes = raw_used_bytes as u64;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(UserIden::CreatedAt.to_string().as_str())?;
+        let quota_storage_mb: Option<i32> =
+            row.try_get(UserIden::QuotaStorageMb.to_string().as_str())?;
+        let quota_rate_read: Option<String> =
+            row.try_get(UserIden::QuotaRateRead.to_string().as_str())?;
+        let quota_rate_write: Option<String> =
+            row.try_get(UserIden::QuotaRateWrite.to_string().as_str())?;
+        let quota_rate_read_burst: Option<i32> =
+            row.try_get(UserIden::QuotaRateReadBurst.to_string().as_str())?;
+        let quota_rate_write_burst: Option<i32> =
+            row.try_get(UserIden::QuotaRateWriteBurst.to_string().as_str())?;
         Ok(UserEntity {
             id,
             public_key,
             created_at,
             disabled,
             used_bytes,
+            quota_storage_mb,
+            quota_rate_read,
+            quota_rate_write,
+            quota_rate_read_burst,
+            quota_rate_write_burst,
         })
     }
 }
@@ -255,6 +389,7 @@ mod tests {
         assert!(!created_user.disabled);
         assert_eq!(created_user.used_bytes, 0);
         assert_eq!(created_user.id, 1);
+        assert_eq!(created_user.quota(), UserQuota::default());
 
         // Test get user
         let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
@@ -386,5 +521,145 @@ mod tests {
         assert_eq!(overview.count, 3); // Total users
         assert_eq!(overview.disabled_count, 1); // One disabled user
         assert_eq!(overview.total_used_mb, 3072); // 1024 + 2048
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_set_quota() {
+        use crate::data_directory::quota_config::BandwidthQuota;
+        use crate::shared::user_quota::QuotaOverride;
+        use std::str::FromStr;
+
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Initially all limits are default
+        assert_eq!(user.quota(), UserQuota::default());
+
+        // Set custom limits
+        let config = UserQuota {
+            storage_quota_mb: QuotaOverride::Value(500),
+            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap()),
+            rate_write: QuotaOverride::Value(BandwidthQuota::from_str("50mb/s").unwrap()),
+            ..Default::default()
+        };
+        UserRepository::set_quota(user.id, &config, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Verify limits are persisted
+        let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.quota(), config);
+
+        // Overwrite with all-default via set_quota
+        UserRepository::set_quota(user.id, &UserQuota::default(), &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let user = UserRepository::get(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(user.quota(), UserQuota::default());
+    }
+
+    #[test]
+    fn test_limits_all_null_returns_all_default() {
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            quota_storage_mb: None,
+            quota_rate_read: None,
+            quota_rate_write: None,
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
+        };
+
+        let limits = user.quota();
+        assert_eq!(limits, UserQuota::default());
+        assert!(limits.storage_quota_mb.is_default());
+        assert!(limits.rate_read.is_default());
+        assert!(limits.rate_write.is_default());
+    }
+
+    #[test]
+    fn test_limits_mixed_null_and_values() {
+        use crate::data_directory::quota_config::BandwidthQuota;
+        use crate::shared::user_quota::QuotaOverride;
+        use std::str::FromStr;
+
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            quota_storage_mb: Some(500),
+            quota_rate_read: Some("100mb/m".to_string()),
+            quota_rate_write: None,
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
+        };
+
+        let limits = user.quota();
+        assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(500));
+        assert_eq!(
+            limits.rate_read,
+            QuotaOverride::Value(BandwidthQuota::from_str("100mb/m").unwrap())
+        );
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
+    }
+
+    #[test]
+    fn test_limits_unlimited_values() {
+        use crate::shared::user_quota::QuotaOverride;
+
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            quota_storage_mb: Some(-1),
+            quota_rate_read: Some("unlimited".to_string()),
+            quota_rate_write: Some("unlimited".to_string()),
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
+        };
+
+        let limits = user.quota();
+        assert_eq!(limits.storage_quota_mb, QuotaOverride::Unlimited);
+        assert_eq!(limits.rate_read, QuotaOverride::Unlimited);
+        assert_eq!(limits.rate_write, QuotaOverride::Unlimited);
+    }
+
+    #[test]
+    fn test_limits_invalid_rate_string_treated_as_default() {
+        use crate::shared::user_quota::QuotaOverride;
+
+        let user = UserEntity {
+            id: 1,
+            public_key: Keypair::random().public_key(),
+            created_at: sqlx::types::chrono::NaiveDateTime::default(),
+            disabled: false,
+            used_bytes: 0,
+            quota_storage_mb: None,
+            quota_rate_read: Some("rubbish".to_string()),
+            quota_rate_write: Some("also_rubbish".to_string()),
+            quota_rate_read_burst: None,
+            quota_rate_write_burst: None,
+        };
+
+        let limits = user.quota();
+        // Invalid rate strings → Default (with warning logged)
+        assert_eq!(limits.rate_read, QuotaOverride::Default);
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 }

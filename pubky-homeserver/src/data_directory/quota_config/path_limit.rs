@@ -1,4 +1,4 @@
-use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, QuotaValue};
+use super::{limit_key::LimitKey, GlobPattern, HttpMethod, LimitKeyType, RequestCountQuota};
 use axum::http::Method;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -20,8 +20,8 @@ pub struct PathLimit {
     pub path: GlobPattern,
     /// The method to limit.
     pub method: HttpMethod,
-    /// The limit to apply.
-    pub quota: QuotaValue,
+    /// The request-count quota to apply (e.g. "10r/m").
+    pub quota: RequestCountQuota,
     /// The key to limit.
     pub key: LimitKeyType,
     /// The burst to apply.
@@ -36,7 +36,7 @@ impl PathLimit {
     pub fn new(
         path: GlobPattern,
         method: Method,
-        quota: QuotaValue,
+        quota: RequestCountQuota,
         key: LimitKeyType,
         burst: Option<NonZeroU32>,
     ) -> Self {
@@ -107,7 +107,7 @@ mod tests {
         let mut limit = PathLimit::new(
             GlobPattern::new("*"),
             Method::GET,
-            QuotaValue::from_str("10r/s").unwrap(),
+            RequestCountQuota::from_str("10r/s").unwrap(),
             LimitKeyType::Ip,
             None,
         );

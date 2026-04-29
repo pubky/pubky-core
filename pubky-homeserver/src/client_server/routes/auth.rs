@@ -11,10 +11,7 @@ use crate::persistence::sql::{
     user::{UserEntity, UserRepository},
 };
 use crate::shared::{HttpError, HttpResult};
-use crate::{
-    client_server::{err_if_user_is_invalid::get_user_or_http_error, AppState},
-    SignupMode,
-};
+use crate::{client_server::AppState, SignupMode};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -32,6 +29,11 @@ use tower_cookies::{
     cookie::SameSite,
     Cookie, Cookies,
 };
+
+use crate::shared::user_quota::UserQuota;
+
+/// How long a session cookie is valid before expiring.
+const SESSION_EXPIRY_DAYS: i64 = 365;
 
 /// Creates a brand-new user if they do not exist, then logs them in by creating a session.
 ///
@@ -106,12 +108,35 @@ pub async fn signup(
             ));
         }
 
-        SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await?;
+        match SignupCodeRepository::mark_as_used(&signup_code_id, public_key, uexecutor!(tx)).await
+        {
+            Ok(_) => {}
+            // The WHERE clause includes `used_by IS NULL`, so RowNotFound means
+            // another transaction redeemed the code between our check and update.
+            Err(sqlx::Error::RowNotFound) => {
+                return Err(HttpError::new_with_message(
+                    StatusCode::UNAUTHORIZED,
+                    "Token already used",
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        // 4) Create the new user record with the token's limits.
+        let limits = code.quota();
+        let user = state
+            .user_service
+            .create_user(public_key, &limits, tx)
+            .await?;
+        return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
+            .await;
     }
 
-    // 4) Create the new user record
-    let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-    tx.commit().await?;
+    // 4) Create the new user record (open signup, no token).
+    let user = state
+        .user_service
+        .create_user(public_key, &UserQuota::default(), tx)
+        .await?;
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
@@ -129,7 +154,10 @@ pub async fn signin(
     let public_key = token.public_key();
 
     // 2) Ensure user *does* exist
-    let user = get_user_or_http_error(public_key, &mut state.sql_db.pool().into(), false).await?;
+    let user = state
+        .user_service
+        .get_or_http_error(public_key, false)
+        .await?;
 
     // 3) Create the session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await
@@ -149,8 +177,7 @@ async fn create_session_and_cookie(
     // 3) Build and set cookie
     let mut cookie = Cookie::new(user.public_key.z32(), session_secret.to_string());
     configure_session_cookie(&mut cookie, host);
-    // Set the cookie to expire in one year.
-    let one_year = Duration::days(365);
+    let one_year = Duration::days(SESSION_EXPIRY_DAYS);
     let expiry = OffsetDateTime::now_utc() + one_year;
     cookie.set_max_age(one_year);
     cookie.set_expires(expiry);

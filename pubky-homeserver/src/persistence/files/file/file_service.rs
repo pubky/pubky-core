@@ -42,17 +42,14 @@ impl FileService {
         data_directory: &Path,
         db: SqlDb,
         events_service: EventsService,
+        user_service: crate::services::user_service::UserService,
     ) -> Result<Self, FileIoError> {
-        let user_quota_bytes = match config.general.user_storage_quota_mb {
-            0 => u64::MAX,
-            other => other * 1024 * 1024,
-        };
         let opendal_service = OpendalService::new_from_config(
             &config.storage,
             data_directory,
             &db,
-            user_quota_bytes,
             events_service,
+            user_service,
         )?;
         Ok(Self::new(opendal_service, db))
     }
@@ -134,7 +131,7 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository},
+        persistence::sql::user::UserRepository, services::user_service::FILE_METADATA_SIZE,
         shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;
@@ -285,15 +282,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_update_basic() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -317,15 +311,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_entry() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -352,15 +343,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_exactly_to_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
@@ -380,15 +368,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_above_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 + 1];
@@ -415,15 +400,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_above_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];

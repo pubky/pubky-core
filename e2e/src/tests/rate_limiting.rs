@@ -171,13 +171,8 @@ async fn test_limit_events() {
 #[pubky_testnet::test]
 async fn test_limit_upload() {
     let mut config = ConfigToml::default_test_config();
-    config.drive.rate_limits = vec![PathLimit::new(
-        GlobPattern::new("/pub/**"),
-        Method::PUT,
-        "1kb/s".parse().unwrap(),
-        LimitKeyType::User,
-        None,
-    )];
+    // Use server-level bandwidth config instead of path limits
+    config.default_quotas.rate_write = Some("1kb/s".parse().unwrap());
 
     let testnet = EphemeralTestnet::builder()
         .config(config)
@@ -207,31 +202,17 @@ async fn test_limit_upload() {
 }
 
 /// Test that 10 clients can write/read to the server concurrently
-/// Upload/download rate is limited to 1kb/s per user.
+/// Upload/download rate is limited to 1kb/s per user via server-level config.
 /// 3kb files are used to make the writes/reads take ~2.5s each.
 /// Concurrently writing/reading 10 files, the total time taken should be ~3s.
 /// If the concurrent writes/reads are not properly handled, the total time taken will be closer to ~25s.
 #[tokio::test]
 #[pubky_testnet::test]
 async fn test_concurrent_write_read() {
-    // --- homeserver with per-user throttling on PUT/GET under /pub/**
+    // --- homeserver with per-user throttling via server-level bandwidth config
     let mut config = ConfigToml::default_test_config();
-    config.drive.rate_limits = vec![
-        PathLimit::new(
-            GlobPattern::new("/pub/**"),
-            Method::PUT,
-            "1kb/s".parse().unwrap(),
-            LimitKeyType::User,
-            None,
-        ),
-        PathLimit::new(
-            GlobPattern::new("/pub/**"),
-            Method::GET,
-            "1kb/s".parse().unwrap(),
-            LimitKeyType::User,
-            None,
-        ),
-    ];
+    config.default_quotas.rate_write = Some("1kb/s".parse().unwrap());
+    config.default_quotas.rate_read = Some("1kb/s".parse().unwrap());
 
     let testnet = EphemeralTestnet::builder()
         .config(config)

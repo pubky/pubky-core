@@ -11,8 +11,9 @@ use crate::{
         },
         sql::SqlDb,
     },
+    services::user_service::UserService,
     shared::webdav::EntryPath,
-    storage_config::StorageConfigToml,
+    storage_config::{StorageConfigToml, StorageToml},
 };
 use bytes::Bytes;
 use futures_util::{stream::StreamExt, Stream};
@@ -25,18 +26,18 @@ use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, W
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
 pub fn build_storage_operator(
-    storage_config: &StorageConfigToml,
+    storage_config: &StorageToml,
     data_directory: &Path,
     db: &SqlDb,
-    user_quota_bytes: u64,
     events_service: EventsService,
+    user_service: UserService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(db.clone(), user_quota_bytes);
+    let user_quota_layer = UserQuotaLayer::new(user_service, storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
     // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
-    let builder = match storage_config {
+    let builder = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
                 Some(path) => path.to_string(),
@@ -85,16 +86,12 @@ pub fn build_storage_operator(
 /// Data dir path is used to expand the data directory placeholder in the config.
 #[cfg(test)]
 pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Operator, FileIoError> {
-    let quota_bytes = match context.config_toml.general.user_storage_quota_mb {
-        0 => u64::MAX,
-        other => other * 1024 * 1024,
-    };
     build_storage_operator(
         &context.config_toml.storage,
         context.data_dir.path(),
         &context.sql_db,
-        quota_bytes,
         context.events_service.clone(),
+        context.user_service.clone(),
     )
 }
 
@@ -113,14 +110,19 @@ pub struct OpendalService {
 
 impl OpendalService {
     pub fn new_from_config(
-        config: &StorageConfigToml,
+        storage_config: &StorageToml,
         data_directory: &Path,
         db: &SqlDb,
-        user_quota_bytes: u64,
         events_service: EventsService,
+        user_service: UserService,
     ) -> Result<Self, FileIoError> {
-        let operator =
-            build_storage_operator(config, data_directory, db, user_quota_bytes, events_service)?;
+        let operator = build_storage_operator(
+            storage_config,
+            data_directory,
+            db,
+            events_service,
+            user_service,
+        )?;
         Ok(Self { operator })
     }
 
@@ -281,7 +283,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_build_storage_operator_from_config_file_system() {
         let mut context = AppContext::test().await;
-        context.config_toml.storage = StorageConfigToml::FileSystem;
+        context.config_toml.storage.backend = StorageConfigToml::FileSystem;
 
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
@@ -298,14 +300,11 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_exceeded_error() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let service =
             OpendalService::new(&context).expect("Failed to create OpenDAL service for testing");
         let pubky = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubky, &mut context.sql_db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&context.sql_db, &pubky, 1).await;
         let path = EntryPath::new(pubky, WebDavPath::new("/test.txt").unwrap());
         let write_result = service.write(&path, vec![42u8; 1024 * 1024]).await;
         assert!(write_result.is_err());

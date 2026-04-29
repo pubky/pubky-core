@@ -9,9 +9,10 @@ database_url = "postgres://localhost:5432/pubky_homeserver"
 # "token_required" - a signup token is required to signup.
 signup_mode = "token_required"
 
-# Maximum storage a single user may occupy (in MB).
-# Set it to 0 for unlimited.
-user_storage_quota_mb = 0
+# DEPRECATED: Use [storage].default_quota_mb instead.
+# Kept for backwards compatibility. 0 means unlimited.
+# Ignored when [storage].default_quota_mb is set.
+# user_storage_quota_mb = 0
 
 [drive]
 # The port number to run an HTTPS (Pkarr TLS) server on.
@@ -24,19 +25,18 @@ pubky_listen_socket = "127.0.0.1:6287"
 # May be put behind a reverse proxy with TLS enabled.
 icann_listen_socket = "127.0.0.1:6286"
 
-# Rate limit endpoints dynamically.
+# Rate limit endpoints by request count.
 # `path` is a glob pattern of the path. See syntax in https://crates.io/crates/fast-glob
 # `method` is the HTTP method. Examples: GET, POST, PUT, HEAD, DELETE
-# `quota` defines the limit itself in the format $rate$rate_unit/$time_unit.
+# `quota` defines the limit in the format $rate"r"/$time_unit (request-count only).
 #  - $rate is a positive integer, max 4'294'967'296.
-#  - $rate_unit is either "r" for requests, "kb" for kilobytes, 
-#    "mb" for megabytes, "gb" for gigabytes.
-#  Speed limits limit download and upload.
 #  - $time_unit is either "s" for second, "m" for minute.
-# `key` defines what who is rate limited. 
+#  Note: bandwidth quotas (kb/s, mb/s, gb/s) are NOT supported in path limits.
+#  Use [default_quotas] for bandwidth throttling.
+# `key` defines who is rate limited.
 #  - "ip" limits based on the IP address.
 #  - "user" limits based on the user pubkey. Requires the endpoint to have authentication.
-# `burst` is a temporary allowance of quota that is added to the limit. 
+# `burst` is a temporary allowance of quota that is added to the limit.
 #   By default, burst is equal the quota rate.
 # `whitelist` is a list of IP addresses or user pubkeys that are exempt from the rate limit.
 #
@@ -57,14 +57,21 @@ key = "ip"
 whitelist = [
     "127.0.0.1"
 ]
-#
-# Limit file uploads to 1 megabyte per second per user with a temporary burst of 10 megabytes.
-[[drive.rate_limits]]
-path = "/pub/**" 
-method = "PUT"
-quota = "1mb/s"
-key = "user"
-burst = 10
+
+[default_quotas]
+# Default bandwidth limits for the rate limiter.
+# Per-user defaults (rate_read, rate_write) are the system-wide fallback
+# values used when a user's quota is set to "Default" (NULL in DB).
+# Per-user overrides are managed via the admin API:
+#   PATCH /users/{pubkey}/quota
+
+# Default bandwidth limit for user reads (downloads).
+# rate_read = "10mb/s"
+# Default bandwidth limit for user writes (uploads).
+# rate_write = "5mb/s"
+# Bandwidth limit for unauthenticated IP reads (downloads).
+# Not per-user. Applies to all anonymous requests by IP.
+# unauthenticated_ip_rate_read = "1mb/s"
 
 [storage]
 # Defines where the files are stored.
@@ -76,6 +83,10 @@ burst = 10
 # Local File System
 # Files are saved on your local disk.
 type = "file_system"
+
+# Default per-user storage quota (in MB).
+# Omit for unlimited. 0 means zero storage (not unlimited).
+# default_quota_mb = 1024
 
 # Google Cloud Bucket
 # Files are saved in a Google Cloud Bucket.
@@ -129,7 +140,7 @@ public_icann_http_port = 80
 # address of this machine where you are running this server.
 #
 # This domain should point to the `<public_ip>:<public_port>`.
-# 
+#
 # ICANN TLS is not natively supported, so you should be running
 # a reverse proxy and managing certificates yourself.
 icann_domain = "localhost"

@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root,
+    generate_signup_token, info, root, user_quota,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -24,12 +24,17 @@ fn create_protected_router(password: &str) -> Router<AppState> {
     Router::new()
         .route(
             "/generate_signup_token",
-            get(generate_signup_token::generate_signup_token),
+            get(generate_signup_token::generate_signup_token)
+                .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
+        .route(
+            "/users/{pubkey}/quota",
+            get(user_quota::get_user_quota).patch(user_quota::patch_user_quota),
+        )
         .layer(AdminAuthLayer::new(password.to_string()))
 }
 
@@ -40,7 +45,10 @@ fn create_public_router() -> Router<AppState> {
 }
 
 /// Create the app
-fn create_app(state: AppState, password: &str) -> axum::routing::IntoMakeService<Router> {
+pub(crate) fn create_app(
+    state: AppState,
+    password: &str,
+) -> axum::routing::IntoMakeService<Router> {
     let admin_router = create_protected_router(password);
     let public_router = create_public_router();
     let app = Router::new()
@@ -108,6 +116,7 @@ impl AdminServer {
             context.sql_db.clone(),
             context.file_service.clone(),
             &password,
+            context.user_service.clone(),
         )
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
@@ -173,13 +182,20 @@ impl Drop for AdminServer {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use axum::http::Method;
     use axum_test::TestServer;
     use base64::Engine;
 
+    use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
 
     use super::*;
+
+    fn bw(s: &str) -> BandwidthQuota {
+        BandwidthQuota::from_str(s).unwrap()
+    }
 
     fn create_test_server(context: &AppContext) -> TestServer {
         TestServer::new(create_app(
@@ -187,6 +203,7 @@ mod tests {
                 context.sql_db.clone(),
                 FileService::new_from_context(context).unwrap(),
                 "",
+                context.user_service.clone(),
             ),
             "test",
         ))
@@ -342,7 +359,7 @@ mod tests {
         use pubky_common::crypto::Keypair;
 
         let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        context.config_toml.storage.default_quota_mb = Some(1);
         let server = create_test_server(&context);
         let auth_value = auth_header();
 
@@ -372,5 +389,40 @@ mod tests {
             .expect_failure()
             .await;
         response.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_generate_signup_token_with_limits() {
+        use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+        use crate::shared::user_quota::QuotaOverride;
+
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // POST with custom limits: null = Default, absent = Default, value = Value(T)
+        let body = serde_json::json!({
+            "storage_quota_mb": 1024,
+            "rate_read": "200mb/m"
+        });
+        let response = server
+            .post("/generate_signup_token")
+            .add_header("X-Admin-Password", "test")
+            .content_type("application/json")
+            .bytes(serde_json::to_vec(&body).unwrap().into())
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        // Verify the code was created with custom limits
+        let token_str = response.text();
+        let code_id = SignupCodeId::new(token_str).unwrap();
+        let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        let limits = code.quota();
+        assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(1024));
+        assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
+        assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 }

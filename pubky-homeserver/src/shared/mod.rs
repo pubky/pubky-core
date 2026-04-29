@@ -1,6 +1,7 @@
 mod http_error;
 mod pubkey_path_validator;
 pub(crate) mod toml_merge;
+pub(crate) mod user_quota;
 mod utils;
 pub(crate) mod webdav;
 
