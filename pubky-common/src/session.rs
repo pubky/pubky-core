@@ -36,7 +36,7 @@ impl SessionInfo {
             version: 0,
             public_key: public_key.clone(),
             created_at: Timestamp::now().as_u64(),
-            capabilities: capabilities.to_vec(),
+            capabilities: capabilities.into(),
             user_agent: user_agent.as_deref().unwrap_or("").to_string(),
             name: user_agent.as_deref().unwrap_or("").to_string(),
         }
@@ -69,7 +69,7 @@ impl SessionInfo {
 
     /// Set this session's capabilities.
     pub fn set_capabilities(&mut self, capabilities: Capabilities) -> &mut Self {
-        self.capabilities = capabilities.to_vec();
+        self.capabilities = capabilities.into();
 
         self
     }
@@ -125,7 +125,7 @@ mod tests {
 
         let session = SessionInfo {
             user_agent: "foo".to_string(),
-            capabilities: capabilities.to_vec(),
+            capabilities: capabilities.into(),
             created_at: 0,
             public_key,
             version: 0,
