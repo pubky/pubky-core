@@ -43,7 +43,7 @@ impl PubkySigner {
         cross_log!(info, "Approving auth flow via relay {relay}");
 
         // 2) Build token with requested capabilities parsed from URL
-        let capabilities = Capabilities::from(&pubkyauth_url);
+        let capabilities = Capabilities::from_caps_url(&pubkyauth_url).normalize();
         cross_log!(
             info,
             "Signing capabilities {:?} for auth approval",

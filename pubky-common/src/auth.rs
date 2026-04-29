@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn expired() {
         let signer = Keypair::random();
-        let capabilities = Capabilities(vec![Capability::root()]);
+        let capabilities = Capabilities::from(vec![Capability::root()]);
 
         let verifier = AuthVerifier::default();
 
@@ -310,7 +310,7 @@ mod tests {
             version: 0,
             timestamp,
             public_key: signer.public_key(),
-            capabilities: Capabilities(vec![Capability::root()]),
+            capabilities: Capabilities::from(vec![Capability::root()]),
         };
 
         let serialized = token.serialize();
@@ -391,7 +391,7 @@ mod tests {
             version: 1,
             timestamp: Timestamp::now(),
             public_key: signer.public_key(),
-            capabilities: Capabilities(vec![Capability::root()]),
+            capabilities: Capabilities::from(vec![Capability::root()]),
         };
         let serialized = token.serialize();
 
