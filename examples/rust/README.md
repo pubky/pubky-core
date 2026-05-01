@@ -2,6 +2,12 @@
 
 Minimal examples for different flows and functions you might need to implement using Pubky.
 
+## Utilities
+
+- [**keygen**](./keygen.rs): Generate a keypair and save a passphrase-encrypted recovery file. Required by examples 2 and 3.
+
+## Examples
+
 0. [**Logging**](./0-logging/README.md): configure tracing and watch the SDK emit debug output during a storage roundtrip.
 1. [**Testnet**](./1-testnet/README.md): shows how to build a pubky app offline against a local ephemeral homeserver.
 2. [**Authentication**](./2-signup/README.md): shows how to signup, signin or signout to and from a homeserver.
