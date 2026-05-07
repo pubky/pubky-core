@@ -37,6 +37,7 @@ impl SignupCodeRepository {
                 SignupCodeIden::QuotaRateWrite,
                 SignupCodeIden::QuotaRateReadBurst,
                 SignupCodeIden::QuotaRateWriteBurst,
+                SignupCodeIden::AllowedWritePaths,
             ])
             .values(vec![
                 SimpleExpr::Value(id.to_string().into()),
@@ -45,6 +46,7 @@ impl SignupCodeRepository {
                 SimpleExpr::Value(limits.rate_write_str().into()),
                 SimpleExpr::Value(limits.rate_read_burst_i32().into()),
                 SimpleExpr::Value(limits.rate_write_burst_i32().into()),
+                SimpleExpr::Value(limits.allowed_write_paths_db().into()),
             ])
             .unwrap()
             .returning_all()
@@ -73,6 +75,7 @@ impl SignupCodeRepository {
                 SignupCodeIden::QuotaRateWrite,
                 SignupCodeIden::QuotaRateReadBurst,
                 SignupCodeIden::QuotaRateWriteBurst,
+                SignupCodeIden::AllowedWritePaths,
             ])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
             .to_owned();
@@ -154,6 +157,7 @@ pub enum SignupCodeIden {
     QuotaRateWrite,
     QuotaRateReadBurst,
     QuotaRateWriteBurst,
+    AllowedWritePaths,
 }
 
 /// Signup code id in the format of "JZY0-D6MY-ZFNG".
@@ -233,6 +237,8 @@ pub struct SignupCodeEntity {
     pub quota_rate_read_burst: Option<i32>,
     /// Per-user write rate burst override. `None` = default (burst = rate).
     pub quota_rate_write_burst: Option<i32>,
+    /// Allowed write paths as JSON array string. `None` = unrestricted.
+    pub allowed_write_paths: Option<String>,
 }
 
 impl SignupCodeEntity {
@@ -244,6 +250,7 @@ impl SignupCodeEntity {
             self.quota_rate_write.clone(),
             self.quota_rate_read_burst,
             self.quota_rate_write_burst,
+            self.allowed_write_paths.clone(),
         )
     }
 }
@@ -277,6 +284,8 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             row.try_get(SignupCodeIden::QuotaRateReadBurst.to_string().as_str())?;
         let quota_rate_write_burst: Option<i32> =
             row.try_get(SignupCodeIden::QuotaRateWriteBurst.to_string().as_str())?;
+        let allowed_write_paths: Option<String> =
+            row.try_get(SignupCodeIden::AllowedWritePaths.to_string().as_str())?;
 
         Ok(SignupCodeEntity {
             id,
@@ -287,6 +296,7 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
             quota_rate_write,
             quota_rate_read_burst,
             quota_rate_write_burst,
+            allowed_write_paths,
         })
     }
 }

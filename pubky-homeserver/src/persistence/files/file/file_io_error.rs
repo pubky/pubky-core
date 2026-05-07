@@ -13,6 +13,8 @@ pub enum FileIoError {
     StreamBroken(#[from] WriteStreamError),
     #[error("Disk space quota exceeded")]
     DiskSpaceQuotaExceeded,
+    #[error("Write to path is forbidden")]
+    WritePathForbidden,
 }
 
 /// A unified error type for writing streams.

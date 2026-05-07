@@ -384,7 +384,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
             Err(e) => {
                 // If the path is not valid, we return an error.
                 return Err(opendal::Error::new(
-                    opendal::ErrorKind::PermissionDenied,
+                    opendal::ErrorKind::Unexpected,
                     e.to_string(),
                 ));
             }

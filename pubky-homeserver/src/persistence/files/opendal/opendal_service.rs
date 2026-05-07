@@ -8,6 +8,7 @@ use crate::{
             entry::entry_layer::EntryLayer,
             events::{EventsLayer, EventsService},
             user_quota_layer::UserQuotaLayer,
+            write_path_layer::WritePathLayer,
         },
         sql::SqlDb,
     },
@@ -23,6 +24,17 @@ use opendal::Operator;
 
 use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
+/// Map OpenDAL errors to domain-specific `FileIoError` variants.
+///
+/// `WritePathLayer` is the outermost layer and the only one that produces
+/// `PermissionDenied` on write operations, so the mapping is unambiguous.
+fn map_opendal_error(e: opendal::Error) -> FileIoError {
+    match e.kind() {
+        opendal::ErrorKind::PermissionDenied => FileIoError::WritePathForbidden,
+        _ => FileIoError::OpenDAL(e),
+    }
+}
+
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
 pub fn build_storage_operator(
@@ -32,11 +44,16 @@ pub fn build_storage_operator(
     events_service: EventsService,
     user_service: UserService,
 ) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(user_service, storage_config.default_quota_mb);
+    let user_quota_layer =
+        UserQuotaLayer::new(user_service.clone(), storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
+    let write_path_layer = WritePathLayer::new(user_service);
     // Note: Layers ordering is important:
-    // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
+    // Layers are applied last-to-first: write_path_layer (outermost) runs first,
+    // rejecting disallowed writes before they reach quota/entry/event layers.
+    // events_layer runs after entry_layer.close() completes, guaranteeing the
+    // file is written before the Event is created.
     let builder = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -53,6 +70,7 @@ pub fn build_storage_operator(
                 .layer(user_quota_layer)
                 .layer(entry_layer)
                 .layer(events_layer)
+                .layer(write_path_layer)
                 .finish()
         }
         #[cfg(feature = "storage-gcs")]
@@ -66,6 +84,7 @@ pub fn build_storage_operator(
                 .layer(user_quota_layer)
                 .layer(entry_layer)
                 .layer(events_layer)
+                .layer(write_path_layer)
                 .finish()
         }
         #[cfg(any(feature = "storage-memory", test))]
@@ -76,6 +95,7 @@ pub fn build_storage_operator(
                 .layer(user_quota_layer)
                 .layer(entry_layer)
                 .layer(events_layer)
+                .layer(write_path_layer)
                 .finish()
         }
     };
@@ -132,7 +152,7 @@ impl OpendalService {
         self.operator
             .delete(path.as_str())
             .await
-            .map_err(FileIoError::OpenDAL)
+            .map_err(map_opendal_error)
     }
 
     /// Write a stream to the storage.
@@ -147,7 +167,11 @@ impl OpendalService {
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<FileMetadata, FileIoError> {
-        let mut writer = self.operator.writer(path.as_str()).await?;
+        let mut writer = self
+            .operator
+            .writer(path.as_str())
+            .await
+            .map_err(map_opendal_error)?;
         let mut metadata_builder = FileMetadataBuilder::default();
         metadata_builder.guess_mime_type_from_path(path.path().as_str());
 
