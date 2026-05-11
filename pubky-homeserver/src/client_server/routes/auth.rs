@@ -73,7 +73,7 @@ pub async fn signup(
     }
 
     // 3) If signup_mode == token_required, require & validate a `signup_token` param.
-    if state.signup_mode == SignupMode::TokenRequired {
+    let user = if state.signup_mode == SignupMode::TokenRequired {
         let signup_token_param = params
             .get("signup_token")
             .ok_or(HttpError::new_with_message(
@@ -124,19 +124,19 @@ pub async fn signup(
 
         // 4) Create the new user record with the token's limits.
         let limits = code.quota();
-        let user = state
+        state
             .user_service
             .create_user(public_key, &limits, tx)
-            .await?;
-        return create_session_and_cookie(&state, cookies, &host, &user, token.capabilities())
-            .await;
-    }
+            .await?
+    } else {
+        // 4) Create the new user record (open signup, no token).
+        state
+            .user_service
+            .create_user(public_key, &UserQuota::default(), tx)
+            .await?
+    };
 
-    // 4) Create the new user record (open signup, no token).
-    let user = state
-        .user_service
-        .create_user(public_key, &UserQuota::default(), tx)
-        .await?;
+    state.metrics.record_signup();
 
     // 5) Create session & set cookie
     create_session_and_cookie(&state, cookies, &host, &user, token.capabilities()).await

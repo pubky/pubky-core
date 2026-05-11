@@ -242,6 +242,7 @@ async fn metrics_comprehensive() {
         "event_stream_db_query_duration_ms",
         "event_stream_active_connections",
         "event_stream_connection_duration_ms",
+        "signup_count",
     ];
 
     for metric in all_expected_metrics {
@@ -252,4 +253,11 @@ async fn metrics_comprehensive() {
             final_metrics
         );
     }
+
+    // Verify signup_count reflects exactly 2 signups (keypair1 and keypair2)
+    assert!(
+        final_metrics.contains("signup_count_total{otel_scope_name=\"pubky_homeserver\"} 2"),
+        "Should have exactly 2 signups recorded, metrics:\n{}",
+        final_metrics
+    );
 }

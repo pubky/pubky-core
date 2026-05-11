@@ -16,6 +16,7 @@ pub const EVENT_STREAM_BROADCAST_LAGGED_COUNT: &str = "event_stream_broadcast_la
 pub const EVENT_STREAM_BROADCAST_HALF_FULL_COUNT: &str = "event_stream_broadcast_half_full_count";
 pub const EVENT_STREAM_ACTIVE_CONNECTIONS: &str = "event_stream_active_connections";
 pub const EVENT_STREAM_CONNECTION_DURATION: &str = "event_stream_connection_duration_ms";
+pub const SIGNUP_COUNT: &str = "signup_count";
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
@@ -27,6 +28,7 @@ pub struct Metrics {
     event_stream_broadcast_half_full_count: Counter<u64>,
     event_stream_active_connections: UpDownCounter<i64>,
     event_stream_connection_duration: Histogram<f64>,
+    signup_count: Counter<u64>,
 }
 
 impl Metrics {
@@ -66,6 +68,11 @@ impl Metrics {
             .with_boundaries(vec![10.0, 100.0, 1_000.0, 10_000.0, 100_000.0])
             .build();
 
+        let signup_count = meter
+            .u64_counter(SIGNUP_COUNT)
+            .with_description("Total number of successful signups")
+            .build();
+
         Ok(Self {
             registry: Arc::new(registry),
             _provider: Arc::new(provider),
@@ -75,6 +82,7 @@ impl Metrics {
             event_stream_broadcast_half_full_count,
             event_stream_active_connections,
             event_stream_connection_duration,
+            signup_count,
         })
     }
 
@@ -111,6 +119,12 @@ impl Metrics {
     pub fn record_connection_closed(&self, duration_ms: u128) {
         self.event_stream_connection_duration
             .record(duration_ms as f64, &[]);
+    }
+
+    // === signup metrics ===
+
+    pub fn record_signup(&self) {
+        self.signup_count.add(1, &[]);
     }
 
     /// Render Prometheus metrics in text format
@@ -166,6 +180,7 @@ mod tests {
         metrics.record_broadcast_lagged();
         metrics.record_broadcast_half_full();
         metrics.record_connection_closed(30);
+        metrics.record_signup();
 
         let output = metrics.render().expect("Failed to render metrics");
 
@@ -207,6 +222,12 @@ mod tests {
             output.contains(EVENT_STREAM_CONNECTION_DURATION),
             "Missing {} in: {}",
             EVENT_STREAM_CONNECTION_DURATION,
+            output
+        );
+        assert!(
+            output.contains(SIGNUP_COUNT),
+            "Missing {} in: {}",
+            SIGNUP_COUNT,
             output
         );
     }
