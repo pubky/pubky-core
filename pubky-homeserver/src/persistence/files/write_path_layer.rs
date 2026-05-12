@@ -179,7 +179,9 @@ impl<R: oio::Delete> oio::Delete for WritePathDeleter<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::persistence::files::opendal::opendal_test_operators::get_memory_operator;
+    use crate::persistence::files::opendal::opendal_test_operators::{
+        get_fs_operator, get_memory_operator,
+    };
     use crate::persistence::files::user_quota_layer::UserQuotaLayer;
     use crate::persistence::sql::user::UserRepository;
     use crate::persistence::sql::SqlDb;
@@ -215,12 +217,20 @@ mod tests {
     /// Build an operator with both WritePathLayer (outermost) and UserQuotaLayer,
     /// matching the production stack order.
     fn build_test_operator(db: &SqlDb) -> opendal::Operator {
+        build_test_operator_with(db, get_memory_operator())
+    }
+
+    /// Build a test operator backed by the filesystem (supports copy/rename).
+    fn build_fs_test_operator(db: &SqlDb) -> (opendal::Operator, tempfile::TempDir) {
+        let (op, tmp_dir) = get_fs_operator();
+        (build_test_operator_with(db, op), tmp_dir)
+    }
+
+    fn build_test_operator_with(db: &SqlDb, base: opendal::Operator) -> opendal::Operator {
         let user_service = UserService::new(db.clone());
         let user_quota_layer = UserQuotaLayer::new(user_service.clone(), None);
         let write_path_layer = WritePathLayer::new(user_service);
-        get_memory_operator()
-            .layer(user_quota_layer)
-            .layer(write_path_layer)
+        base.layer(user_quota_layer).layer(write_path_layer)
     }
 
     #[tokio::test]
@@ -330,7 +340,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_rename_within_allowed_path_succeeds() {
         let db = SqlDb::test().await;
-        let operator = build_test_operator(&db);
+        let (operator, _tmp) = build_fs_test_operator(&db);
 
         let pubkey = create_user_with_write_paths(&db, Some(vec![wdp("/pub/tokens/")])).await;
         let raw = pubkey.z32();
@@ -440,7 +450,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_copy_within_allowed_path_succeeds() {
         let db = SqlDb::test().await;
-        let operator = build_test_operator(&db);
+        let (operator, _tmp) = build_fs_test_operator(&db);
 
         let pubkey = create_user_with_write_paths(&db, Some(vec![wdp("/pub/tokens/")])).await;
         let raw = pubkey.z32();
