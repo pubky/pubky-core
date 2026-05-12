@@ -1146,8 +1146,6 @@ mod tests {
         assert!(json.contains(r#""rate_read_burst":50"#));
     }
 
-    // ── allowed_write_paths tests ──
-
     /// Helper to create a `WebDavPath` in tests.
     fn wdp(s: &str) -> WebDavPath {
         WebDavPath::from_str(s).unwrap()

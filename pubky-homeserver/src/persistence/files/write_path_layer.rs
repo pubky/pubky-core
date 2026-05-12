@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::persistence::files::layer_domain_error::LayerDomainError;
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::services::user_service::UserService;
 use opendal::raw::*;
@@ -68,7 +69,8 @@ async fn check_write_path_allowed(user_service: &UserService, path: &str) -> Res
                 entry_path.path(),
                 pubkey
             ),
-        ));
+        )
+        .set_source(LayerDomainError::WritePathForbidden));
     }
     Ok(())
 }
@@ -455,6 +457,35 @@ mod tests {
             )
             .await
             .expect("Copy within allowed path should succeed");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_create_dir_in_allowed_path_succeeds() {
+        let db = SqlDb::test().await;
+        let operator = build_test_operator(&db);
+
+        let pubkey = create_user_with_write_paths(&db, Some(vec![wdp("/pub/tokens/")])).await;
+
+        operator
+            .create_dir(&format!("{}/pub/tokens/subdir/", pubkey.z32()))
+            .await
+            .expect("create_dir in allowed path should succeed");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_create_dir_in_disallowed_path_rejected() {
+        let db = SqlDb::test().await;
+        let operator = build_test_operator(&db);
+
+        let pubkey = create_user_with_write_paths(&db, Some(vec![wdp("/pub/tokens/")])).await;
+
+        let err = operator
+            .create_dir(&format!("{}/pub/other/subdir/", pubkey.z32()))
+            .await
+            .expect_err("create_dir in disallowed path should fail");
+        assert_eq!(err.kind(), opendal::ErrorKind::PermissionDenied);
     }
 
     #[tokio::test]

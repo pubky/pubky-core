@@ -117,10 +117,7 @@ async fn fail_if_size_hint_exceeds_quota<'a>(
 
     let max_bytes = resolve_storage_max_bytes(user, default_storage_mb);
     if would_exceed_limit(user.used_bytes, bytes_delta, max_bytes) {
-        return Err(HttpError::new_with_message(
-            StatusCode::INSUFFICIENT_STORAGE,
-            "Disk space quota exceeded. Write operation failed.",
-        ));
+        return Err(HttpError::insufficient_storage());
     }
 
     Ok(())

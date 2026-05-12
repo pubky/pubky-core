@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use pubky_common::crypto::PublicKey;
 
+use crate::persistence::files::layer_domain_error::LayerDomainError;
 use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::uexecutor;
 use crate::services::user_service::{UserService, FILE_METADATA_SIZE};
@@ -229,7 +230,8 @@ impl<R: oio::Write, A: Access> oio::Write for WriterWrapper<R, A> {
             return Err(opendal::Error::new(
                 opendal::ErrorKind::RateLimited,
                 "User quota exceeded",
-            ));
+            )
+            .set_source(LayerDomainError::DiskSpaceQuotaExceeded));
         }
 
         let metadata = self.inner.close().await?;
@@ -384,7 +386,7 @@ impl<R: oio::Delete, A: Access> oio::Delete for DeleterWrapper<R, A> {
             Err(e) => {
                 // If the path is not valid, we return an error.
                 return Err(opendal::Error::new(
-                    opendal::ErrorKind::Unexpected,
+                    opendal::ErrorKind::PermissionDenied,
                     e.to_string(),
                 ));
             }

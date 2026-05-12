@@ -23,16 +23,25 @@ use opendal::Buffer;
 use opendal::Operator;
 
 use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
+use crate::persistence::files::layer_domain_error::LayerDomainError;
 
-/// Map OpenDAL errors to domain-specific `FileIoError` variants.
+/// Map OpenDAL errors to domain-specific [`FileIoError`] variants.
 ///
-/// `WritePathLayer` is the outermost layer and the only one that produces
-/// `PermissionDenied` on write operations, so the mapping is unambiguous.
+/// Our custom layers embed a [`LayerDomainError`] as the error source via
+/// [`opendal::Error::set_source`]. We downcast from the source to recover the
+/// typed variant, avoiding fragile `ErrorKind` / message-string matching.
 fn map_opendal_error(e: opendal::Error) -> FileIoError {
-    match e.kind() {
-        opendal::ErrorKind::PermissionDenied => FileIoError::WritePathForbidden,
-        _ => FileIoError::OpenDAL(e),
+    use std::error::Error as _;
+    if let Some(domain) = e
+        .source()
+        .and_then(|s| s.downcast_ref::<LayerDomainError>())
+    {
+        return match domain {
+            LayerDomainError::WritePathForbidden => FileIoError::WritePathForbidden,
+            LayerDomainError::DiskSpaceQuotaExceeded => FileIoError::DiskSpaceQuotaExceeded,
+        };
     }
+    FileIoError::OpenDAL(e)
 }
 
 /// Build the storage operator based on the config.
@@ -189,18 +198,8 @@ impl OpendalService {
         // Let's close the writer properly depending on if the stream write was successful.
         match write_result {
             Ok(()) => {
-                // Close the writer to finalize the write operation
-                writer.close().await.map_err(|e| {
-                    // The UserQuotaLayer will return a RateLimited error if the user has exceeded the quota.
-                    // We convert this to a DiskSpaceQuotaExceeded error.
-                    if e.kind() == opendal::ErrorKind::RateLimited
-                        && e.to_string().contains("User quota exceeded")
-                    {
-                        FileIoError::DiskSpaceQuotaExceeded
-                    } else {
-                        FileIoError::OpenDAL(e)
-                    }
-                })?;
+                // Close the writer to finalize the write operation.
+                writer.close().await.map_err(map_opendal_error)?;
                 Ok(metadata_builder.finalize())
             }
             Err(e) => {

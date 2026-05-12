@@ -14,6 +14,7 @@
 
 mod entry;
 mod file;
+mod layer_domain_error;
 mod opendal;
 
 pub(crate) mod events;
