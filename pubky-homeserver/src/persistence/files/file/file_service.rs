@@ -97,6 +97,17 @@ impl FileService {
         self.opendal.delete(path).await?;
         Ok(())
     }
+
+    /// Delete a file bypassing write-path restrictions.
+    /// Used by the admin `/webdav` REST delete route; the `/dav` WebDAV handler
+    /// already uses `admin_operator` directly and does not need this.
+    pub async fn admin_delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
+        if !self.opendal.exists(path).await? {
+            return Err(FileIoError::NotFound);
+        }
+        self.opendal.admin_delete(path).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

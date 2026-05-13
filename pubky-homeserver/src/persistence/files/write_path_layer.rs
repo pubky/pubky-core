@@ -133,10 +133,8 @@ impl<A: Access> LayeredAccess for WritePathAccessor<A> {
     }
 
     async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        if matches!(
-            args.operation(),
-            PresignOperation::Write(_) | PresignOperation::Delete(_)
-        ) {
+        // Default to checking — only skip for known read-only operations.
+        if !matches!(args.operation(), PresignOperation::Read(_)) {
             check_write_path_allowed(&self.user_service, path).await?;
         }
         self.inner.presign(path, args).await

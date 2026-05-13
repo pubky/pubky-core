@@ -35,7 +35,7 @@ impl AppState {
         admin_password: &str,
         user_service: UserService,
     ) -> Self {
-        let webdavfs = OpendalFs::new(file_service.opendal.operator.clone());
+        let webdavfs = OpendalFs::new(file_service.opendal.admin_operator.clone());
         let inner_dav_handler = DavHandler::builder()
             .filesystem(webdavfs)
             .locksystem(FakeLs::new())
