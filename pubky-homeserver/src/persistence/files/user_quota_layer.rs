@@ -4,7 +4,6 @@ use std::sync::Arc;
 use pubky_common::crypto::PublicKey;
 
 use crate::persistence::files::layer_domain_error::LayerDomainError;
-use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::sql::uexecutor;
 use crate::services::user_service::{UserService, FILE_METADATA_SIZE};
 use crate::shared::webdav::EntryPath;
@@ -92,7 +91,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         self.inner.create_dir(entry_path.as_str(), args).await
     }
 
@@ -101,7 +100,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         let canonical_path = entry_path.to_string();
         let (rp, writer) = self.inner.write(&canonical_path, args).await?;
         Ok((
@@ -118,14 +117,14 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        let from = ensure_valid_path(from)?;
-        let to = ensure_valid_path(to)?;
+        let from = EntryPath::parse_opendal(from)?;
+        let to = EntryPath::parse_opendal(to)?;
         self.inner.copy(from.as_str(), to.as_str(), args).await
     }
 
     async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        let from = ensure_valid_path(from)?;
-        let to = ensure_valid_path(to)?;
+        let from = EntryPath::parse_opendal(from)?;
+        let to = EntryPath::parse_opendal(to)?;
         self.inner.rename(from.as_str(), to.as_str(), args).await
     }
 
@@ -151,7 +150,7 @@ impl<A: Access> LayeredAccess for UserQuotaAccessor<A> {
     }
 
     async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         self.inner.presign(entry_path.as_str(), args).await
     }
 }
@@ -259,7 +258,7 @@ struct DeletePath {
 
 impl DeletePath {
     fn new(path: &str) -> anyhow::Result<Self> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         Ok(Self {
             entry_path,
             bytes_count: None,

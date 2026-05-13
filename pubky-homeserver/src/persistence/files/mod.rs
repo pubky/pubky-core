@@ -19,7 +19,6 @@ mod opendal;
 
 pub(crate) mod events;
 pub(crate) mod user_quota_layer;
-mod utils;
 pub(crate) mod write_path_layer;
 
 pub use file::file_io_error::{FileIoError, WriteStreamError};

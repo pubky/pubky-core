@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::persistence::files::layer_domain_error::LayerDomainError;
-use crate::persistence::files::utils::ensure_valid_path;
 use crate::services::user_service::UserService;
+use crate::shared::webdav::EntryPath;
 use opendal::raw::*;
 use opendal::Result;
 
@@ -13,7 +13,7 @@ use opendal::Result;
 ///
 /// - Reads, stats, and lists pass through unmodified.
 /// - Writes, deletes, copies, renames, and create_dir check the user's
-///   `allowed_write_paths` and return `PermissionDenied` if the path is not allowed.
+///   `allowed_write_paths` and return `PermissionDenied` if the path is not in the allow list.
 #[derive(Clone)]
 pub struct WritePathLayer {
     user_service: UserService,
@@ -46,7 +46,7 @@ pub struct WritePathAccessor<A: Access> {
 ///
 /// Uses the cached quota lookup for efficiency.
 async fn check_write_path_allowed(user_service: &UserService, path: &str) -> Result<()> {
-    let entry_path = ensure_valid_path(path)?;
+    let entry_path = EntryPath::parse_opendal(path)?;
     let pubkey = entry_path.pubkey();
 
     let quota = user_service.resolve_quota(pubkey).await.map_err(|e| {
