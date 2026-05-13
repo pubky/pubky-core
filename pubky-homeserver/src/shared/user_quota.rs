@@ -367,10 +367,11 @@ impl UserQuota {
     }
 
     /// Allowed write paths as DB-column type (`TEXT`): JSON array string or NULL.
-    pub fn allowed_write_paths_db(&self) -> Option<String> {
+    pub fn allowed_write_paths_db(&self) -> Result<Option<String>, serde_json::Error> {
         self.allowed_write_paths
             .as_ref()
-            .map(|paths| serde_json::to_string(paths).expect("Vec<WebDavPath> always serializes"))
+            .map(serde_json::to_string)
+            .transpose()
     }
 
     /// Check whether a write to `path` is allowed under the current restrictions.
@@ -1119,7 +1120,7 @@ mod tests {
             q.rate_write_str(),
             q.rate_read_burst_i32(),
             q.rate_write_burst_i32(),
-            q.allowed_write_paths_db(),
+            q.allowed_write_paths_db().unwrap(),
         );
         assert_eq!(q, reconstructed);
     }
@@ -1227,7 +1228,7 @@ mod tests {
             allowed_write_paths: Some(vec![wdp("/pub/a/"), wdp("/pub/b/")]),
             ..Default::default()
         };
-        let db_val = q.allowed_write_paths_db();
+        let db_val = q.allowed_write_paths_db().unwrap();
         let reconstructed = UserQuota::from_nullable_columns(None, None, None, None, None, db_val);
         assert_eq!(q.allowed_write_paths, reconstructed.allowed_write_paths);
     }
@@ -1235,7 +1236,7 @@ mod tests {
     #[test]
     fn test_allowed_write_paths_db_none() {
         let q = UserQuota::default();
-        assert_eq!(q.allowed_write_paths_db(), None);
+        assert_eq!(q.allowed_write_paths_db().unwrap(), None);
     }
 
     #[test]

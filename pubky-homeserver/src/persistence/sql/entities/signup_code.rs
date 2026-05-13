@@ -46,7 +46,12 @@ impl SignupCodeRepository {
                 SimpleExpr::Value(limits.rate_write_str().into()),
                 SimpleExpr::Value(limits.rate_read_burst_i32().into()),
                 SimpleExpr::Value(limits.rate_write_burst_i32().into()),
-                SimpleExpr::Value(limits.allowed_write_paths_db().into()),
+                SimpleExpr::Value(
+                    limits
+                        .allowed_write_paths_db()
+                        .map_err(|e| sqlx::Error::InvalidArgument(e.to_string()))?
+                        .into(),
+                ),
             ])
             .unwrap()
             .returning_all()

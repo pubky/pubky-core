@@ -226,7 +226,12 @@ impl UserRepository {
                 ),
                 (
                     UserIden::AllowedWritePaths,
-                    SimpleExpr::Value(config.allowed_write_paths_db().into()),
+                    SimpleExpr::Value(
+                        config
+                            .allowed_write_paths_db()
+                            .map_err(|e| sqlx::Error::InvalidArgument(e.to_string()))?
+                            .into(),
+                    ),
                 ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
