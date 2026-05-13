@@ -23,26 +23,6 @@ use opendal::Buffer;
 use opendal::Operator;
 
 use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
-use crate::persistence::files::layer_domain_error::LayerDomainError;
-
-/// Map OpenDAL errors to domain-specific [`FileIoError`] variants.
-///
-/// Our custom layers embed a [`LayerDomainError`] as the error source via
-/// [`opendal::Error::set_source`]. We downcast from the source to recover the
-/// typed variant, avoiding fragile `ErrorKind` / message-string matching.
-fn map_opendal_error(e: opendal::Error) -> FileIoError {
-    use std::error::Error as _;
-    if let Some(domain) = e
-        .source()
-        .and_then(|s| s.downcast_ref::<LayerDomainError>())
-    {
-        return match domain {
-            LayerDomainError::WritePathForbidden => FileIoError::WritePathForbidden,
-            LayerDomainError::DiskSpaceQuotaExceeded => FileIoError::DiskSpaceQuotaExceeded,
-        };
-    }
-    FileIoError::OpenDAL(e)
-}
 
 /// Build the storage operator based on the config.
 /// Data dir path is used to expand the data directory placeholder in the config.
@@ -158,10 +138,7 @@ impl OpendalService {
     /// Delete a file.
     /// Deleting a non-existing file will NOT return an error.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        self.operator
-            .delete(path.as_str())
-            .await
-            .map_err(map_opendal_error)
+        Ok(self.operator.delete(path.as_str()).await?)
     }
 
     /// Write a stream to the storage.
@@ -176,11 +153,7 @@ impl OpendalService {
         path: &EntryPath,
         mut stream: impl Stream<Item = Result<Bytes, WriteStreamError>> + Unpin + Send,
     ) -> Result<FileMetadata, FileIoError> {
-        let mut writer = self
-            .operator
-            .writer(path.as_str())
-            .await
-            .map_err(map_opendal_error)?;
+        let mut writer = self.operator.writer(path.as_str()).await?;
         let mut metadata_builder = FileMetadataBuilder::default();
         metadata_builder.guess_mime_type_from_path(path.path().as_str());
 
@@ -199,7 +172,7 @@ impl OpendalService {
         match write_result {
             Ok(()) => {
                 // Close the writer to finalize the write operation.
-                writer.close().await.map_err(map_opendal_error)?;
+                writer.close().await?;
                 Ok(metadata_builder.finalize())
             }
             Err(e) => {
@@ -226,23 +199,7 @@ impl OpendalService {
     /// Get the content of a file as a stream of bytes.
     /// The stream is chunked by the CHUNK_SIZE.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        match self.get_stream_inner(path).await {
-            Ok(stream) => Ok(stream),
-            Err(e) => match e.kind() {
-                opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
-                opendal::ErrorKind::PermissionDenied => {
-                    tracing::warn!(
-                        "Permission denied for path: {}. Treating as not found.",
-                        path
-                    );
-                    Err(FileIoError::NotFound)
-                }
-                _ => {
-                    tracing::error!("OpenDAL error for path {}: {}", path, e);
-                    Err(FileIoError::OpenDAL(e))
-                }
-            },
-        }
+        Ok(self.get_stream_inner(path).await?)
     }
 
     /// Check if a file exists.

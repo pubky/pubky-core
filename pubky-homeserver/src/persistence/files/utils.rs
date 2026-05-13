@@ -9,7 +9,7 @@ pub(super) fn ensure_valid_path(path: &str) -> Result<EntryPath, opendal::Error>
         Ok(path) => path,
         Err(e) => {
             return Err(opendal::Error::new(
-                opendal::ErrorKind::PermissionDenied,
+                opendal::ErrorKind::Unexpected,
                 e.to_string(),
             ));
         }
