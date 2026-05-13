@@ -15,8 +15,7 @@ struct Cli {
     output: PathBuf,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // 1) Generate a fresh keypair
@@ -27,6 +26,10 @@ async fn main() -> Result<()> {
     // 2) Encrypt and save the recovery file
     println!("Enter a passphrase to encrypt the recovery file:");
     let passphrase = rpassword::read_password()?;
+    if passphrase.is_empty() {
+        anyhow::bail!("Passphrase cannot be empty");
+    }
+
     println!("Confirm passphrase:");
     let confirm = rpassword::read_password()?;
 
@@ -36,7 +39,7 @@ async fn main() -> Result<()> {
 
     let recovery_bytes = create_recovery_file(&keypair, &passphrase);
     std::fs::write(&cli.output, &recovery_bytes)?;
-    println!("Recovery file written to {:?}", cli.output);
+    println!("Recovery file written to {}", cli.output.display());
 
     Ok(())
 }
