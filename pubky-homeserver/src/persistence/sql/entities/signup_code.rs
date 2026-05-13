@@ -509,4 +509,67 @@ mod tests {
         assert_eq!(user_quota.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(user_quota.rate_write, QuotaOverride::Default);
     }
+
+    /// Verify that signup code `allowed_write_paths` are propagated to the user.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_signup_token_write_paths_applied_to_user() {
+        use crate::persistence::sql::user::UserRepository;
+        use crate::shared::webdav::WebDavPath;
+
+        let db = SqlDb::test().await;
+
+        fn wdp(s: &str) -> WebDavPath {
+            s.parse().unwrap()
+        }
+
+        // 1) Create a signup code with allowed_write_paths restriction
+        let code_quota = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/paykit/")]),
+            ..Default::default()
+        };
+        let code_id = SignupCodeId::random();
+        let code = SignupCodeRepository::create(&code_id, &code_quota, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Verify the code itself persisted the paths
+        let fetched_code = SignupCodeRepository::get(&code_id, &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(
+            fetched_code.quota().allowed_write_paths,
+            code_quota.allowed_write_paths
+        );
+
+        // 2) Simulate signup flow: create user, mark code, apply limits
+        let keypair = Keypair::random();
+        let pubkey = keypair.public_key();
+        let mut tx = db.pool().begin().await.unwrap();
+        let user = UserRepository::create(&pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        SignupCodeRepository::mark_as_used(&code_id, &pubkey, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        let token_quota = code.quota();
+        UserRepository::set_quota(user.id, &token_quota, &mut (&mut tx).into())
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        // 3) Verify the user inherited the write path restrictions
+        let user = UserRepository::get(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        let user_quota = user.quota();
+        assert_eq!(
+            user_quota.allowed_write_paths,
+            Some(vec![wdp("/pub/tokens/"), wdp("/pub/paykit/")]),
+            "allowed_write_paths should propagate from signup code to user"
+        );
+        assert!(user_quota.is_write_path_allowed("/pub/tokens/foo.json"));
+        assert!(user_quota.is_write_path_allowed("/pub/paykit/bar"));
+        assert!(!user_quota.is_write_path_allowed("/pub/other/file"));
+    }
 }

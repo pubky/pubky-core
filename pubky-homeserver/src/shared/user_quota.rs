@@ -1204,6 +1204,51 @@ mod tests {
     }
 
     #[test]
+    fn test_is_write_path_allowed_prefix_not_child_rejected() {
+        // "/pub/tokenstore/" shares a prefix with "/pub/tokens/" but is NOT a child.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(
+            !q.is_write_path_allowed("/pub/tokenstore/foo.json"),
+            "Path sharing a prefix but not under the allowed dir must be rejected"
+        );
+        assert!(
+            !q.is_write_path_allowed("/pub/tokens"),
+            "Allowed dir '/pub/tokens/' should not match file path '/pub/tokens' (no trailing slash)"
+        );
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_nested_subdir() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/tokens/sub/deep/file.json"));
+        assert!(q.is_write_path_allowed("/pub/tokens/a"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_exact_file_no_children() {
+        // An exact file entry should not allow writes to "children" paths.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/config.json")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/config.json"));
+        assert!(
+            !q.is_write_path_allowed("/pub/config.json/extra"),
+            "Exact file match must not allow sub-paths"
+        );
+        assert!(
+            !q.is_write_path_allowed("/pub/config.jsonx"),
+            "Exact file match must not allow suffix extensions"
+        );
+    }
+
+    #[test]
     fn test_allowed_write_paths_serde_roundtrip() {
         let q = UserQuota {
             allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
