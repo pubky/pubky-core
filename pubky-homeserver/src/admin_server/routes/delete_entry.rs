@@ -76,6 +76,11 @@ mod tests {
         EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
             .await
             .expect_err("Should be deleted");
+        // Verify the blob is also gone from the storage backend
+        file_service
+            .get(&entry_path)
+            .await
+            .expect_err("Blob should be deleted from storage");
         let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
             .await
             .unwrap();

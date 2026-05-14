@@ -24,20 +24,19 @@ use opendal::Operator;
 
 use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
-/// Build the storage operator based on the config.
-/// Data dir path is used to expand the data directory placeholder in the config.
+/// Build the base storage operator (with quota, entry, and events layers)
+/// and a second operator that additionally includes the `WritePathLayer`.
 ///
-/// When `include_write_path_layer` is true, the outermost `WritePathLayer` is
-/// added, enforcing per-user write-path restrictions. Pass `false` for admin
-/// operators that must bypass those restrictions while still respecting quotas.
-pub fn build_storage_operator(
+/// Both operators share the same underlying storage backend, which is
+/// important for backends like `InMemory` where separate instances would
+/// have independent data.
+pub fn build_storage_operators(
     storage_config: &StorageToml,
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
     user_service: UserService,
-    include_write_path_layer: bool,
-) -> Result<Operator, FileIoError> {
+) -> Result<(Operator, Operator), FileIoError> {
     let user_quota_layer =
         UserQuotaLayer::new(user_service.clone(), storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
@@ -47,7 +46,7 @@ pub fn build_storage_operator(
     // rejecting disallowed writes before they reach quota/entry/event layers.
     // events_layer runs after entry_layer.close() completes, guaranteeing the
     // file is written before the Event is created.
-    let base = match &storage_config.backend {
+    let admin_operator = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
                 Some(path) => path.to_string(),
@@ -90,28 +89,23 @@ pub fn build_storage_operator(
         }
     };
 
-    let operator = if include_write_path_layer {
-        base.layer(WritePathLayer::new(user_service))
-    } else {
-        base
-    };
-    Ok(operator)
+    let operator = admin_operator
+        .clone()
+        .layer(WritePathLayer::new(user_service));
+    Ok((operator, admin_operator))
 }
 
-/// Build the storage operator based on the config.
-/// Data dir path is used to expand the data directory placeholder in the config.
+/// Build the storage operators from an `AppContext` (test-only convenience).
 #[cfg(test)]
-pub fn build_storage_operator_from_context(
+pub fn build_storage_operators_from_context(
     context: &AppContext,
-    include_write_path_layer: bool,
-) -> Result<Operator, FileIoError> {
-    build_storage_operator(
+) -> Result<(Operator, Operator), FileIoError> {
+    build_storage_operators(
         &context.config_toml.storage,
         context.data_dir.path(),
         &context.sql_db,
         context.events_service.clone(),
         context.user_service.clone(),
-        include_write_path_layer,
     )
 }
 
@@ -139,21 +133,12 @@ impl OpendalService {
         events_service: EventsService,
         user_service: UserService,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(
-            storage_config,
-            data_directory,
-            db,
-            events_service.clone(),
-            user_service.clone(),
-            true,
-        )?;
-        let admin_operator = build_storage_operator(
+        let (operator, admin_operator) = build_storage_operators(
             storage_config,
             data_directory,
             db,
             events_service,
             user_service,
-            false,
         )?;
         Ok(Self {
             operator,
@@ -233,8 +218,7 @@ impl OpendalService {
 #[cfg(test)]
 impl OpendalService {
     pub fn new(context: &AppContext) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator_from_context(context, true)?;
-        let admin_operator = build_storage_operator_from_context(context, false)?;
+        let (operator, admin_operator) = build_storage_operators_from_context(context)?;
         Ok(Self {
             operator,
             admin_operator,
