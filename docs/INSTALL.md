@@ -4,13 +4,17 @@ This guide is for running a standalone Pubky homeserver. For local app developme
 
 ## Choose an Install Method
 
-### Install a Release Binary
+### Install a Release Binary Ubuntu
 
 Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases).
 
 Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`.
 
-On Windows, the binary is named `pubky-homeserver.exe`.
+```bash
+wget https://github.com/pubky/pubky-core/releases/download/v0.7.0/pubky-core-v0.7.0-linux-amd64.tar.gz
+tar -xf pubky-core-v0.7.0-linux-amd64.tar.gz
+cp pubky-core-v0.7.0-linux-amd64/pubky-homeserver /usr/local/bin
+```
 
 ### Build From Source Ubuntu
 
@@ -24,6 +28,7 @@ Make sure you have the rust toolchain installed and working.
 - [Install Guide](https://rust-lang.org/tools/install/)
 - On Ubuntu, you might also need `apt install build-essential git`
 
+---
 </details>
 
 Build the homeserver from the repository root:
@@ -47,7 +52,16 @@ The standalone homeserver requires PostgreSQL.
 
 ### Docker
 
-> Make sure you have the [Docker Engine](https://docs.docker.com/engine/install/ubuntu/) installed.
+<details>
+<summary>Docker Engine required</summary>
+
+#### Install Docker Engine
+
+Checkout the guide: https://docs.docker.com/engine/install/ubuntu/
+
+---
+</details>
+
 
 For a local Docker PostgreSQL instance with password authentication:
 
@@ -72,19 +86,24 @@ database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
 
 In order for LND to run on Postgres, an empty database should already exist. A database can be created via the usual ways (psql, pgadmin, etc.). A user with access to this database is also required.
 
-Install postgres
+<details>
+<summary>Install and setup postgres</summary>
+
+#### Install and Setup Postgres
+
+Checkout the guide: https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart
+
+The homeserver needs and empty database + a user/password to connect to.
+
+Use this command to convieniently test if the resulting connection string is working:
 
 ```bash
-sudo apt update
-sudo apt install postgresql postgresql-contrib
+# Replace the same connection string with your specific string
+sudo -u postgres psql "postgres://postgres:postres@localhost:5432/pubky_homeserver" -c '\conninfo'
 ```
 
-The install creates a new postgres Linux user. Use this command to create the database:
-
-```bash
-sudo -u postgres createuser --superuser pubky
-sudo -u postgres psql -c 'create database pubky_homeserver;'
-```
+---
+</details>
 
 Set the homeserver database URL in `~/.pubky/config.toml`:
 
