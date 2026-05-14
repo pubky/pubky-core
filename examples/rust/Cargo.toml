@@ -37,6 +37,10 @@ path = "./6-auth_flow_signup/authenticator.rs"
 name = "events_stream"
 path = "./7-events_stream/main.rs"
 
+[[bin]]
+name = "keygen"
+path = "./keygen.rs"
+
 [features]
 default = ["embedded-postgres"]
 embedded-postgres = ["pubky-testnet/embedded-postgres"]

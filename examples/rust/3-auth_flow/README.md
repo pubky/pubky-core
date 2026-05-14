@@ -7,6 +7,14 @@ It consists of 2 parts:
 1. [3rd party app](./3rd-party-app): A web component showing the how to implement a Pubky Auth widget.
 2. [Authenticator CLI](./authenticator.rs): A CLI showing the authenticator (key chain) asking user for consent and generating the AuthToken.
 
+## Prerequisites
+
+Generate a recovery file first using the [keygen utility](../keygen.rs):
+
+```bash
+cargo run --bin keygen
+```
+
 ## Usage
 
 First you need to be running a local testnet Homeserver, in the root of this repo run

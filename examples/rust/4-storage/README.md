@@ -1,21 +1,38 @@
 # Storage
 
-Get public data from homeserver storage of a user.
+Read and write data on Pubky homeservers.
 
-## Usage
+## Public Read (unauthenticated)
 
-Get data from a Pubky user homeserver storage using an addressed resource identifier.
-
-```bash
-cargo run --bin storage pubky<user>/pub/<path>
-```
-
-For example, at the time of writing, the following command returns the content of a user's social post.
+Get public data from any user's homeserver storage — no keys needed.
 
 ```bash
-cargo run --bin storage pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
+cargo run --bin storage read pubky<user>/pub/<path>
+
+# example
+cargo run --bin storage read pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
+
+# testnet mode
+cargo run --bin storage read -- --testnet pubky<user>/pub/<path>
 ```
 
-### Testnet
+## Authenticated Write
 
-You can pass a `--testnet` argument to run the query in testnet mode (using local DHT testnet).
+Write, read back, and delete a file on your own homeserver.
+
+### Prerequisites
+
+1. Generate a recovery file using the [keygen utility](../keygen.rs):
+   ```bash
+   cargo run --bin keygen
+   ```
+2. Sign up to a homeserver using the [signup example](../2-signup).
+
+```bash
+cargo run --bin storage write </path/to/recovery file>
+
+# custom path and content
+cargo run --bin storage write </path/to/recovery file> --content "my data" /pub/my-app/data.json
+```
+
+You can pass `--testnet` to use the local testnet defaults.
