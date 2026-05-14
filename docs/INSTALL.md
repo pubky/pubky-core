@@ -17,6 +17,8 @@ On Windows, the binary is named `pubky-homeserver.exe`.
 <details>
 <summary>Rust Toolchain required</summary>
 
+#### Install Toolchain
+
 Make sure you have the rust toolchain installed and working.
 
 - [Install Guide](https://rust-lang.org/tools/install/)
