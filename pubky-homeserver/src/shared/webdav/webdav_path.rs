@@ -1,9 +1,24 @@
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+
 /// A normalized and validated webdav path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WebDavPath {
     normalized_path: String,
+}
+
+impl Serialize for WebDavPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.normalized_path)
+    }
+}
+
+impl<'de> Deserialize<'de> for WebDavPath {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        WebDavPath::new(&s).map_err(serde::de::Error::custom)
+    }
 }
 
 impl WebDavPath {

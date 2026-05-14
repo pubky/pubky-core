@@ -5,6 +5,7 @@ mod m20250814_create_event;
 mod m20250815_create_entry;
 mod m20251014_events_table_index_and_content_hash;
 mod m20260327_add_quota_columns;
+mod m20260507_add_allowed_write_paths;
 
 pub(crate) use m20250806_create_user::M20250806CreateUserMigration;
 pub(crate) use m20250812_create_signup_code::M20250812CreateSignupCodeMigration;
@@ -13,3 +14,4 @@ pub(crate) use m20250814_create_event::M20250814CreateEventMigration;
 pub(crate) use m20250815_create_entry::M20250815CreateEntryMigration;
 pub(crate) use m20251014_events_table_index_and_content_hash::M20251014EventsTableIndexAndContentHashMigration;
 pub(crate) use m20260327_add_quota_columns::M20260327AddQuotaColumnsMigration;
+pub(crate) use m20260507_add_allowed_write_paths::M20260507AddAllowedWritePathsMigration;

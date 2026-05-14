@@ -11,7 +11,7 @@ pub async fn delete_entry(
     State(state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    state.file_service.delete(entry_path.inner()).await?;
+    state.file_service.admin_delete(entry_path.inner()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -76,6 +76,11 @@ mod tests {
         EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
             .await
             .expect_err("Should be deleted");
+        // Verify the blob is also gone from the storage backend
+        file_service
+            .get(&entry_path)
+            .await
+            .expect_err("Blob should be deleted from storage");
         let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
             .await
             .unwrap();

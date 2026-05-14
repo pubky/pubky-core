@@ -8,6 +8,7 @@ use crate::{
             entry::entry_layer::EntryLayer,
             events::{EventsLayer, EventsService},
             user_quota_layer::UserQuotaLayer,
+            write_path_layer::WritePathLayer,
         },
         sql::SqlDb,
     },
@@ -23,21 +24,29 @@ use opendal::Operator;
 
 use super::super::{FileIoError, FileMetadata, FileMetadataBuilder, FileStream, WriteStreamError};
 
-/// Build the storage operator based on the config.
-/// Data dir path is used to expand the data directory placeholder in the config.
-pub fn build_storage_operator(
+/// Build the base storage operator (with quota, entry, and events layers)
+/// and a second operator that additionally includes the `WritePathLayer`.
+///
+/// Both operators share the same underlying storage backend, which is
+/// important for backends like `InMemory` where separate instances would
+/// have independent data.
+pub fn build_storage_operators(
     storage_config: &StorageToml,
     data_directory: &Path,
     db: &SqlDb,
     events_service: EventsService,
     user_service: UserService,
-) -> Result<Operator, FileIoError> {
-    let user_quota_layer = UserQuotaLayer::new(user_service, storage_config.default_quota_mb);
+) -> Result<(Operator, Operator), FileIoError> {
+    let user_quota_layer =
+        UserQuotaLayer::new(user_service.clone(), storage_config.default_quota_mb);
     let entry_layer = EntryLayer::new(db.clone());
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
-    // With current layer order (events_layer outermost), when close() is called the entry_layer.close() has already completed, guaranteeing the file is written before the Event is created.
-    let builder = match &storage_config.backend {
+    // Layers are applied last-to-first: write_path_layer (outermost) runs first,
+    // rejecting disallowed writes before they reach quota/entry/event layers.
+    // events_layer runs after entry_layer.close() completes, guaranteeing the
+    // file is written before the Event is created.
+    let admin_operator = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
                 Some(path) => path.to_string(),
@@ -79,14 +88,19 @@ pub fn build_storage_operator(
                 .finish()
         }
     };
-    Ok(builder)
+
+    let operator = admin_operator
+        .clone()
+        .layer(WritePathLayer::new(user_service));
+    Ok((operator, admin_operator))
 }
 
-/// Build the storage operator based on the config.
-/// Data dir path is used to expand the data directory placeholder in the config.
+/// Build the storage operators from an `AppContext` (test-only convenience).
 #[cfg(test)]
-pub fn build_storage_operator_from_context(context: &AppContext) -> Result<Operator, FileIoError> {
-    build_storage_operator(
+pub fn build_storage_operators_from_context(
+    context: &AppContext,
+) -> Result<(Operator, Operator), FileIoError> {
+    build_storage_operators(
         &context.config_toml.storage,
         context.data_dir.path(),
         &context.sql_db,
@@ -105,7 +119,10 @@ const CHUNK_SIZE: usize = 16 * 1024;
 /// The service to write and read files to and from the configured opendal storage.
 #[derive(Debug, Clone)]
 pub struct OpendalService {
+    /// Operator with all layers including `WritePathLayer` (for user-facing operations).
     pub(crate) operator: Operator,
+    /// Operator without `WritePathLayer` (for admin operations that bypass write-path restrictions).
+    pub(crate) admin_operator: Operator,
 }
 
 impl OpendalService {
@@ -116,32 +133,32 @@ impl OpendalService {
         events_service: EventsService,
         user_service: UserService,
     ) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator(
+        let (operator, admin_operator) = build_storage_operators(
             storage_config,
             data_directory,
             db,
             events_service,
             user_service,
         )?;
-        Ok(Self { operator })
+        Ok(Self {
+            operator,
+            admin_operator,
+        })
     }
 
     /// Delete a file.
     /// Deleting a non-existing file will NOT return an error.
     pub async fn delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
-        self.operator
-            .delete(path.as_str())
-            .await
-            .map_err(FileIoError::OpenDAL)
+        Ok(self.operator.delete(path.as_str()).await?)
+    }
+
+    /// Delete a file bypassing write-path restrictions.
+    /// Used by `FileService::admin_delete` for the admin `/webdav` REST route.
+    pub async fn admin_delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
+        Ok(self.admin_operator.delete(path.as_str()).await?)
     }
 
     /// Write a stream to the storage.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to the file.
-    /// * `stream` - The stream to write.
-    /// * `max_bytes` - The maximum number of bytes to write. Will throw an error if the stream exceeds this limit.
     pub async fn write_stream(
         &self,
         path: &EntryPath,
@@ -151,7 +168,6 @@ impl OpendalService {
         let mut metadata_builder = FileMetadataBuilder::default();
         metadata_builder.guess_mime_type_from_path(path.path().as_str());
 
-        // Write each chunk from the stream to the writer
         let write_result: Result<(), FileIoError> = async {
             while let Some(chunk_result) = stream.next().await {
                 let chunk = chunk_result?;
@@ -162,25 +178,12 @@ impl OpendalService {
         }
         .await;
 
-        // Let's close the writer properly depending on if the stream write was successful.
         match write_result {
             Ok(()) => {
-                // Close the writer to finalize the write operation
-                writer.close().await.map_err(|e| {
-                    // The UserQuotaLayer will return a RateLimited error if the user has exceeded the quota.
-                    // We convert this to a DiskSpaceQuotaExceeded error.
-                    if e.kind() == opendal::ErrorKind::RateLimited
-                        && e.to_string().contains("User quota exceeded")
-                    {
-                        FileIoError::DiskSpaceQuotaExceeded
-                    } else {
-                        FileIoError::OpenDAL(e)
-                    }
-                })?;
+                writer.close().await?;
                 Ok(metadata_builder.finalize())
             }
             Err(e) => {
-                // Abort the writer properly to avoid leaking resources.
                 writer.abort().await?;
                 Err(e)
             }
@@ -203,23 +206,7 @@ impl OpendalService {
     /// Get the content of a file as a stream of bytes.
     /// The stream is chunked by the CHUNK_SIZE.
     pub async fn get_stream(&self, path: &EntryPath) -> Result<FileStream, FileIoError> {
-        match self.get_stream_inner(path).await {
-            Ok(stream) => Ok(stream),
-            Err(e) => match e.kind() {
-                opendal::ErrorKind::NotFound => Err(FileIoError::NotFound),
-                opendal::ErrorKind::PermissionDenied => {
-                    tracing::warn!(
-                        "Permission denied for path: {}. Treating as not found.",
-                        path
-                    );
-                    Err(FileIoError::NotFound)
-                }
-                _ => {
-                    tracing::error!("OpenDAL error for path {}: {}", path, e);
-                    Err(FileIoError::OpenDAL(e))
-                }
-            },
-        }
+        Ok(self.get_stream_inner(path).await?)
     }
 
     /// Check if a file exists.
@@ -231,14 +218,20 @@ impl OpendalService {
 #[cfg(test)]
 impl OpendalService {
     pub fn new(context: &AppContext) -> Result<Self, FileIoError> {
-        let operator = build_storage_operator_from_context(context)?;
-        Ok(Self { operator })
+        let (operator, admin_operator) = build_storage_operators_from_context(context)?;
+        Ok(Self {
+            operator,
+            admin_operator,
+        })
     }
 
     /// Create a new opendal service from an existing operator.
     /// This is useful for testing.
     pub fn new_from_operator(operator: Operator) -> Self {
-        Self { operator }
+        Self {
+            admin_operator: operator.clone(),
+            operator,
+        }
     }
 
     /// Get the content of a file as a single Bytes object.

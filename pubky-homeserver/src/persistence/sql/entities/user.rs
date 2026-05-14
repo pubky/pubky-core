@@ -10,7 +10,7 @@ pub const USER_TABLE: &str = "users";
 
 /// All columns needed to construct a `UserEntity` from a row.
 /// Single source of truth — used by `get`, `get_for_update`, and `get_all`.
-const ALL_USER_COLUMNS: [UserIden; 10] = [
+const ALL_USER_COLUMNS: [UserIden; 11] = [
     UserIden::Id,
     UserIden::PublicKey,
     UserIden::CreatedAt,
@@ -21,6 +21,7 @@ const ALL_USER_COLUMNS: [UserIden; 10] = [
     UserIden::QuotaRateWrite,
     UserIden::QuotaRateReadBurst,
     UserIden::QuotaRateWriteBurst,
+    UserIden::AllowedWritePaths,
 ];
 
 /// Repository that handles all the queries regarding the UserEntity.
@@ -223,6 +224,15 @@ impl UserRepository {
                     UserIden::QuotaRateWriteBurst,
                     SimpleExpr::Value(config.rate_write_burst_i32().into()),
                 ),
+                (
+                    UserIden::AllowedWritePaths,
+                    SimpleExpr::Value(
+                        config
+                            .allowed_write_paths_db()
+                            .map_err(|e| sqlx::Error::InvalidArgument(e.to_string()))?
+                            .into(),
+                    ),
+                ),
             ])
             .and_where(Expr::col(UserIden::Id).eq(user_id))
             .returning_all()
@@ -288,6 +298,7 @@ pub enum UserIden {
     QuotaRateWrite,
     QuotaRateReadBurst,
     QuotaRateWriteBurst,
+    AllowedWritePaths,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -307,6 +318,8 @@ pub struct UserEntity {
     pub quota_rate_read_burst: Option<i32>,
     /// Per-user write rate burst override. `None` = default (burst = rate).
     pub quota_rate_write_burst: Option<i32>,
+    /// Allowed write paths as JSON array string. `None` = unrestricted.
+    pub allowed_write_paths: Option<String>,
 }
 
 impl UserEntity {
@@ -320,6 +333,7 @@ impl UserEntity {
             self.quota_rate_write.clone(),
             self.quota_rate_read_burst,
             self.quota_rate_write_burst,
+            self.allowed_write_paths.clone(),
         )
     }
 }
@@ -352,6 +366,8 @@ impl FromRow<'_, PgRow> for UserEntity {
             row.try_get(UserIden::QuotaRateReadBurst.to_string().as_str())?;
         let quota_rate_write_burst: Option<i32> =
             row.try_get(UserIden::QuotaRateWriteBurst.to_string().as_str())?;
+        let allowed_write_paths: Option<String> =
+            row.try_get(UserIden::AllowedWritePaths.to_string().as_str())?;
         Ok(UserEntity {
             id,
             public_key,
@@ -363,6 +379,7 @@ impl FromRow<'_, PgRow> for UserEntity {
             quota_rate_write,
             quota_rate_read_burst,
             quota_rate_write_burst,
+            allowed_write_paths,
         })
     }
 }
@@ -580,6 +597,7 @@ mod tests {
             quota_rate_write: None,
             quota_rate_read_burst: None,
             quota_rate_write_burst: None,
+            allowed_write_paths: None,
         };
 
         let limits = user.quota();
@@ -606,6 +624,7 @@ mod tests {
             quota_rate_write: None,
             quota_rate_read_burst: None,
             quota_rate_write_burst: None,
+            allowed_write_paths: None,
         };
 
         let limits = user.quota();
@@ -632,6 +651,7 @@ mod tests {
             quota_rate_write: Some("unlimited".to_string()),
             quota_rate_read_burst: None,
             quota_rate_write_burst: None,
+            allowed_write_paths: None,
         };
 
         let limits = user.quota();
@@ -655,6 +675,7 @@ mod tests {
             quota_rate_write: Some("also_rubbish".to_string()),
             quota_rate_read_burst: None,
             quota_rate_write_burst: None,
+            allowed_write_paths: None,
         };
 
         let limits = user.quota();

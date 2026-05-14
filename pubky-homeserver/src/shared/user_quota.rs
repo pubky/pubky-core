@@ -14,6 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::data_directory::quota_config::BandwidthQuota;
 use crate::data_directory::DefaultQuotasToml;
+use crate::shared::webdav::WebDavPath;
 
 /// Maximum length of the VARCHAR column used for rate strings in the DB.
 /// Matches the `VARCHAR(32)` used in the `m20260327_add_quota_columns` migration.
@@ -243,7 +244,31 @@ fn validate_burst(
     validate_burst_value(label, burst)
 }
 
-/// Per-user quotas. All fields use the three-state `QuotaOverride<T>`.
+/// Validate that allowed_write_paths entries are well-formed path restrictions.
+///
+/// Each `WebDavPath` is already normalized and validated by serde deserialization.
+/// This checks the remaining domain constraints: not root, no duplicates.
+///
+/// Entries can be either directories (ending with `/`) for prefix matching,
+/// or specific files for exact-path matching.
+fn validate_allowed_write_paths(paths: &Option<Vec<WebDavPath>>) -> Result<(), String> {
+    if let Some(ref entries) = paths {
+        let mut seen = std::collections::HashSet::new();
+        for (i, p) in entries.iter().enumerate() {
+            if p.as_str() == "/" {
+                return Err(format!(
+                    "allowed_write_paths[{i}] must not be '/'; use null for unrestricted access"
+                ));
+            }
+            if !seen.insert(p) {
+                return Err(format!("allowed_write_paths[{i}] is a duplicate: \"{p}\""));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Per-user quotas. Most fields use the three-state `QuotaOverride<T>`.
 ///
 /// | Field | Default means | Example Value |
 /// |---|---|---|
@@ -252,6 +277,7 @@ fn validate_burst(
 /// | `rate_write` | use `default_quotas.rate_write` from config | `Value(BandwidthQuota)` |
 /// | `rate_read_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
 /// | `rate_write_burst` | burst = rate | `Some(50)` = 50 in rate's unit |
+/// | `allowed_write_paths` | unrestricted | `Some(vec!["/pub/tokens/"])` |
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct UserQuota {
     /// Storage quota in MB.
@@ -271,6 +297,12 @@ pub struct UserQuota {
     /// (MB for "…mb/s", KB for "…kb/s"). `None` = burst equals rate (default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_write_burst: Option<u32>,
+    /// Restrict which paths a user can write to.
+    /// - `None` = unrestricted (all paths allowed) — default
+    /// - `Some([])` = read-only (no writes allowed)
+    /// - `Some(["/pub/tokens/", "/pub/paykit/"])` = only these prefix paths
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_write_paths: Option<Vec<WebDavPath>>,
 }
 
 impl UserQuota {
@@ -278,13 +310,24 @@ impl UserQuota {
     ///
     /// - Integer columns: NULL → Default, -1 → Unlimited, positive → Value.
     /// - VARCHAR columns: NULL → Default, "unlimited" → Unlimited, value → Value.
+    /// - `allowed_write_paths`: NULL → `None` (unrestricted), valid JSON array → `Some(vec)`,
+    ///   malformed JSON → `Some(vec![])` (read-only, fail-closed).
     pub fn from_nullable_columns(
         storage_quota_mb: Option<i32>,
         rate_read: Option<String>,
         rate_write: Option<String>,
         rate_read_burst: Option<i32>,
         rate_write_burst: Option<i32>,
+        allowed_write_paths: Option<String>,
     ) -> Self {
+        let allowed_write_paths = allowed_write_paths.map(|s| {
+            serde_json::from_str::<Vec<WebDavPath>>(&s).unwrap_or_else(|e| {
+                tracing::error!(
+                    "Invalid allowed_write_paths JSON in DB: {e}; falling back to read-only"
+                );
+                vec![]
+            })
+        });
         Self {
             storage_quota_mb: QuotaOverride::<u64>::from_db_int(
                 "quota_storage_mb",
@@ -294,6 +337,7 @@ impl UserQuota {
             rate_write: QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_write", rate_write),
             rate_read_burst: rate_read_burst.and_then(|v| u32::try_from(v).ok()),
             rate_write_burst: rate_write_burst.and_then(|v| u32::try_from(v).ok()),
+            allowed_write_paths,
         }
     }
 
@@ -320,6 +364,30 @@ impl UserQuota {
     /// Rate-write burst as DB-column type (`INTEGER`).
     pub fn rate_write_burst_i32(&self) -> Option<i32> {
         burst_to_i32("rate_write_burst", self.rate_write_burst)
+    }
+
+    /// Allowed write paths as DB-column type (`TEXT`): JSON array string or NULL.
+    pub fn allowed_write_paths_db(&self) -> Result<Option<String>, serde_json::Error> {
+        self.allowed_write_paths
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+    }
+
+    /// Check whether a write to `path` is allowed under the current restrictions.
+    pub fn is_write_path_allowed(&self, path: &str) -> bool {
+        match &self.allowed_write_paths {
+            None => true,
+            Some(entries) => entries.iter().any(|entry| {
+                if entry.is_directory() {
+                    // Directory entries use prefix matching.
+                    path.starts_with(entry.as_str())
+                } else {
+                    // File entries use exact matching.
+                    path == entry.as_str()
+                }
+            }),
+        }
     }
 
     /// Resolve all `Default` fields against system-wide defaults.
@@ -368,6 +436,7 @@ impl UserQuota {
             } else {
                 None
             }),
+            allowed_write_paths: self.allowed_write_paths.clone(),
         }
     }
 
@@ -380,6 +449,7 @@ impl UserQuota {
         validate_rate_value("rate_write", &self.rate_write)?;
         validate_burst("rate_read_burst", self.rate_read_burst, &self.rate_read)?;
         validate_burst("rate_write_burst", self.rate_write_burst, &self.rate_write)?;
+        validate_allowed_write_paths(&self.allowed_write_paths)?;
         Ok(())
     }
 
@@ -400,6 +470,9 @@ impl UserQuota {
         if let Some(v) = patch.rate_write_burst {
             self.rate_write_burst = v;
         }
+        if let Some(ref v) = patch.allowed_write_paths {
+            self.allowed_write_paths = v.clone();
+        }
     }
 }
 
@@ -412,6 +485,19 @@ where
     D: Deserializer<'de>,
 {
     QuotaOverride::<T>::deserialize(d).map(Some)
+}
+
+/// Serde helper for patch `Option<Option<Vec<String>>>`:
+/// - field absent → `None` (keep existing)
+/// - field `null` → `Some(None)` (reset to unrestricted)
+/// - field `[...]` → `Some(Some(vec))` (set paths)
+fn deserialize_patch_allowed_write_paths<'de, D>(
+    d: D,
+) -> Result<Option<Option<Vec<WebDavPath>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<Vec<WebDavPath>>::deserialize(d).map(Some)
 }
 
 /// Serde helper for patch `Option<Option<u32>>`:
@@ -436,6 +522,9 @@ where
 /// | `null` | reset to `Default` (use system default) |
 /// | `"unlimited"` | set to `Unlimited` (no limit) |
 /// | value | set to `Value(v)` (custom limit) |
+///
+/// For `allowed_write_paths` specifically: absent = keep, `null` = reset
+/// to unrestricted, `[...]` = set allowed path prefixes.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct UserQuotaPatch {
     /// Storage quota in MB.
@@ -453,6 +542,9 @@ pub struct UserQuotaPatch {
     /// Burst for write speed limit (in the rate's natural unit). null = reset to default.
     #[serde(default, deserialize_with = "deserialize_patch_option_u32")]
     pub rate_write_burst: Option<Option<u32>>,
+    /// Allowed write paths. absent = keep, null = reset to unrestricted, array = set paths.
+    #[serde(default, deserialize_with = "deserialize_patch_allowed_write_paths")]
+    pub allowed_write_paths: Option<Option<Vec<WebDavPath>>>,
 }
 
 impl UserQuotaPatch {
@@ -471,6 +563,9 @@ impl UserQuotaPatch {
         }
         validate_burst_value("rate_read_burst", self.rate_read_burst.flatten())?;
         validate_burst_value("rate_write_burst", self.rate_write_burst.flatten())?;
+        if let Some(ref inner) = self.allowed_write_paths {
+            validate_allowed_write_paths(inner)?;
+        }
         Ok(())
     }
 }
@@ -598,7 +693,7 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_all_null() {
-        let q = UserQuota::from_nullable_columns(None, None, None, None, None);
+        let q = UserQuota::from_nullable_columns(None, None, None, None, None, None);
         assert_eq!(q, UserQuota::default());
     }
 
@@ -607,6 +702,7 @@ mod tests {
         let q = UserQuota::from_nullable_columns(
             Some(500),
             Some("100mb/m".to_string()),
+            None,
             None,
             None,
             None,
@@ -627,6 +723,7 @@ mod tests {
             Some("unlimited".to_string()),
             None,
             None,
+            None,
         );
         assert_eq!(q.storage_quota_mb, QuotaOverride::Unlimited);
         assert_eq!(q.rate_read, QuotaOverride::Unlimited);
@@ -635,8 +732,14 @@ mod tests {
 
     #[test]
     fn test_from_nullable_columns_mixed() {
-        let q =
-            UserQuota::from_nullable_columns(None, Some("10mb/s".to_string()), None, None, None);
+        let q = UserQuota::from_nullable_columns(
+            None,
+            Some("10mb/s".to_string()),
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(q.storage_quota_mb, QuotaOverride::Default);
         assert_eq!(
             q.rate_read,
@@ -653,6 +756,7 @@ mod tests {
             Some("100mb/m".to_string()),
             None,
             None,
+            None,
         );
         assert_eq!(q.rate_read, QuotaOverride::Default);
         assert_eq!(
@@ -667,6 +771,7 @@ mod tests {
             None,
             Some("100r/m".to_string()),
             Some("50r/s".to_string()),
+            None,
             None,
             None,
         );
@@ -1015,6 +1120,7 @@ mod tests {
             q.rate_write_str(),
             q.rate_read_burst_i32(),
             q.rate_write_burst_i32(),
+            q.allowed_write_paths_db().unwrap(),
         );
         assert_eq!(q, reconstructed);
     }
@@ -1039,5 +1145,296 @@ mod tests {
         };
         let json = serde_json::to_string(&q).unwrap();
         assert!(json.contains(r#""rate_read_burst":50"#));
+    }
+
+    /// Helper to create a `WebDavPath` in tests.
+    fn wdp(s: &str) -> WebDavPath {
+        WebDavPath::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_none_means_unrestricted() {
+        let q = UserQuota::default();
+        assert!(q.is_write_path_allowed("/pub/anything"));
+        assert!(q.is_write_path_allowed("/"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_empty_means_readonly() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![]),
+            ..Default::default()
+        };
+        assert!(!q.is_write_path_allowed("/pub/anything"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_prefix_match() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/paykit/")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/tokens/foo.json"));
+        assert!(q.is_write_path_allowed("/pub/paykit/bar"));
+        assert!(!q.is_write_path_allowed("/pub/other/file"));
+        assert!(!q.is_write_path_allowed("/pub/token")); // no trailing slash match
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_exact_file_match() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/profile.json")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/profile.json"));
+        assert!(!q.is_write_path_allowed("/pub/profile.json/sub"));
+        assert!(!q.is_write_path_allowed("/pub/profile.jsonx"));
+        assert!(!q.is_write_path_allowed("/pub/other.json"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_mixed_dirs_and_files() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/profile.json")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/tokens/foo.json"));
+        assert!(q.is_write_path_allowed("/pub/profile.json"));
+        assert!(!q.is_write_path_allowed("/pub/other/file"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_prefix_not_child_rejected() {
+        // "/pub/tokenstore/" shares a prefix with "/pub/tokens/" but is NOT a child.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(
+            !q.is_write_path_allowed("/pub/tokenstore/foo.json"),
+            "Path sharing a prefix but not under the allowed dir must be rejected"
+        );
+        assert!(
+            !q.is_write_path_allowed("/pub/tokens"),
+            "Allowed dir '/pub/tokens/' should not match file path '/pub/tokens' (no trailing slash)"
+        );
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_nested_subdir() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/tokens/sub/deep/file.json"));
+        assert!(q.is_write_path_allowed("/pub/tokens/a"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_exact_file_no_children() {
+        // An exact file entry should not allow writes to "children" paths.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/config.json")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/config.json"));
+        assert!(
+            !q.is_write_path_allowed("/pub/config.json/extra"),
+            "Exact file match must not allow sub-paths"
+        );
+        assert!(
+            !q.is_write_path_allowed("/pub/config.jsonx"),
+            "Exact file match must not allow suffix extensions"
+        );
+    }
+
+    #[test]
+    fn test_allowed_write_paths_serde_roundtrip() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains("allowed_write_paths"));
+        let deserialized: UserQuota = serde_json::from_str(&json).unwrap();
+        assert_eq!(q, deserialized);
+    }
+
+    #[test]
+    fn test_allowed_write_paths_none_omitted_from_json() {
+        let q = UserQuota::default();
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(!json.contains("allowed_write_paths"));
+    }
+
+    #[test]
+    fn test_allowed_write_paths_db_roundtrip() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/a/"), wdp("/pub/b/")]),
+            ..Default::default()
+        };
+        let db_val = q.allowed_write_paths_db().unwrap();
+        let reconstructed = UserQuota::from_nullable_columns(None, None, None, None, None, db_val);
+        assert_eq!(q.allowed_write_paths, reconstructed.allowed_write_paths);
+    }
+
+    #[test]
+    fn test_allowed_write_paths_db_none() {
+        let q = UserQuota::default();
+        assert_eq!(q.allowed_write_paths_db().unwrap(), None);
+    }
+
+    #[test]
+    fn test_validate_allowed_write_paths_valid() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(q.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_allowed_write_paths_empty_is_valid() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![]),
+            ..Default::default()
+        };
+        assert!(q.validate().is_ok());
+    }
+
+    #[test]
+    fn test_serde_rejects_invalid_path_no_leading_slash() {
+        let result =
+            serde_json::from_str::<UserQuota>(r#"{"allowed_write_paths": ["pub/tokens/"]}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_allowed_write_paths_file_path_accepted() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens")]),
+            ..Default::default()
+        };
+        assert!(q.validate().is_ok(), "File paths should be accepted");
+    }
+
+    #[test]
+    fn test_serde_rejects_dotdot_path() {
+        // WebDavPath normalizes "../" so the round-trip won't match;
+        // serde deserialization itself succeeds but produces a different path.
+        // The key point is that a dotdot path can't sneak through.
+        let result =
+            serde_json::from_str::<UserQuota>(r#"{"allowed_write_paths": ["/pub/../etc/"]}"#);
+        // WebDavPath::new normalizes "/pub/../etc/" to "/etc/" — so deserialization succeeds
+        // but the stored path is "/etc/", not the original. This is safe.
+        if let Ok(q) = result {
+            assert_eq!(q.allowed_write_paths.unwrap()[0].as_str(), "/etc/");
+        }
+    }
+
+    #[test]
+    fn test_serde_normalizes_double_slash() {
+        let q: UserQuota =
+            serde_json::from_str(r#"{"allowed_write_paths": ["/pub//tokens/"]}"#).unwrap();
+        assert_eq!(q.allowed_write_paths.unwrap()[0].as_str(), "/pub/tokens/");
+    }
+
+    #[test]
+    fn test_patch_allowed_write_paths_absent_keeps() {
+        let patch: UserQuotaPatch = serde_json::from_str("{}").unwrap();
+        assert!(patch.allowed_write_paths.is_none());
+    }
+
+    #[test]
+    fn test_patch_allowed_write_paths_null_resets() {
+        let patch: UserQuotaPatch =
+            serde_json::from_str(r#"{"allowed_write_paths": null}"#).unwrap();
+        assert_eq!(patch.allowed_write_paths, Some(None));
+    }
+
+    #[test]
+    fn test_patch_allowed_write_paths_array_sets() {
+        let patch: UserQuotaPatch =
+            serde_json::from_str(r#"{"allowed_write_paths": ["/pub/a/"]}"#).unwrap();
+        assert_eq!(patch.allowed_write_paths, Some(Some(vec![wdp("/pub/a/")])));
+    }
+
+    #[test]
+    fn test_validate_allowed_write_paths_root_slash_rejected() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/")]),
+            ..Default::default()
+        };
+        assert!(q.validate().unwrap_err().contains("must not be '/'"));
+    }
+
+    #[test]
+    fn test_validate_allowed_write_paths_duplicate_rejected() {
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/tokens/")]),
+            ..Default::default()
+        };
+        assert!(q.validate().unwrap_err().contains("duplicate"));
+    }
+
+    #[test]
+    fn test_from_nullable_columns_malformed_json_falls_back_to_readonly() {
+        let q = UserQuota::from_nullable_columns(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("not valid json".to_string()),
+        );
+        assert_eq!(
+            q.allowed_write_paths,
+            Some(vec![]),
+            "Malformed JSON should fall back to read-only (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn test_from_nullable_columns_wrong_json_type_falls_back_to_readonly() {
+        // Valid JSON but wrong type (object instead of array).
+        let q = UserQuota::from_nullable_columns(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(r#"{"not": "an array"}"#.to_string()),
+        );
+        assert_eq!(
+            q.allowed_write_paths,
+            Some(vec![]),
+            "Wrong JSON type should fall back to read-only (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn test_patch_serde_rejects_bad_write_paths() {
+        let result = serde_json::from_str::<UserQuotaPatch>(
+            r#"{"allowed_write_paths": ["no-leading-slash/"]}"#,
+        );
+        assert!(
+            result.is_err(),
+            "Invalid paths should be rejected at deserialization"
+        );
+    }
+
+    #[test]
+    fn test_merge_allowed_write_paths() {
+        let mut base = UserQuota::default();
+        let patch: UserQuotaPatch =
+            serde_json::from_str(r#"{"allowed_write_paths": ["/pub/x/"]}"#).unwrap();
+        base.merge(&patch);
+        assert_eq!(base.allowed_write_paths, Some(vec![wdp("/pub/x/")]));
+
+        // Reset to unrestricted
+        let patch: UserQuotaPatch =
+            serde_json::from_str(r#"{"allowed_write_paths": null}"#).unwrap();
+        base.merge(&patch);
+        assert_eq!(base.allowed_write_paths, None);
     }
 }

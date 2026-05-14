@@ -329,3 +329,107 @@ async fn per_user_read_speed_override_throttles_via_admin_api() {
         elapsed_b
     );
 }
+
+/// Test that per-user `allowed_write_paths` set via admin API is enforced at the HTTP level.
+///
+/// User A is restricted to `/pub/tokens/` only; writes to allowed path succeed (201),
+/// writes to disallowed paths are rejected (403), and reads remain unaffected.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn allowed_write_paths_enforced_via_http() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create user
+    let signer = pubky.signer(Keypair::random());
+    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let pubkey_z32 = signer.public_key().z32();
+
+    // Write a file to a path that will later be disallowed (before restriction is applied)
+    let resp = session
+        .storage()
+        .put("/pub/other/bar.json", vec![4, 5, 6])
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Restrict user to /pub/tokens/ only via admin API
+    let admin_client = PubkyHttpClient::new().unwrap();
+    let resp = admin_client
+        .request(
+            Method::PATCH,
+            &format!("http://{admin_socket}/users/{pubkey_z32}/quota"),
+        )
+        .header("X-Admin-Password", &admin_password)
+        .header("content-type", "application/json")
+        .body(r#"{"allowed_write_paths": ["/pub/tokens/"]}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Write to allowed path → 201
+    let resp = session
+        .storage()
+        .put("/pub/tokens/foo.json", vec![1, 2, 3])
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // Write to disallowed path → 403
+    let err = session
+        .storage()
+        .put("/pub/other/bar.json", vec![4, 5, 6])
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Request(RequestError::Server { status, .. })
+                if status == StatusCode::FORBIDDEN
+        ),
+        "Expected 403 FORBIDDEN but got: {err:?}"
+    );
+
+    // Read from allowed path still works
+    let resp = session.storage().get("/pub/tokens/foo.json").await.unwrap();
+    let body = resp.bytes().await.unwrap();
+    assert_eq!(body.as_ref(), &[1, 2, 3]);
+
+    // Delete from allowed path → succeeds
+    let resp = session
+        .storage()
+        .delete("/pub/tokens/foo.json")
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // Delete from disallowed path → 403
+    // (file was written before restriction was applied)
+    let err = session
+        .storage()
+        .delete("/pub/other/bar.json")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Request(RequestError::Server { status, .. })
+                if status == StatusCode::FORBIDDEN
+        ),
+        "Expected 403 FORBIDDEN on delete but got: {err:?}"
+    );
+}
