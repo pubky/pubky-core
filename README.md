@@ -23,7 +23,7 @@
 
 This repository contains `pubky-homeserver`, the reference homeserver implementation for Pubky, and the crates needed to run, test, and integrate with it.
 
-Pubky Core is the broader protocol ecosystem: public-key identity, PKDNS/Pkarr discovery, Pubky TLS, authentication flows, and user-controlled storage. This repository focuses on the homeserver and its closely related developer tooling.
+Pubky Core is the broader protocol ecosystem: public-key identity, PKDNS/Pkarr discovery, Pubky TLS, signers, and more. This repository focuses on the homeserver and its closely related developer tooling.
 
 ## What Is a Homeserver?
 
@@ -33,7 +33,7 @@ Key capabilities:
 
 - Public-key based signup and signin.
 - Third-party authorization through Pubky auth flows.
-- User storage through HTTP `PUT`, `GET`, `DELETE`, and listing APIs.
+- User storage through HTTP `PUT`, `GET`, `DELETE`, and listing APIs, similar to WebDav.
 - PKDNS/Pkarr publishing for homeserver discovery.
 - Optional admin and metrics endpoints for operators.
 
@@ -42,46 +42,21 @@ Key capabilities:
 | Path | Purpose |
 | --- | --- |
 | [`pubky-homeserver`](./pubky-homeserver) | Homeserver binary and library crate. |
-| [`pubky-sdk`](./pubky-sdk) | Rust SDK for Pubky apps, plus JS/WASM bindings. |
+| [`pubky-sdk`](./pubky-sdk) | Homeserver rust client for Pubky apps, plus JS/WASM bindings. |
 | [`pubky-common`](./pubky-common) | Shared types and helpers used by the SDK and homeserver. |
 | [`pubky-testnet`](./pubky-testnet) | Local ephemeral Pubky network for development and tests. |
 | [`examples`](./examples) | Rust and JavaScript examples for signup, auth, storage, and requests. |
 | [`docs`](./docs) | Source for protocol and concept documentation. |
-| [`test_utils`](./test_utils) | Internal testing helpers used by workspace crates. |
 
 ## Quick Start
 
-The fastest self-contained check is the Rust testnet example. It starts an ephemeral local network, signs up a user, writes a file, and reads it back. The first run downloads embedded PostgreSQL binaries that are reused on later runs.
+The easiest way to run a homeserver locally is the long-lived testnet with embedded PostgreSQL. It starts a local DHT, Pkarr relay, HTTP relay, homeserver, and admin server. The first run downloads PostgreSQL binaries that are reused on later runs.
 
 ```bash
-cargo run -p pubky-core-examples --bin testnet
+cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
 ```
 
-For a long-lived local testnet that browser tests, JS examples, and other processes can connect to, run:
-
-```bash
-cargo run -p pubky-testnet
-```
-
-The long-lived testnet expects PostgreSQL to be available. Use `TEST_PUBKY_CONNECTION_STRING` if your local database does not match the default test connection string.
-
-See the [Rust examples](./examples/rust) and [JavaScript examples](./examples/javascript) for guided flows.
-
-## Run a Homeserver
-
-For a standalone homeserver, install PostgreSQL and create the database expected by the default configuration:
-
-```bash
-createdb pubky_homeserver
-```
-
-Then start the homeserver:
-
-```bash
-cargo run -p pubky-homeserver
-```
-
-By default, the homeserver uses `~/.pubky` as its data directory. On first run it creates the data directory, writes `~/.pubky/config.toml`, and creates the homeserver key material.
+This local testnet is intended for browser tests, JS examples, Rust examples, and other development processes that need a stable local network to connect to.
 
 Default local endpoints:
 
@@ -90,9 +65,21 @@ Default local endpoints:
 | Public HTTP API | `http://127.0.0.1:6286` |
 | Pubky TLS API | `127.0.0.1:6287` |
 | Admin API | `http://127.0.0.1:6288` |
-| Metrics API | `http://127.0.0.1:6289` |
+| Pkarr Relay | `http://127.0.0.1:15411` |
+| HTTP Relay | `http://127.0.0.1:15412` |
 
-The default signup mode requires signup tokens. See the [homeserver README](./pubky-homeserver/README.md#signup-token) for generating tokens through the admin API.
+To use your own PostgreSQL instance instead, omit `--embedded-postgres` and set `TEST_PUBKY_CONNECTION_STRING` if your local database does not match the default test connection string. See [Local Development](./docs/LOCAL_DEVELOPMENT.md) for details.
+
+## Run a Homeserver
+
+For a standalone homeserver, follow [Install and Run Pubky Homeserver](./docs/INSTALL.md). The minimal source workflow is:
+
+```bash
+createdb pubky_homeserver
+cargo run -p pubky-homeserver
+```
+
+By default, the homeserver uses `~/.pubky` as its data directory. On first run it creates the data directory, writes `~/.pubky/config.toml`, and creates the homeserver key material.
 
 ## Configuration
 
@@ -132,10 +119,12 @@ The SDK provides signup, signin, public storage reads, authenticated storage wri
 
 ## Development
 
+For a stable local testnet, see [Local Development](./docs/LOCAL_DEVELOPMENT.md). For test database setup, embedded PostgreSQL in tests, and CI commands, see [Testing](./docs/TESTING.md).
+
 Prerequisites:
 
 - Rust `1.89` or newer.
-- PostgreSQL for homeserver tests and standalone homeserver runs.
+- PostgreSQL for standalone homeserver runs and tests that do not use embedded PostgreSQL.
 - Node.js `20` or newer for JS/WASM bindings.
 - `wasm-pack` when working on the JavaScript SDK bindings.
 
@@ -150,7 +139,7 @@ cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
 Run Rust tests for a specific crate with a PostgreSQL connection string configured for test databases:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' cargo test -p pubky-homeserver --all-features
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' cargo test -p pubky-homeserver --all-features
 ```
 
 Build and test the JavaScript bindings:
@@ -190,7 +179,7 @@ Use `--network=host` when the container needs access to host networking or when 
 
 `database "pubky_homeserver" does not exist`: create the database or update `general.database_url` in `~/.pubky/config.toml`.
 
-`connection refused` from examples or SDK tests: start `cargo run -p pubky-testnet` first, or make sure your homeserver is running on the configured ports.
+`connection refused` from examples or SDK tests: start `cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres` first, or make sure your homeserver is running on the configured ports.
 
 `address already in use`: change the relevant listen socket in `~/.pubky/config.toml` or stop the process already using that port.
 
