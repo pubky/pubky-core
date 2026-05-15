@@ -31,7 +31,7 @@ mod tests {
     use crate::client_server::layers::pubky_host::PubkyHostLayer;
     use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::sql::SqlDb;
-    use crate::quota_config::{GlobPattern, LimitKeyType, PathLimit};
+    use crate::quota_config::{GlobPattern, HttpMethod, LimitKeyType, PathLimit};
     use crate::services::user_service::UserService;
     use crate::shared::HttpResult;
 
@@ -62,7 +62,10 @@ mod tests {
             .route("/upload", post(upload_handler))
             .route("/download", get(download_handler))
             .layer(BandwidthQuotaLimitLayer::new(user_service, defaults))
-            .layer(RequestRateLimitLayer::new(path_limits))
+            .layer(
+                RequestRateLimitLayer::from_path_limits(path_limits)
+                    .expect("valid test request-count rate limit"),
+            )
             .layer(CookieManagerLayer::new())
             .layer(PubkyHostLayer);
 
@@ -93,13 +96,14 @@ mod tests {
         let db = SqlDb::test().await;
         let user_service = UserService::new(db);
 
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/upload"),
-            Method::POST,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
+        let path_limit = PathLimit {
+            path: GlobPattern::new("/upload"),
+            method: HttpMethod(Method::POST),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::Ip,
+            burst: None,
+            whitelist: Vec::new(),
+        };
 
         let rate: BandwidthQuota = "1kb/s".parse().unwrap();
         let defaults = crate::DefaultQuotasToml {
@@ -152,13 +156,14 @@ mod tests {
         let db = SqlDb::test().await;
         let user_service = UserService::new(db);
 
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/download"),
-            Method::GET,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
+        let path_limit = PathLimit {
+            path: GlobPattern::new("/download"),
+            method: HttpMethod(Method::GET),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::Ip,
+            burst: None,
+            whitelist: Vec::new(),
+        };
 
         let defaults = crate::DefaultQuotasToml {
             unauthenticated_ip_rate_read: Some("1kb/s".parse().unwrap()),

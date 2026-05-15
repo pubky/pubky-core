@@ -26,27 +26,26 @@ use super::limiter_pool::LimitTuple;
 /// cannot be extracted.
 #[derive(Debug, Clone)]
 pub struct RequestRateLimitLayer {
-    limits: Vec<PathLimit>,
+    limits: Vec<LimitTuple>,
 }
 
 impl RequestRateLimitLayer {
-    pub fn new(path_limits: Vec<PathLimit>) -> Self {
-        if path_limits.is_empty() {
+    pub fn from_path_limits(limits: Vec<PathLimit>) -> Result<Self, String> {
+        if limits.is_empty() {
             tracing::info!("No path-based request-count rate limits configured ([[drive.rate_limits]] is empty).");
         } else {
-            let limits_str = path_limits
+            let limits_str = limits
                 .iter()
                 .map(|limit| format!("\"{limit}\""))
-                .collect::<Vec<String>>();
-            tracing::info!(
-                "Path-based rate limits configured: {}",
-                limits_str.join(", ")
-            );
+                .collect::<Vec<_>>()
+                .join(", ");
+            tracing::info!("Path-based rate limits configured: {limits_str}");
         }
-
-        Self {
-            limits: path_limits,
-        }
+        let limits = limits
+            .into_iter()
+            .map(LimitTuple::new)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { limits })
     }
 }
 
@@ -54,11 +53,7 @@ impl<S> Layer<S> for RequestRateLimitLayer {
     type Service = RequestRateLimitMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let limits = self
-            .limits
-            .iter()
-            .map(|path| LimitTuple::new(path.clone()))
-            .collect();
+        let limits = self.limits.clone();
         RequestRateLimitMiddleware { inner, limits }
     }
 }
@@ -158,7 +153,7 @@ mod tests {
     use tower_cookies::CookieManagerLayer;
 
     use crate::client_server::layers::pubky_host::PubkyHostLayer;
-    use crate::quota_config::{GlobPattern, LimitKeyType};
+    use crate::quota_config::{GlobPattern, HttpMethod, LimitKeyType};
     use crate::shared::HttpResult;
 
     use super::*;
@@ -176,7 +171,10 @@ mod tests {
         let app = Router::new()
             .route("/upload", post(upload_handler))
             .route("/download", get(download_handler))
-            .layer(RequestRateLimitLayer::new(config))
+            .layer(
+                RequestRateLimitLayer::from_path_limits(config)
+                    .expect("valid test request-count rate limit"),
+            )
             .layer(CookieManagerLayer::new())
             .layer(PubkyHostLayer);
 
@@ -202,13 +200,14 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_limit_parallel_requests_with_ip_key() {
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/upload"),
-            Method::POST,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
+        let path_limit = PathLimit {
+            path: GlobPattern::new("/upload"),
+            method: HttpMethod(Method::POST),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::Ip,
+            burst: None,
+            whitelist: Vec::new(),
+        };
         let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr) -> JoinHandle<Response> {
@@ -233,13 +232,14 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_limit_parallel_requests_with_user_key() {
-        let path_limit = PathLimit::new(
-            GlobPattern::new("/upload"),
-            Method::POST,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::User,
-            None,
-        );
+        let path_limit = PathLimit {
+            path: GlobPattern::new("/upload"),
+            method: HttpMethod(Method::POST),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::User,
+            burst: None,
+            whitelist: Vec::new(),
+        };
         let socket = start_server(vec![path_limit]).await;
 
         fn send_request(socket: SocketAddr, user_pubkey: PublicKey) -> JoinHandle<Response> {
@@ -277,13 +277,14 @@ mod tests {
 
     #[test]
     fn test_path_limit_accepts_request_count_quota() {
-        let limit = PathLimit::new(
-            GlobPattern::new("/session"),
-            Method::POST,
-            "10r/m".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        );
+        let limit = PathLimit {
+            path: GlobPattern::new("/session"),
+            method: HttpMethod(Method::POST),
+            quota: "10r/m".parse().unwrap(),
+            key: LimitKeyType::Ip,
+            burst: None,
+            whitelist: Vec::new(),
+        };
         assert!(limit.validate().is_ok());
     }
 }

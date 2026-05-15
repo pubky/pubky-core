@@ -44,13 +44,10 @@ pub enum ClientServerBuildError {
     PubkyTlsServer(anyhow::Error),
     /// Failed to convert the data directory to an AppContext.
     #[error("AppContext conversion error: {0}")]
-    AppContext(AppContextConversionError),
-}
-
-impl From<AppContextConversionError> for ClientServerBuildError {
-    fn from(error: AppContextConversionError) -> Self {
-        ClientServerBuildError::AppContext(error)
-    }
+    AppContext(#[from] AppContextConversionError),
+    /// Failed to build request-count rate limit layer.
+    #[error("Request-count rate limit configuration error: {0}")]
+    RequestRateLimits(String),
 }
 
 /// A Pubky homeserver with ICANN HTTP and Pubky TLS servers.
@@ -94,7 +91,7 @@ impl ClientServer {
 
     /// Start homeserver services with the given application context.
     pub async fn start(context: AppContext) -> std::result::Result<Self, ClientServerBuildError> {
-        let router = Self::create_router(&context);
+        let router = Self::create_router(&context)?;
 
         let (icann_http_handle, icann_http_socket) =
             Self::start_icann_http_server(&context, router.clone())
@@ -113,7 +110,9 @@ impl ClientServer {
         })
     }
 
-    pub(crate) fn create_router(context: &AppContext) -> Router {
+    pub(crate) fn create_router(
+        context: &AppContext,
+    ) -> std::result::Result<Router, ClientServerBuildError> {
         let state = AppState {
             verifier: AuthVerifier::default(),
             sql_db: context.sql_db.clone(),
@@ -124,7 +123,7 @@ impl ClientServer {
             user_service: context.user_service.clone(),
             default_storage_mb: context.config_toml.storage.default_quota_mb,
         };
-        super::create_app(state.clone(), context)
+        super::create_app(state.clone(), context).map_err(ClientServerBuildError::RequestRateLimits)
     }
 
     /// Start the ICANN HTTP server
@@ -222,7 +221,10 @@ fn base() -> Router<AppState> {
     // TODO: maybe add to a separate router (drive router?).
 }
 
-pub fn create_app(state: AppState, context: &AppContext) -> Router {
+pub fn create_app(state: AppState, context: &AppContext) -> std::result::Result<Router, String> {
+    let request_rate_limit_layer =
+        RequestRateLimitLayer::from_path_limits(context.config_toml.drive.rate_limits.clone())?;
+
     let app = base()
         .merge(tenants::router(state.clone()))
         .layer(CorsLayer::very_permissive())
@@ -230,13 +232,11 @@ pub fn create_app(state: AppState, context: &AppContext) -> Router {
             context.user_service.clone(),
             context.config_toml.default_quotas.clone(),
         ))
-        .layer(RequestRateLimitLayer::new(
-            context.config_toml.drive.rate_limits.clone(),
-        ))
+        .layer(request_rate_limit_layer)
         .layer(CookieManagerLayer::new())
         .layer(PubkyHostLayer)
         .with_state(state);
 
     // Apply trace and pubky host layers to the complete router.
-    with_trace_layer(app)
+    Ok(with_trace_layer(app))
 }
