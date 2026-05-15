@@ -84,8 +84,8 @@ pub(super) struct LimitTuple {
 }
 
 impl LimitTuple {
-    pub fn new(path_limit: PathLimit) -> Self {
-        let quota: Quota = path_limit.clone().into();
+    pub fn new(path_limit: PathLimit) -> Result<Self, String> {
+        let quota = Quota::try_from(path_limit.clone())?;
         let limiter = Arc::new(RateLimiter::keyed(quota));
 
         // Forget keys that are not used anymore. This is to prevent memory leaks.
@@ -104,10 +104,10 @@ impl LimitTuple {
             }
         });
 
-        Self {
+        Ok(Self {
             limit: path_limit,
             limiter,
-        }
+        })
     }
 
     /// Extract the key from the request.

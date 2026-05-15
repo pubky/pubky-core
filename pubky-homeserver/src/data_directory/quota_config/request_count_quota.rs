@@ -16,14 +16,20 @@ pub struct RequestCountQuota {
     pub time_unit: TimeUnit,
 }
 
-impl From<RequestCountQuota> for governor::Quota {
-    fn from(value: RequestCountQuota) -> Self {
-        let time_unit = Duration::from_secs(value.time_unit.multiplier_in_seconds().get() as u64);
-        let replenish_1_per = time_unit / value.rate.get();
+impl TryFrom<RequestCountQuota> for governor::Quota {
+    type Error = String;
 
-        let base_quota = governor::Quota::with_period(replenish_1_per)
-            .expect("always non-zero: replenish_1_per is non-zero");
-        base_quota.allow_burst(value.rate)
+    fn try_from(value: RequestCountQuota) -> Result<Self, Self::Error> {
+        let replenish_1_per = Duration::from(value.time_unit) / value.rate.get();
+        let quota = governor::Quota::with_period(replenish_1_per)
+            .ok_or_else(|| {
+                format!(
+                    "Request-count quota rate '{}' is too high",
+                    value.rate.get()
+                )
+            })?
+            .allow_burst(value.rate);
+        Ok(quota)
     }
 }
 
@@ -37,23 +43,16 @@ impl FromStr for RequestCountQuota {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split('/').collect();
-        if parts.len() != 2 {
-            return Err(format!(
-                "Invalid request-count quota format: '{s}', expected {{count}}r/{{time}}"
-            ));
-        }
-
-        let rate_with_unit = parts[0];
-        let time_unit = TimeUnit::from_str(parts[1])?;
-
-        let rate_str = rate_with_unit
+        let (rate_with_unit, time_unit) = s.split_once('/').ok_or_else(|| {
+            format!("Invalid request-count quota format: '{s}', expected {{count}}r/{{time}}")
+        })?;
+        let rate = rate_with_unit
             .strip_suffix('r')
-            .ok_or_else(|| format!("Request-count quota must end with 'r': '{rate_with_unit}'"))?;
-
-        let rate = rate_str
+            .ok_or_else(|| format!("Request-count quota must end with 'r': '{rate_with_unit}'"))?
             .parse::<NonZeroU32>()
-            .map_err(|_| format!("Failed to parse rate from '{rate_str}'"))?;
+            .map_err(|_| format!("Failed to parse rate from '{s}'"))?;
+
+        let time_unit = TimeUnit::from_str(time_unit)?;
 
         Ok(RequestCountQuota { rate, time_unit })
     }
@@ -99,15 +98,22 @@ mod tests {
     fn test_converts_to_governor_quota() {
         let q: RequestCountQuota = "5r/s".parse().unwrap();
         assert_eq!(
-            governor::Quota::from(q),
+            governor::Quota::try_from(q).unwrap(),
             governor::Quota::per_second(NonZeroU32::new(5).unwrap())
         );
 
         let q: RequestCountQuota = "5r/m".parse().unwrap();
         assert_eq!(
-            governor::Quota::from(q),
+            governor::Quota::try_from(q).unwrap(),
             governor::Quota::per_minute(NonZeroU32::new(5).unwrap())
         );
+    }
+
+    #[test]
+    fn test_rejects_rate_that_would_create_zero_replenish_period() {
+        let q = RequestCountQuota::from_str("4294967295r/s").unwrap();
+        let err = governor::Quota::try_from(q).unwrap_err();
+        assert!(err.contains("too high"), "error: {err}");
     }
 
     #[test]

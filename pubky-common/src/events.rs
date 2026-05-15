@@ -155,9 +155,7 @@ mod tests {
     #[test]
     fn event_type_content_hash() {
         let hash = Hash::from_bytes([1; 32]);
-        let put = EventType::Put {
-            content_hash: hash.clone(),
-        };
+        let put = EventType::Put { content_hash: hash };
         let del = EventType::Delete;
 
         assert_eq!(put.content_hash(), Some(&hash));

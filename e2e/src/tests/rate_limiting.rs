@@ -5,7 +5,7 @@ use pubky_testnet::pubky::{
 };
 use pubky_testnet::{
     pubky_homeserver::{
-        quota_config::{GlobPattern, LimitKey, LimitKeyType, PathLimit},
+        quota_config::{GlobPattern, HttpMethod, LimitKey, LimitKeyType, PathLimit},
         ConfigToml, SignupMode,
     },
     EphemeralTestnet,
@@ -17,21 +17,23 @@ async fn test_limit_signin_get_session() {
     let mut config = ConfigToml::default_test_config();
     config.drive.rate_limits = vec![
         // Limit sign-ins: POST /session by IP
-        PathLimit::new(
-            GlobPattern::new("/session"),
-            Method::POST,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::Ip,
-            None,
-        ),
+        PathLimit {
+            path: GlobPattern::new("/session"),
+            method: HttpMethod(Method::POST),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::Ip,
+            burst: None,
+            whitelist: Vec::new(),
+        },
         // Limit session fetch/validate: GET /session by User
-        PathLimit::new(
-            GlobPattern::new("/session"),
-            Method::GET,
-            "1r/m".parse().unwrap(),
-            LimitKeyType::User,
-            None,
-        ),
+        PathLimit {
+            path: GlobPattern::new("/session"),
+            method: HttpMethod(Method::GET),
+            quota: "1r/m".parse().unwrap(),
+            key: LimitKeyType::User,
+            burst: None,
+            whitelist: Vec::new(),
+        },
     ];
 
     let testnet = EphemeralTestnet::builder()
@@ -81,13 +83,14 @@ async fn test_limit_signin_get_session_whitelist() {
 
     // Rate-limit GET /session by user, but whitelist `whitelisted_pubkey`
     let mut config = ConfigToml::default_test_config();
-    let mut limit = PathLimit::new(
-        GlobPattern::new("/session"),
-        Method::GET,
-        "1r/m".parse().unwrap(),
-        LimitKeyType::User,
-        None,
-    );
+    let mut limit = PathLimit {
+        path: GlobPattern::new("/session"),
+        method: HttpMethod(Method::GET),
+        quota: "1r/m".parse().unwrap(),
+        key: LimitKeyType::User,
+        burst: None,
+        whitelist: Vec::new(),
+    };
     limit
         .whitelist
         .push(LimitKey::User(whitelisted_pubkey.clone()));
@@ -137,13 +140,14 @@ async fn test_limit_signin_get_session_whitelist() {
 async fn test_limit_events() {
     // Rate-limit GET /events/ by IP
     let mut config = ConfigToml::default_test_config();
-    config.drive.rate_limits = vec![PathLimit::new(
-        GlobPattern::new("/events/"),
-        Method::GET,
-        "1r/m".parse().unwrap(),
-        LimitKeyType::Ip,
-        None,
-    )];
+    config.drive.rate_limits = vec![PathLimit {
+        path: GlobPattern::new("/events/"),
+        method: HttpMethod(Method::GET),
+        quota: "1r/m".parse().unwrap(),
+        key: LimitKeyType::Ip,
+        burst: None,
+        whitelist: Vec::new(),
+    }];
 
     let testnet = EphemeralTestnet::builder()
         .config(config)
@@ -289,13 +293,14 @@ async fn test_limit_signup_tokens() {
     // Configure with token-required signup mode and rate limit on signup_tokens
     let mut config = ConfigToml::default_test_config();
     config.general.signup_mode = SignupMode::TokenRequired;
-    config.drive.rate_limits = vec![PathLimit::new(
-        GlobPattern::new("/signup_tokens/*"),
-        Method::GET,
-        "1r/m".parse().unwrap(),
-        LimitKeyType::Ip,
-        None,
-    )];
+    config.drive.rate_limits = vec![PathLimit {
+        path: GlobPattern::new("/signup_tokens/*"),
+        method: HttpMethod(Method::GET),
+        quota: "1r/m".parse().unwrap(),
+        key: LimitKeyType::Ip,
+        burst: None,
+        whitelist: Vec::new(),
+    }];
 
     let testnet = EphemeralTestnet::builder()
         .config(config)

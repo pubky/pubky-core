@@ -36,8 +36,7 @@ impl BandwidthQuota {
         let rate_unit_mult = self.unit.multiplier().get();
         let rate_cells = NonZeroU32::new(self.rate.get() * rate_unit_mult)
             .expect("always non-zero: rate and multiplier are non-zero");
-        let time_unit = Duration::from_secs(self.time_unit.multiplier_in_seconds().get() as u64);
-        let replenish_1_per = time_unit / rate_cells.get();
+        let replenish_1_per = Duration::from(self.time_unit) / rate_cells.get();
         let base = governor::Quota::with_period(replenish_1_per)
             .expect("always non-zero: replenish_1_per is non-zero");
 
