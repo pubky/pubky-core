@@ -10,6 +10,8 @@
 //! - [`UserQuota`] — the full set of per-user quota fields.
 //! - [`UserQuotaPatch`] — partial update for PATCH semantics (absent = keep).
 
+use std::num::NonZeroU32;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::data_directory::quota_config::BandwidthQuota;
@@ -190,10 +192,11 @@ impl QuotaOverride<BandwidthQuota> {
     }
 }
 
-/// Convert an `Option<u32>` burst value to the DB column type (`INTEGER`),
+/// Convert an `Option<NonZeroU32>` burst value to the DB column type (`INTEGER`),
 /// truncating to `i32::MAX` with a warning if the value overflows.
-fn burst_to_i32(label: &str, value: Option<u32>) -> Option<i32> {
+fn burst_to_i32(label: &str, value: Option<NonZeroU32>) -> Option<i32> {
     value.map(|v| {
+        let v = v.get();
         i32::try_from(v).unwrap_or_else(|_| {
             tracing::warn!("{label} {v} exceeds i32::MAX, truncating to {}", i32::MAX);
             i32::MAX
@@ -217,13 +220,10 @@ fn validate_rate_value(label: &str, field: &QuotaOverride<BandwidthQuota>) -> Re
     Ok(())
 }
 
-/// Validate that a burst value (if present) is > 0 and fits in the DB column (i32).
-fn validate_burst_value(label: &str, burst: Option<u32>) -> Result<(), String> {
+/// Validate that a burst value (if present) fits in the DB column (i32).
+fn validate_burst_value(label: &str, burst: Option<NonZeroU32>) -> Result<(), String> {
     if let Some(b) = burst {
-        if b == 0 {
-            return Err(format!("{label} must be greater than 0"));
-        }
-        if b > i32::MAX as u32 {
+        if b.get() > i32::MAX as u32 {
             return Err(format!("{label} value {b} exceeds maximum ({})", i32::MAX));
         }
     }
@@ -233,7 +233,7 @@ fn validate_burst_value(label: &str, burst: Option<u32>) -> Result<(), String> {
 /// Validate a burst field that also requires a corresponding rate `Value`.
 fn validate_burst(
     label: &str,
-    burst: Option<u32>,
+    burst: Option<NonZeroU32>,
     rate: &QuotaOverride<BandwidthQuota>,
 ) -> Result<(), String> {
     if burst.is_some() && !matches!(rate, QuotaOverride::Value(_)) {
@@ -292,11 +292,11 @@ pub struct UserQuota {
     /// Burst override for read speed limit, in the rate's natural unit
     /// (MB for "…mb/s", KB for "…kb/s"). `None` = burst equals rate (default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_read_burst: Option<u32>,
+    pub rate_read_burst: Option<NonZeroU32>,
     /// Burst override for write speed limit, in the rate's natural unit
     /// (MB for "…mb/s", KB for "…kb/s"). `None` = burst equals rate (default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_write_burst: Option<u32>,
+    pub rate_write_burst: Option<NonZeroU32>,
     /// Restrict which paths a user can write to.
     /// - `None` = unrestricted (all paths allowed) — default
     /// - `Some([])` = read-only (no writes allowed)
@@ -335,8 +335,8 @@ impl UserQuota {
             ),
             rate_read: QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_read", rate_read),
             rate_write: QuotaOverride::<BandwidthQuota>::from_db_varchar("rate_write", rate_write),
-            rate_read_burst: rate_read_burst.and_then(|v| u32::try_from(v).ok()),
-            rate_write_burst: rate_write_burst.and_then(|v| u32::try_from(v).ok()),
+            rate_read_burst: rate_read_burst.and_then(|v| u32::try_from(v).ok()?.try_into().ok()),
+            rate_write_burst: rate_write_burst.and_then(|v| u32::try_from(v).ok()?.try_into().ok()),
             allowed_write_paths,
         }
     }
@@ -500,15 +500,17 @@ where
     Option::<Vec<WebDavPath>>::deserialize(d).map(Some)
 }
 
-/// Serde helper for patch `Option<Option<u32>>`:
+/// Serde helper for patch `Option<Option<NonZeroU32>>`:
 /// - field absent → `None` (keep existing)
 /// - field `null` → `Some(None)` (reset to default)
 /// - field `N` → `Some(Some(N))` (set value)
-fn deserialize_patch_option_u32<'de, D>(d: D) -> Result<Option<Option<u32>>, D::Error>
+fn deserialize_patch_option_non_zero_u32<'de, D>(
+    d: D,
+) -> Result<Option<Option<NonZeroU32>>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Option::<u32>::deserialize(d).map(Some)
+    Option::<NonZeroU32>::deserialize(d).map(Some)
 }
 
 /// Partial update for `UserQuota`.
@@ -537,11 +539,11 @@ pub struct UserQuotaPatch {
     #[serde(default, deserialize_with = "deserialize_patch_override")]
     pub rate_write: Option<QuotaOverride<BandwidthQuota>>,
     /// Burst for read speed limit (in the rate's natural unit). null = reset to default.
-    #[serde(default, deserialize_with = "deserialize_patch_option_u32")]
-    pub rate_read_burst: Option<Option<u32>>,
+    #[serde(default, deserialize_with = "deserialize_patch_option_non_zero_u32")]
+    pub rate_read_burst: Option<Option<NonZeroU32>>,
     /// Burst for write speed limit (in the rate's natural unit). null = reset to default.
-    #[serde(default, deserialize_with = "deserialize_patch_option_u32")]
-    pub rate_write_burst: Option<Option<u32>>,
+    #[serde(default, deserialize_with = "deserialize_patch_option_non_zero_u32")]
+    pub rate_write_burst: Option<Option<NonZeroU32>>,
     /// Allowed write paths. absent = keep, null = reset to unrestricted, array = set paths.
     #[serde(default, deserialize_with = "deserialize_patch_allowed_write_paths")]
     pub allowed_write_paths: Option<Option<Vec<WebDavPath>>>,
@@ -575,6 +577,10 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
+
+    fn nz(value: u32) -> NonZeroU32 {
+        NonZeroU32::new(value).unwrap()
+    }
 
     #[test]
     fn test_quota_field_default() {
@@ -988,29 +994,25 @@ mod tests {
     fn test_burst_valid_with_rate() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(50),
+            rate_read_burst: Some(nz(50)),
             ..Default::default()
         };
         assert!(q.validate().is_ok());
     }
 
     #[test]
-    fn test_burst_zero_rejected() {
-        let q = UserQuota {
-            rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(0),
-            ..Default::default()
-        };
-        let err = q.validate().unwrap_err();
-        assert!(err.contains("rate_read_burst"), "error: {err}");
-        assert!(err.contains("greater than 0"), "error: {err}");
+    fn test_burst_zero_rejected_by_serde() {
+        let err =
+            serde_json::from_str::<UserQuota>(r#"{"rate_read":"10mb/s","rate_read_burst":0}"#)
+                .unwrap_err();
+        assert!(err.to_string().contains("zero"), "error: {err}");
     }
 
     #[test]
     fn test_burst_exceeds_i32_max_rejected() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(i32::MAX as u32 + 1),
+            rate_read_burst: Some(nz(i32::MAX as u32 + 1)),
             ..Default::default()
         };
         let err = q.validate().unwrap_err();
@@ -1022,7 +1024,7 @@ mod tests {
     fn test_burst_at_i32_max_accepted() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(i32::MAX as u32),
+            rate_read_burst: Some(nz(i32::MAX as u32)),
             ..Default::default()
         };
         assert!(q.validate().is_ok());
@@ -1032,7 +1034,7 @@ mod tests {
     fn test_burst_without_rate_rejected() {
         let q = UserQuota {
             rate_read: QuotaOverride::Default,
-            rate_read_burst: Some(50),
+            rate_read_burst: Some(nz(50)),
             ..Default::default()
         };
         let err = q.validate().unwrap_err();
@@ -1043,7 +1045,7 @@ mod tests {
     fn test_burst_with_unlimited_rate_rejected() {
         let q = UserQuota {
             rate_write: QuotaOverride::Unlimited,
-            rate_write_burst: Some(50),
+            rate_write_burst: Some(nz(50)),
             ..Default::default()
         };
         let err = q.validate().unwrap_err();
@@ -1068,11 +1070,9 @@ mod tests {
     }
 
     #[test]
-    fn test_patch_burst_zero_rejected() {
-        let patch: UserQuotaPatch = serde_json::from_str(r#"{"rate_read_burst": 0}"#).unwrap();
-        let err = patch.validate().unwrap_err();
-        assert!(err.contains("rate_read_burst"), "error: {err}");
-        assert!(err.contains("greater than 0"), "error: {err}");
+    fn test_patch_burst_zero_rejected_by_serde() {
+        let err = serde_json::from_str::<UserQuotaPatch>(r#"{"rate_read_burst": 0}"#).unwrap_err();
+        assert!(err.to_string().contains("zero"), "error: {err}");
     }
 
     #[test]
@@ -1092,23 +1092,23 @@ mod tests {
     fn test_burst_serde_roundtrip() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(50),
+            rate_read_burst: Some(nz(50)),
             rate_write: QuotaOverride::Value(BandwidthQuota::from_str("5mb/s").unwrap()),
-            rate_write_burst: Some(25),
+            rate_write_burst: Some(nz(25)),
             ..Default::default()
         };
         let json = serde_json::to_string(&q).unwrap();
         let deserialized: UserQuota = serde_json::from_str(&json).unwrap();
         assert_eq!(q, deserialized);
-        assert_eq!(deserialized.rate_read_burst, Some(50));
-        assert_eq!(deserialized.rate_write_burst, Some(25));
+        assert_eq!(deserialized.rate_read_burst, Some(nz(50)));
+        assert_eq!(deserialized.rate_write_burst, Some(nz(25)));
     }
 
     #[test]
     fn test_burst_db_roundtrip() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(50),
+            rate_read_burst: Some(nz(50)),
             rate_write: QuotaOverride::Default,
             rate_write_burst: None,
             ..Default::default()
@@ -1140,7 +1140,7 @@ mod tests {
     fn test_burst_present_in_json_when_set() {
         let q = UserQuota {
             rate_read: QuotaOverride::Value(BandwidthQuota::from_str("10mb/s").unwrap()),
-            rate_read_burst: Some(50),
+            rate_read_burst: Some(nz(50)),
             ..Default::default()
         };
         let json = serde_json::to_string(&q).unwrap();

@@ -4,6 +4,7 @@
 //! instance, keyed by their public key. This avoids creating one governor
 //! per user while still allowing per-user tracking.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ pub(super) type KeyedRateLimiter = RateLimiter<LimitKey, DashMapStateStore<Limit
 
 /// Pool key for per-user speed limiters: rate + optional burst override.
 /// Users with the same (rate, burst) share a limiter instance.
-type SpeedLimitKey = (BandwidthQuota, Option<u32>);
+type SpeedLimitKey = (BandwidthQuota, Option<NonZeroU32>);
 
 /// Shared pool of keyed rate limiters, grouped by (rate, burst).
 ///
@@ -64,7 +65,7 @@ impl LimiterPool {
     pub fn get_or_create(
         &self,
         rate: &BandwidthQuota,
-        burst: Option<u32>,
+        burst: Option<NonZeroU32>,
     ) -> Arc<KeyedRateLimiter> {
         self.0
             .entry((rate.clone(), burst))
@@ -170,11 +171,12 @@ mod tests {
 
         let rate: BandwidthQuota = "5mb/s".parse().unwrap();
         let limiter1 = pool.get_or_create(&rate, None);
-        let limiter2 = pool.get_or_create(&rate, Some(50));
+        let burst = NonZeroU32::new(50).unwrap();
+        let limiter2 = pool.get_or_create(&rate, Some(burst));
         assert!(!Arc::ptr_eq(&limiter1, &limiter2));
 
         // Same rate + same burst should share
-        let limiter3 = pool.get_or_create(&rate, Some(50));
+        let limiter3 = pool.get_or_create(&rate, Some(burst));
         assert!(Arc::ptr_eq(&limiter2, &limiter3));
     }
 }

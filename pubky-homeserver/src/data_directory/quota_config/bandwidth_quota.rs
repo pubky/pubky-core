@@ -32,7 +32,7 @@ impl BandwidthQuota {
     /// - `burst_override = None` → default behaviour (burst = rate).
     /// - `burst_override = Some(n)` → burst is `n` in the rate's natural unit
     ///   (MB for `"…mb/s"`, KB for `"…kb/s"`, etc.).
-    pub fn to_governor_quota(&self, burst_override: Option<u32>) -> governor::Quota {
+    pub fn to_governor_quota(&self, burst_override: Option<NonZeroU32>) -> governor::Quota {
         let rate_unit_mult = self.unit.multiplier().get();
         let rate_cells = NonZeroU32::new(self.rate.get() * rate_unit_mult)
             .expect("always non-zero: rate and multiplier are non-zero");
@@ -43,7 +43,7 @@ impl BandwidthQuota {
         match burst_override {
             Some(b) => {
                 let burst_cells =
-                    NonZeroU32::new(b.saturating_mul(rate_unit_mult)).unwrap_or(rate_cells);
+                    NonZeroU32::new(b.get().saturating_mul(rate_unit_mult)).unwrap_or(rate_cells);
                 base.allow_burst(burst_cells)
             }
             None => base.allow_burst(rate_cells),
