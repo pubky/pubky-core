@@ -123,7 +123,7 @@ impl ClientServer {
             user_service: context.user_service.clone(),
             default_storage_mb: context.config_toml.storage.default_quota_mb,
         };
-        super::create_app(state.clone(), context).map_err(ClientServerBuildError::RequestRateLimits)
+        super::create_app(state.clone(), context)
     }
 
     /// Start the ICANN HTTP server
@@ -221,9 +221,13 @@ fn base() -> Router<AppState> {
     // TODO: maybe add to a separate router (drive router?).
 }
 
-pub fn create_app(state: AppState, context: &AppContext) -> std::result::Result<Router, String> {
+pub fn create_app(
+    state: AppState,
+    context: &AppContext,
+) -> std::result::Result<Router, ClientServerBuildError> {
     let request_rate_limit_layer =
-        RequestRateLimitLayer::from_path_limits(context.config_toml.drive.rate_limits.clone())?;
+        RequestRateLimitLayer::from_path_limits(context.config_toml.drive.rate_limits.clone())
+            .map_err(ClientServerBuildError::RequestRateLimits)?;
 
     let app = base()
         .merge(tenants::router(state.clone()))
