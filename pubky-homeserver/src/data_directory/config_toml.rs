@@ -4,10 +4,12 @@
 //! This module embeds that file at compile-time, parses it once,
 //! and lets callers optionally layer their own TOML on top.
 
+#[cfg(any(test, feature = "testing"))]
+use super::storage_config::StorageConfigToml;
 use super::{
     domain_port::DomainPort,
     quota_config::{BandwidthQuota, PathLimit},
-    storage_config::{StorageConfigToml, StorageToml},
+    storage_config::StorageToml,
     Domain, SignupMode,
 };
 
@@ -21,7 +23,7 @@ use std::{
     fmt::Debug,
     fs,
     net::{IpAddr, SocketAddr},
-    num::NonZeroU64,
+    num::{NonZeroU32, NonZeroU64},
     path::Path,
     str::FromStr,
 };
@@ -90,10 +92,10 @@ pub struct DefaultQuotasToml {
     pub rate_write: Option<BandwidthQuota>,
     /// Default burst for read rate, in the rate's natural unit (e.g. MB for "…mb/s").
     /// Per-user DB overrides take precedence. `None` means burst equals rate.
-    pub rate_read_burst: Option<u32>,
+    pub rate_read_burst: Option<NonZeroU32>,
     /// Default burst for write rate, in the rate's natural unit (e.g. MB for "…mb/s").
     /// Per-user DB overrides take precedence. `None` means burst equals rate.
-    pub rate_write_burst: Option<u32>,
+    pub rate_write_burst: Option<NonZeroU32>,
     /// Server-level bandwidth limit for unauthenticated IP reads (e.g. "1mb/s").
     /// `None` means no read throttling for unauthenticated requests.
     pub unauthenticated_ip_rate_read: Option<BandwidthQuota>,
