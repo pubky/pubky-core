@@ -200,8 +200,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+      - uses: taiki-e/install-action@v2
+        tool: wasm-pack
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
