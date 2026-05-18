@@ -1,8 +1,8 @@
 {
   "name": "@synonymdev/pubky",
   "type": "module",
-  "description": "Pubky client",
-  "version": "0.7.0",
+  "description": "Decentralized identity, auth flows, and user-owned storage",
+  "version": "0.7.1",
   "license": "MIT",
   "repository": {
     "type": "git",
