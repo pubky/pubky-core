@@ -201,7 +201,8 @@ jobs:
           node-version: "22"
 
       - uses: taiki-e/install-action@v2
-        tool: wasm-pack
+        with:
+          tool: wasm-pack
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
