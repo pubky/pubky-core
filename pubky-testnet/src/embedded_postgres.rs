@@ -2,8 +2,9 @@
 //!
 //! This module provides a containerized PostgreSQL instance (via testcontainers)
 //! that can be used for integration tests without requiring a separate Postgres
-//! installation. Docker handles lifecycle and cleanup automatically — even on
-//! `kill -9`, the container is removed.
+//! installation. Containers are cleaned up on drop and on SIGINT/SIGTERM
+//! (via the testcontainers watchdog). Note: `kill -9` will still leave
+//! containers orphaned.
 
 use pubky_homeserver::ConnectionString;
 use testcontainers::{runners::AsyncRunner, ContainerAsync};
@@ -99,9 +100,50 @@ impl EmbeddedPostgres {
 #[cfg(test)]
 mod tests {
     use super::EmbeddedPostgres;
+    use crate::EphemeralTestnet;
+    use pubky::Keypair;
+
+    /// Basic integration test: start a testnet with embedded postgres, signup a user, store and retrieve data.
+    #[tokio::test]
+    async fn test_embedded_postgres_with_testnet() {
+        let testnet = EphemeralTestnet::builder()
+            .with_embedded_postgres()
+            .build()
+            .await
+            .expect("Failed to start testnet with embedded postgres");
+
+        // Verify the homeserver is running
+        assert!(!testnet.homeserver_app().public_key().to_string().is_empty());
+
+        // Test user operations
+        let pubky = testnet.sdk().expect("Failed to create SDK");
+        let keypair = Keypair::random();
+        let signer = pubky.signer(keypair);
+
+        let session = signer
+            .signup(&testnet.homeserver_app().public_key(), None)
+            .await
+            .expect("Failed to signup user");
+
+        // Store and retrieve data
+        let path = "/pub/test.txt";
+        let data = b"Hello from embedded postgres test!";
+        session
+            .storage()
+            .put(path, data.as_slice())
+            .await
+            .expect("Failed to store data");
+
+        let response = session
+            .storage()
+            .get(path)
+            .await
+            .expect("Failed to get data");
+        let bytes = response.bytes().await.expect("Failed to read bytes");
+        assert_eq!(bytes.as_ref(), data);
+    }
 
     /// Verify that dropping an EmbeddedPostgres actually removes the Docker container.
-    /// This is the exact bug that existed with postgresql_embedded — processes survived drop.
     #[tokio::test]
     async fn test_container_cleaned_up_on_drop() {
         let pg = EmbeddedPostgres::start()

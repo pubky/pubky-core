@@ -32,7 +32,8 @@ async fn main() {
 }
 ```
 
-The first run will download PostgreSQL binaries (~50-100MB), which are cached for subsequent runs.
+This uses [testcontainers](https://docs.rs/testcontainers) to run PostgreSQL in a Docker container.
+Docker must be running on the host. The container is automatically cleaned up on drop and on Ctrl+C/SIGTERM.
 
 > **Important**: If you have multiple tests, see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests) below.
 
@@ -132,11 +133,10 @@ async fn main() {
 
 ## Sharing Embedded Postgres Across Tests
 
-When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL instance.
+When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL container.
 
-Use [`EmbeddedPostgres::shared()`] to start **one** instance and share its connection string across all tests.
-This method registers an atexit handler that stops the PostgreSQL child process when the test process exits,
-preventing orphaned processes.
+Use `EmbeddedPostgres::shared()` to start **one** container and share its connection string across all tests.
+Docker handles cleanup automatically when the process exits.
 
 ```rust
 use pubky_testnet::EphemeralTestnet;
@@ -169,26 +169,19 @@ Each testnet still gets its own ephemeral database within the shared PostgreSQL 
 
 ## Troubleshooting
 
-### GitHub Rate Limiting During Binary Download
+### Docker not running
 
-The embedded PostgreSQL binary is downloaded from GitHub releases. If multiple tests (or repeated test runs) try to download concurrently, you may hit GitHub's API rate limit (60 requests/hour for unauthenticated requests), causing errors like `403 Forbidden` or `rate limit exceeded`.
+The `embedded-postgres` feature requires Docker. If you see `"Is Docker running?"` errors, ensure the Docker daemon is started and your user has permission to access it (e.g., is in the `docker` group).
 
-**Solutions (try in order):**
+### Docker Hub rate limits
 
-1. **Set a GitHub token** to raise the rate limit from 60 to 5,000 requests/hour:
-   ```bash
-   export GITHUB_TOKEN=ghp_your_personal_access_token
-   cargo test
-   ```
-   The token does not need any scopes — a classic PAT with no permissions works.
+The Postgres image is pulled from Docker Hub. Anonymous pulls are limited to 100 per 6 hours. If you hit this, either `docker login` or pre-pull the image:
 
-2. **Run a single test first** to populate the cache before running the full suite.
+```bash
+docker pull postgres
+```
 
-3. **Share one embedded postgres instance** across tests (see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests)).
-
-4. **Wait for the rate limit to reset** (1 hour from first rate-limited request), then retry with one of the above solutions.
-
-**Cache location:** `~/.cache/pubky-testnet/postgresql/` (Linux/macOS). If you suspect a corrupt cache, delete this directory and retry.
+Once cached locally, subsequent test runs won't pull again.
 
 ## Binary (Static Testnet)
 
