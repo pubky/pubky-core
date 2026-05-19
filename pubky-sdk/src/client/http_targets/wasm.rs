@@ -4,6 +4,7 @@ use crate::PublicKey;
 use crate::errors::{PkarrError, RequestError, Result};
 use crate::{PubkyHttpClient, cross_log};
 use futures_lite::StreamExt;
+use pkarr::dns::rdata::SVCParam;
 use pkarr::extra::endpoints::Endpoint;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
@@ -146,7 +147,11 @@ impl PubkyHttpClient {
 
             let http_port = endpoint
                 .get_param(pubky_common::constants::reserved_param_keys::HTTP_PORT)
-                .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+                .and_then(|param| match param {
+                    SVCParam::Unknown(_, bytes) => <[u8; 2]>::try_from(bytes.as_ref()).ok(),
+                    SVCParam::Port(port) => Some(port.to_be_bytes()),
+                    _ => None,
+                })
                 .map(u16::from_be_bytes)
                 .ok_or_else(|| {
                     PkarrError::InvalidRecord(
