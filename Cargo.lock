@@ -1452,7 +1452,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -3936,7 +3936,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "cookie",
@@ -3963,7 +3963,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-common"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "argon2",
  "base32",
@@ -3984,7 +3984,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-core-examples"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4003,7 +4003,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-dropper",
@@ -4065,7 +4065,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-wasm"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "console_log",
@@ -4132,7 +4132,7 @@ dependencies = [
 
 [[package]]
 name = "pubky_test_utils"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "pubky_test_utils_drop_db_helper",
  "pubky_test_utils_macro",
@@ -4140,14 +4140,14 @@ dependencies = [
 
 [[package]]
 name = "pubky_test_utils_drop_db_helper"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "sqlx",
 ]
 
 [[package]]
 name = "pubky_test_utils_macro"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
