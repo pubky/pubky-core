@@ -3,10 +3,12 @@ members = [
   "pubky-*",
   "pubky-sdk/bindings/js",
   "e2e",
+  "examples/rust",
+]
+exclude = [
   "test_utils/test_macro",
   "test_utils/drop_db_helper",
   "test_utils/pubky_test",
-  "examples/rust",
 ]
 default-members = [
   "pubky-common",

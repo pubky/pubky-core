@@ -1,4 +1,5 @@
 target/
+test_utils/**/Cargo.lock
 ./storage
 .continuerules
 .cursorrules

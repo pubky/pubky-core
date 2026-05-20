@@ -19,7 +19,7 @@ fi
 
 
 # Check if the version is provided
-NEW_VERSION=$1
+NEW_VERSION=${1:-}
 if [ -z "$NEW_VERSION" ]; then
   echo "Error: New version not specified."
   echo "Usage: $0 <new_version>"
@@ -49,7 +49,7 @@ echo "Updating pubky-sdk package.json version to $NEW_VERSION..."
 # Set the version of all rust members of the workspace
 # cargo set-version also updates the inner member dependency versions.
 echo "Setting the version of all rust members of the workspace to $NEW_VERSION..."
-cargo set-version $NEW_VERSION
+cargo set-version "$NEW_VERSION"
 
 
 
