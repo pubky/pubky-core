@@ -4181,6 +4181,7 @@ dependencies = [
  "clap",
  "dirs",
  "http-relay",
+ "libc",
  "mainline",
  "once_cell",
  "pkarr",
