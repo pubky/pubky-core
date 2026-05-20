@@ -4154,7 +4154,6 @@ dependencies = [
  "pubky_test_utils_drop_db_helper",
  "quote",
  "syn 2.0.117",
- "tokio",
 ]
 
 [[package]]
