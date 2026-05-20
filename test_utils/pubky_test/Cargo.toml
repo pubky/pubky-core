@@ -1,6 +1,6 @@
 [package]
 name = "pubky_test_utils"
-version = "0.8.0"
+version = "0.1.0"
 description = "Test utilities for Pubky Core testing"
 keywords = ["pubky", "test", "utilities"]
 categories = ["testing"]
@@ -13,5 +13,5 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-pubky_test_utils_macro = { path = "../test_macro", version = "0.8.0" }
-pubky_test_utils_drop_db_helper = { path = "../drop_db_helper", version = "0.8.0" }
+pubky_test_utils_macro = { path = "../test_macro", version = "0.1.0" }
+pubky_test_utils_drop_db_helper = { path = "../drop_db_helper", version = "0.1.0" }
