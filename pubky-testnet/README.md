@@ -6,26 +6,26 @@ All resources are ephemeral, including the database, and all servers are cleaned
 
 ## Quickstart
 
-### Option 1: Embedded PostgreSQL (No External DB Required)
+### Option 1: Docker PostgreSQL (No External DB Required)
 
-For testing without a separate Postgres installation, enable the `embedded-postgres` feature:
+For testing without a separate Postgres installation, enable the `docker-postgres` feature:
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.6", features = ["embedded-postgres"] }
+pubky-testnet = { version = "0.9", features = ["docker-postgres"] }
 ```
 
 ```rust,no_run
-# #[cfg(not(feature = "embedded-postgres"))]
+# #[cfg(not(feature = "docker-postgres"))]
 # fn main() {}
-# #[cfg(feature = "embedded-postgres")]
+# #[cfg(feature = "docker-postgres")]
 use pubky_testnet::EphemeralTestnet;
 
-# #[cfg(feature = "embedded-postgres")]
+# #[cfg(feature = "docker-postgres")]
 #[tokio::main]
 async fn main() {
     let testnet = EphemeralTestnet::builder()
-        .with_embedded_postgres()
+        .with_docker_postgres()
         .build()
         .await
         .unwrap();
@@ -35,7 +35,7 @@ async fn main() {
 This uses [testcontainers](https://docs.rs/testcontainers) to run PostgreSQL in a Docker container.
 Docker must be running on the host. The container is automatically cleaned up on drop and on Ctrl+C/SIGTERM.
 
-> **Important**: If you have multiple tests, see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests) below.
+> **Important**: If you have multiple tests, see [Sharing Docker Postgres Across Tests](#sharing-docker-postgres-across-tests) below.
 
 ### Option 2: External PostgreSQL
 
@@ -81,7 +81,7 @@ async fn my_test() {
 
 ### Custom Postgres Connection
 
-By default (without embedded-postgres), testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
+By default (without docker-postgres), testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
 The `?pubky-test=true` parameter indicates that the homeserver should create an ephemeral database.
 
 To use a custom [connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS):
@@ -131,20 +131,20 @@ async fn main() {
 }
 ```
 
-## Sharing Embedded Postgres Across Tests
+## Sharing Docker Postgres Across Tests
 
-When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL container.
+When using `docker-postgres`, each call to `.with_docker_postgres()` starts a **separate** PostgreSQL container.
 
-Use `EmbeddedPostgres::shared()` to start **one** container and share its connection string across all tests.
+Use `DockerPostgres::shared()` to start **one** container and share its connection string across all tests.
 Docker handles cleanup automatically when the process exits.
 
 ```rust
 use pubky_testnet::EphemeralTestnet;
-use pubky_testnet::embedded_postgres::EmbeddedPostgres;
+use pubky_testnet::docker_postgres::DockerPostgres;
 
 #[tokio::test]
 async fn test_one() {
-    let pg = EmbeddedPostgres::shared().await;
+    let pg = DockerPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -155,7 +155,7 @@ async fn test_one() {
 
 #[tokio::test]
 async fn test_two() {
-    let pg = EmbeddedPostgres::shared().await;
+    let pg = DockerPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -171,7 +171,7 @@ Each testnet still gets its own ephemeral database within the shared PostgreSQL 
 
 ### Docker not running
 
-The `embedded-postgres` feature requires Docker. If you see `"Is Docker running?"` errors, ensure the Docker daemon is started and your user has permission to access it (e.g., is in the `docker` group).
+The `docker-postgres` feature requires Docker. If you see `"Is Docker running?"` errors, ensure the Docker daemon is started and your user has permission to access it (e.g., is in the `docker` group).
 
 ### Docker Hub rate limits
 

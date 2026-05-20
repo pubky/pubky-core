@@ -42,8 +42,10 @@ name = "keygen"
 path = "./keygen.rs"
 
 [features]
-default = ["embedded-postgres"]
-embedded-postgres = ["pubky-testnet/embedded-postgres"]
+default = ["docker-postgres"]
+docker-postgres = ["pubky-testnet/docker-postgres"]
+# Deprecated alias — use `docker-postgres` instead.
+embedded-postgres = ["docker-postgres"]
 
 [dependencies]
 futures-util = "0.3.31"

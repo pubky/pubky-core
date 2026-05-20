@@ -16,7 +16,7 @@ struct Cli {
     #[arg(long, default_value_t = LevelFilter::INFO, value_parser = clap::value_parser!(LevelFilter))]
     level: LevelFilter,
 
-    /// Use an external PostgreSQL instance instead of embedded postgres.
+    /// Use an external PostgreSQL instance instead of the Docker-managed one.
     /// Connects to TEST_PUBKY_CONNECTION_STRING env var if set,
     /// otherwise defaults to postgres://postgres:postgres@localhost:5432/postgres
     #[arg(long)]
@@ -33,9 +33,9 @@ async fn main() -> Result<()> {
     #[allow(unused_mut)]
     let mut builder = EphemeralTestnet::builder();
 
-    #[cfg(feature = "embedded-postgres")]
+    #[cfg(feature = "docker-postgres")]
     let builder = if !cli.external_postgres {
-        builder.with_embedded_postgres()
+        builder.with_docker_postgres()
     } else {
         builder
     };

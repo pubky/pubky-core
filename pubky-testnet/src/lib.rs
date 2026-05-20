@@ -3,8 +3,16 @@ mod ephemeral_testnet;
 mod static_testnet;
 mod testnet;
 
-#[cfg(feature = "embedded-postgres")]
-pub mod embedded_postgres;
+#[cfg(feature = "docker-postgres")]
+pub mod docker_postgres;
+
+/// Deprecated module alias. Use [`docker_postgres`] instead.
+#[cfg(feature = "docker-postgres")]
+#[deprecated(since = "0.9.0", note = "Renamed to `docker_postgres`")]
+pub mod embedded_postgres {
+    pub use crate::docker_postgres::*;
+}
+
 pub use ephemeral_testnet::{EphemeralTestnet, EphemeralTestnetBuilder};
 pub use static_testnet::StaticTestnet;
 pub use testnet::Testnet;

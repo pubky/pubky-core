@@ -43,4 +43,6 @@ rand = { version = "0.9", optional = true }
 
 [features]
 default = []
-embedded-postgres = ["testcontainers", "testcontainers-modules", "rand"]
+docker-postgres = ["testcontainers", "testcontainers-modules", "rand"]
+# Deprecated alias — use `docker-postgres` instead.
+embedded-postgres = ["docker-postgres"]

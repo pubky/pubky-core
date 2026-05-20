@@ -1,4 +1,4 @@
-//! Embedded PostgreSQL support for running tests without external Postgres.
+//! Docker-based PostgreSQL for running tests without external Postgres.
 //!
 //! This module provides a containerized PostgreSQL instance (via testcontainers)
 //! that can be used for integration tests without requiring a separate Postgres
@@ -11,8 +11,8 @@ use testcontainers::{runners::AsyncRunner, ContainerAsync};
 use testcontainers_modules::postgres::Postgres;
 use tokio::sync::OnceCell;
 
-/// Shared embedded postgres instance, initialized once per process.
-static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
+/// Shared Docker postgres instance, initialized once per process.
+static SHARED_PG: OnceCell<DockerPostgres> = OnceCell::const_new();
 
 /// A containerized PostgreSQL instance for testing.
 ///
@@ -21,16 +21,16 @@ static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
 ///
 /// # Sharing Across Tests (Recommended)
 ///
-/// Each `EmbeddedPostgres::start()` starts a **separate** PostgreSQL container.
-/// Use [`EmbeddedPostgres::shared()`] to start **one** instance and share it across tests:
+/// Each `DockerPostgres::start()` starts a **separate** PostgreSQL container.
+/// Use [`DockerPostgres::shared()`] to start **one** instance and share it across tests:
 ///
 /// ```ignore
-/// use pubky_testnet::embedded_postgres::EmbeddedPostgres;
+/// use pubky_testnet::docker_postgres::DockerPostgres;
 /// use pubky_testnet::EphemeralTestnet;
 ///
 /// #[tokio::test]
 /// async fn my_test() {
-///     let pg = EmbeddedPostgres::shared().await;
+///     let pg = DockerPostgres::shared().await;
 ///     let testnet = EphemeralTestnet::builder()
 ///         .postgres(pg.connection_string().unwrap())
 ///         .build()
@@ -39,14 +39,18 @@ static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
 ///     // Each testnet gets its own ephemeral database — tests remain isolated.
 /// }
 /// ```
-pub struct EmbeddedPostgres {
+pub struct DockerPostgres {
     _container: ContainerAsync<Postgres>,
     host: String,
     port: u16,
 }
 
-impl EmbeddedPostgres {
-    /// Return a shared embedded PostgreSQL instance, starting it on first call.
+/// Deprecated alias for [`DockerPostgres`].
+#[deprecated(since = "0.9.0", note = "Renamed to `DockerPostgres`")]
+pub type EmbeddedPostgres = DockerPostgres;
+
+impl DockerPostgres {
+    /// Return a shared Docker PostgreSQL instance, starting it on first call.
     ///
     /// This is the recommended way to share a single PostgreSQL container across
     /// multiple tests. Docker handles all cleanup automatically.
@@ -54,17 +58,17 @@ impl EmbeddedPostgres {
     /// # Panics
     ///
     /// Panics if the container fails to start (e.g., Docker is not running).
-    pub async fn shared() -> &'static EmbeddedPostgres {
+    pub async fn shared() -> &'static DockerPostgres {
         SHARED_PG
             .get_or_init(|| async {
-                EmbeddedPostgres::start()
+                DockerPostgres::start()
                     .await
-                    .expect("Failed to start shared embedded postgres. Is Docker running?")
+                    .expect("Failed to start shared Docker postgres. Is Docker running?")
             })
             .await
     }
 
-    /// Start a new embedded PostgreSQL container.
+    /// Start a new Docker PostgreSQL container.
     ///
     /// Requires Docker to be running on the host.
     pub async fn start() -> anyhow::Result<Self> {
@@ -82,7 +86,7 @@ impl EmbeddedPostgres {
         })
     }
 
-    /// Get the connection string for this embedded PostgreSQL instance.
+    /// Get the connection string for this Docker PostgreSQL instance.
     pub fn connection_string(&self) -> anyhow::Result<ConnectionString> {
         let url = format!(
             "postgres://postgres:postgres@{}:{}/postgres",
@@ -99,18 +103,18 @@ impl EmbeddedPostgres {
 
 #[cfg(test)]
 mod tests {
-    use super::EmbeddedPostgres;
+    use super::DockerPostgres;
     use crate::EphemeralTestnet;
     use pubky::Keypair;
 
-    /// Basic integration test: start a testnet with embedded postgres, signup a user, store and retrieve data.
+    /// Basic integration test: start a testnet with docker postgres, signup a user, store and retrieve data.
     #[tokio::test]
-    async fn test_embedded_postgres_with_testnet() {
+    async fn test_docker_postgres_with_testnet() {
         let testnet = EphemeralTestnet::builder()
-            .with_embedded_postgres()
+            .with_docker_postgres()
             .build()
             .await
-            .expect("Failed to start testnet with embedded postgres");
+            .expect("Failed to start testnet with docker postgres");
 
         // Verify the homeserver is running
         assert!(!testnet.homeserver_app().public_key().to_string().is_empty());
@@ -127,7 +131,7 @@ mod tests {
 
         // Store and retrieve data
         let path = "/pub/test.txt";
-        let data = b"Hello from embedded postgres test!";
+        let data = b"Hello from docker postgres test!";
         session
             .storage()
             .put(path, data.as_slice())
@@ -143,12 +147,12 @@ mod tests {
         assert_eq!(bytes.as_ref(), data);
     }
 
-    /// Verify that dropping an EmbeddedPostgres actually removes the Docker container.
+    /// Verify that dropping a DockerPostgres actually removes the Docker container.
     #[tokio::test]
     async fn test_container_cleaned_up_on_drop() {
-        let pg = EmbeddedPostgres::start()
+        let pg = DockerPostgres::start()
             .await
-            .expect("Failed to start embedded postgres");
+            .expect("Failed to start docker postgres");
         let container_id = pg.container_id().to_string();
 
         // Verify the container is running.
