@@ -25,6 +25,9 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+
+# TODO: Because cargo set-version updates all member dependency versions to the new version, we need to pin the pubky_test_utils helper crates back to 0.1.0 after running it.
+# This is a bit hacky but allows us to keep the helper crates at their published versions so we don't have to publish new versions of them every time we want to update the version of the workspace members that depend on them.
 pin_test_utils_versions() {
   echo "Pinning pubky_test_utils helper crates to $PINNED_TEST_UTILS_VERSION..."
   python3 - "$PINNED_TEST_UTILS_VERSION" <<'PY'
