@@ -4190,7 +4190,6 @@ dependencies = [
  "pubky-common",
  "pubky-homeserver",
  "pubky_test_utils",
- "rand 0.9.4",
  "tempfile",
  "testcontainers",
  "testcontainers-modules",

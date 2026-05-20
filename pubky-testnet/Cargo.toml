@@ -38,12 +38,9 @@ once_cell = "1.21.3"
 testcontainers = { version = "0.27", features = ["watchdog"], optional = true }
 testcontainers-modules = { version = "0.15", features = ["postgres"], optional = true }
 libc = { version = "0.2", optional = true }
-rand = { version = "0.9", optional = true }
-
-[dev-dependencies]
 
 [features]
 default = []
-docker-postgres = ["testcontainers", "testcontainers-modules", "libc", "rand"]
+docker-postgres = ["testcontainers", "testcontainers-modules", "libc"]
 # Deprecated alias — use `docker-postgres` instead.
 embedded-postgres = ["docker-postgres"]

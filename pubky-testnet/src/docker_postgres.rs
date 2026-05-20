@@ -91,7 +91,15 @@ impl DockerPostgres {
 
                 // Register atexit cleanup (idempotent — only the first call matters).
                 SHARED_CONTAINER_ID.get_or_init(|| {
-                    unsafe { libc::atexit(cleanup_shared_container) };
+                    // SAFETY: `cleanup_shared_container` only calls
+                    // `std::process::Command::new("docker")`, which is safe to invoke
+                    // from an atexit handler on all supported platforms. The handler
+                    // runs after `main` returns but before the process exits, so the
+                    // allocator and standard library are still available.
+                    let ret = unsafe { libc::atexit(cleanup_shared_container) };
+                    if ret != 0 {
+                        eprintln!("warning: failed to register atexit handler for Docker cleanup (returned {ret})");
+                    }
                     pg.container_id().to_string()
                 });
 
@@ -139,28 +147,52 @@ mod tests {
     use crate::EphemeralTestnet;
     use pubky::Keypair;
 
-    /// Extract a 64-char hex container ID from mixed test harness output.
-    fn extract_hex_id(s: &str) -> String {
-        let hex: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-        // Docker container IDs are 64 hex characters.
-        if hex.len() >= 64 {
-            hex[..64].to_string()
-        } else {
-            String::new()
+    const CONTAINER_ID_PREFIX: &str = "CONTAINER_ID=";
+
+    /// Poll `docker inspect` until the container no longer exists, or panic
+    /// after `max_attempts` tries (each separated by 1 second).
+    async fn wait_for_container_removal(container_id: &str, max_attempts: u32) {
+        for i in 0..max_attempts {
+            let output = std::process::Command::new("docker")
+                .args(["inspect", container_id])
+                .output()
+                .expect("docker inspect failed");
+            if !output.status.success() {
+                return; // container is gone
+            }
+            if i + 1 < max_attempts {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         }
+        panic!("Container {container_id} still exists after {max_attempts} attempts");
     }
 
-    /// Basic integration test: start a testnet with docker postgres, signup a user, store and retrieve data.
+    /// Extract the container ID printed by the subprocess using the
+    /// `CONTAINER_ID=<id>` delimiter, so we don't accidentally match
+    /// other hex in the test harness output.
+    fn extract_container_id(s: &str) -> Option<String> {
+        s.lines()
+            .find_map(|line| line.trim().strip_prefix(CONTAINER_ID_PREFIX))
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+    }
+
+    /// Basic integration test: start a testnet with docker postgres + http relay,
+    /// signup a user, store and retrieve data.
     #[tokio::test]
     async fn test_docker_postgres_with_testnet() {
         let testnet = EphemeralTestnet::builder()
             .with_docker_postgres()
+            .with_http_relay()
             .build()
             .await
             .expect("Failed to start testnet with docker postgres");
 
         // Verify the homeserver is running
         assert!(!testnet.homeserver_app().public_key().to_string().is_empty());
+
+        // Verify HTTP relay is running
+        let _ = testnet.http_relay();
 
         // Test user operations
         let pubky = testnet.sdk().expect("Failed to create SDK");
@@ -209,18 +241,8 @@ mod tests {
         // Drop it — testcontainers should stop and remove the container.
         drop(pg);
 
-        // Give Docker a moment to clean up.
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-        // Verify the container no longer exists.
-        let output = std::process::Command::new("docker")
-            .args(["inspect", &container_id])
-            .output()
-            .expect("docker inspect failed");
-        assert!(
-            !output.status.success(),
-            "Container {container_id} should not exist after drop"
-        );
+        // Poll until Docker confirms the container is gone.
+        wait_for_container_removal(&container_id, 15).await;
     }
 
     /// Verify that the shared instance's container is cleaned up on normal process exit.
@@ -236,7 +258,7 @@ mod tests {
         // When invoked as the subprocess, start shared postgres, print ID, and exit.
         if std::env::var(SENTINEL).is_ok() {
             let pg = DockerPostgres::shared().await;
-            print!("{}", pg.container_id());
+            println!("{}{}", CONTAINER_ID_PREFIX, pg.container_id());
             return;
         }
 
@@ -256,25 +278,46 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
 
-        // The container ID (64 hex chars) is mixed in with test harness output.
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let container_id = extract_hex_id(&stdout);
-        assert!(
-            !container_id.is_empty(),
-            "Child did not print a container ID. stdout: {stdout}",
+        let container_id = extract_container_id(&stdout)
+            .unwrap_or_else(|| panic!("Child did not print a container ID. stdout: {stdout}"));
+
+        // Poll until Docker confirms the container is gone.
+        wait_for_container_removal(&container_id, 15).await;
+    }
+
+    /// Verify that `shared()` returns the same instance (same container) on repeated calls.
+    #[tokio::test]
+    async fn test_shared_returns_same_instance() {
+        let pg1 = DockerPostgres::shared().await;
+        let pg2 = DockerPostgres::shared().await;
+        assert_eq!(
+            pg1.container_id(),
+            pg2.container_id(),
+            "shared() should return the same container on repeated calls"
         );
+    }
 
-        // Give Docker a moment to finish removal.
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    /// Test that specifying both docker postgres and a custom connection string fails.
+    #[tokio::test]
+    async fn test_docker_postgres_and_custom_connection_string_fails() {
+        use pubky_homeserver::ConnectionString;
 
-        // Verify the container no longer exists.
-        let inspect = std::process::Command::new("docker")
-            .args(["inspect", &container_id])
-            .output()
-            .expect("docker inspect failed");
+        let connection = ConnectionString::new("postgres://localhost:5432/test").unwrap();
+
+        let result = EphemeralTestnet::builder()
+            .postgres(connection)
+            .with_docker_postgres()
+            .build()
+            .await;
+
+        let err = result
+            .err()
+            .expect("Should fail when both postgres options are set")
+            .to_string();
         assert!(
-            !inspect.status.success(),
-            "Container {container_id} should not exist after normal process exit"
+            err.contains("Cannot use both docker postgres and a custom connection string"),
+            "Expected error about conflicting postgres options, got: {err}"
         );
     }
 }
