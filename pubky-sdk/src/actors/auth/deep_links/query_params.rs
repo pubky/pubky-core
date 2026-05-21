@@ -90,7 +90,4 @@ pub(super) fn append_grant_params(url: &mut Url, client_id: &ClientId, client_pk
         .append_pair("cpk", &client_pk.z32());
 }
 
-pub(super) fn append_secret_param(url: &mut Url, secret: &[u8; 32]) {
-    url.query_pairs_mut()
-        .append_pair("secret", &URL_SAFE_NO_PAD.encode(secret));
-}
+
