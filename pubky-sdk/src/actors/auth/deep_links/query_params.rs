@@ -89,5 +89,3 @@ pub(super) fn append_grant_params(url: &mut Url, client_id: &ClientId, client_pk
         .append_pair("cid", &client_id.to_string())
         .append_pair("cpk", &client_pk.z32());
 }
-
-

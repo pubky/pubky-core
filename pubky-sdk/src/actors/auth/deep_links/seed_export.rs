@@ -34,7 +34,7 @@ impl DeepLinkParams for SeedExportParams {
 
     fn append_query_pairs(&self, url: &mut Url) {
         url.query_pairs_mut()
-            .append_pair("secret", &URL_SAFE_NO_PAD.encode(&self.secret));
+            .append_pair("secret", &URL_SAFE_NO_PAD.encode(self.secret));
     }
 }
 
