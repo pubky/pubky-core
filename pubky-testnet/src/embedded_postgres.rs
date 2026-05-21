@@ -140,7 +140,7 @@ mod tests {
         let signer = pubky.signer(keypair);
 
         let session = signer
-            .signup(&testnet.homeserver_app().public_key(), None)
+            .signup_cookie(&testnet.homeserver_app().public_key(), None)
             .await
             .expect("Failed to signup user");
 

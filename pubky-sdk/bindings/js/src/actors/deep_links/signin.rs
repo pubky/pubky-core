@@ -24,17 +24,17 @@ impl SigninDeepLink {
 
     #[wasm_bindgen(getter)]
     pub fn capabilities(&self) -> String {
-        self.0.capabilities().to_string()
+        self.0.params().capabilities.to_string()
     }
 
     #[wasm_bindgen(js_name = "baseRelayUrl", getter)]
     pub fn base_relay_url(&self) -> String {
-        self.0.relay().to_string()
+        self.0.params().relay.to_string()
     }
 
     #[wasm_bindgen(getter)]
     pub fn secret(&self) -> Uint8Array {
-        Uint8Array::from(self.0.secret().as_ref())
+        Uint8Array::from(self.0.params().secret.as_ref())
     }
 
     #[allow(

@@ -47,7 +47,7 @@ impl MigrationTrait for M20260327AddQuotaColumnsMigration {
 mod tests {
     use super::*;
     use crate::persistence::sql::entities::signup_code::{
-        SignupCodeId, SignupCodeIden, SIGNUP_CODE_TABLE,
+        SignupCode, SignupCodeIden, SIGNUP_CODE_TABLE,
     };
     use crate::persistence::sql::entities::user::{UserIden, USER_TABLE};
     use crate::persistence::sql::migrations::{
@@ -60,6 +60,14 @@ mod tests {
     use pubky_common::crypto::Keypair;
     use sea_query::{PostgresQueryBuilder, Query, SimpleExpr};
     use sea_query_binder::SqlxBinder;
+
+    type QuotaColumns = (
+        Option<i32>,
+        Option<String>,
+        Option<String>,
+        Option<i32>,
+        Option<i32>,
+    );
 
     /// Helper: run all prior migrations plus the quota columns migration.
     async fn run_all_migrations(db: &SqlDb) {
@@ -98,7 +106,7 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: QuotaColumns = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
@@ -115,7 +123,7 @@ mod tests {
         let db = SqlDb::test_without_migrations().await;
         run_all_migrations(&db).await;
 
-        let code_id = SignupCodeId::random();
+        let code_id = SignupCode::random();
         let statement = Query::insert()
             .into_table(SIGNUP_CODE_TABLE)
             .columns([SignupCodeIden::Id])
@@ -128,7 +136,7 @@ mod tests {
             .await
             .unwrap();
 
-        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: QuotaColumns = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())
@@ -174,7 +182,7 @@ mod tests {
             .await
             .unwrap();
 
-        let code_id = SignupCodeId::random();
+        let code_id = SignupCode::random();
         sqlx::query("INSERT INTO signup_codes (id) VALUES ($1)")
             .bind(code_id.to_string())
             .execute(db.pool())
@@ -188,7 +196,7 @@ mod tests {
             .unwrap();
 
         // Existing user should have all NULLs (= Default)
-        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: QuotaColumns = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM users WHERE public_key = $1",
         )
         .bind(pubkey.z32())
@@ -198,7 +206,7 @@ mod tests {
         assert_eq!(row, (None, None, None, None, None));
 
         // Existing signup code should have all NULLs (= Default)
-        let row: (Option<i32>, Option<String>, Option<String>, Option<i32>, Option<i32>) = sqlx::query_as(
+        let row: QuotaColumns = sqlx::query_as(
             "SELECT quota_storage_mb, quota_rate_read, quota_rate_write, quota_rate_read_burst, quota_rate_write_burst FROM signup_codes WHERE id = $1",
         )
         .bind(code_id.to_string())

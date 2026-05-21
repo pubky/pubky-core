@@ -2,12 +2,10 @@ use std::{fmt::Display, str::FromStr};
 
 use url::Url;
 
-use crate::{
-    actors::auth::deep_links::{
-        DEEP_LINK_SCHEMES, error::DeepLinkParseError, signin::SigninDeepLink,
-        signup::SignupDeepLink,
-    },
-    deep_links::seed_export::SeedExportDeepLink,
+use crate::actors::auth::deep_links::{
+    DEEP_LINK_SCHEMES, error::DeepLinkParseError, seed_export::SeedExportDeepLink,
+    signin::SigninDeepLink, signin_grant::SigninGrantDeepLink, signup::SignupDeepLink,
+    signup_grant::SignupGrantDeepLink,
 };
 
 /// A parsed Pubky deep link.
@@ -17,10 +15,14 @@ use crate::{
     reason = "Doesn't really matter in this case as this enum is never stored in a large amount of data"
 )]
 pub enum DeepLink {
-    /// A signin deep link.
+    /// A signin deep link (legacy cookie flow).
     Signin(SigninDeepLink),
-    /// A signup deep link.
+    /// A signup deep link (legacy cookie flow).
     Signup(SignupDeepLink),
+    /// A signin deep link for the grant flow.
+    SigninGrant(SigninGrantDeepLink),
+    /// A signup deep link for the grant flow.
+    SignupGrant(SignupGrantDeepLink),
     /// A seed export deep link.
     SeedExport(SeedExportDeepLink),
 }
@@ -30,9 +32,11 @@ impl DeepLink {
     #[must_use]
     pub fn to_url(self) -> Url {
         match self {
-            DeepLink::Signin(signin) => signin.clone().into(),
-            DeepLink::Signup(signup) => signup.clone().into(),
-            DeepLink::SeedExport(seed_export) => seed_export.clone().into(),
+            DeepLink::Signin(signin) => signin.into(),
+            DeepLink::Signup(signup) => signup.into(),
+            DeepLink::SigninGrant(signin) => signin.into(),
+            DeepLink::SignupGrant(signup) => signup.into(),
+            DeepLink::SeedExport(seed_export) => seed_export.into(),
         }
     }
 }
@@ -42,6 +46,8 @@ impl Display for DeepLink {
         match self {
             DeepLink::Signin(signin) => write!(f, "{signin}"),
             DeepLink::Signup(signup) => write!(f, "{signup}"),
+            DeepLink::SigninGrant(signin) => write!(f, "{signin}"),
+            DeepLink::SignupGrant(signup) => write!(f, "{signup}"),
             DeepLink::SeedExport(seed_export) => write!(f, "{seed_export}"),
         }
     }
@@ -59,13 +65,15 @@ impl FromStr for DeepLink {
         match intent.as_str() {
             "signin" => Ok(DeepLink::Signin(s.parse()?)),
             "signup" => Ok(DeepLink::Signup(s.parse()?)),
+            "signin_grant" => Ok(DeepLink::SigninGrant(s.parse()?)),
+            "signup_grant" => Ok(DeepLink::SignupGrant(s.parse()?)),
             "secret_export" => Ok(DeepLink::SeedExport(s.parse()?)),
             "" => {
-                // Backwards compatible with old signin format
+                // Backwards compatible with old signin format (no host).
                 let mut url = url.clone();
                 url.set_host(Some("signin"))?;
                 let string_value = url.to_string();
-                Ok(DeepLink::Signin(string_value.parse()?))
+                string_value.parse()
             }
             _ => Err(DeepLinkParseError::InvalidIntent("")),
         }
@@ -97,10 +105,56 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_deep_link_signin_grant() {
+        let deep_link = "pubkyauth://signin_grant?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+        assert!(matches!(parsed, DeepLink::SigninGrant(_)));
+    }
+
+    #[test]
     fn test_parse_deep_link_signup() {
         let deep_link = "pubkyauth://signup?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&st=1234567890";
         let parsed: DeepLink = deep_link.parse().unwrap();
         assert!(matches!(parsed, DeepLink::Signup(_)));
+    }
+
+    #[test]
+    fn test_parse_deep_link_signup_grant() {
+        let deep_link = "pubkyauth://signup_grant?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&st=1234567890&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+        assert!(matches!(parsed, DeepLink::SignupGrant(_)));
+    }
+
+    #[test]
+    fn test_parse_deep_link_signin_ignores_extra_grant_params() {
+        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+
+        assert!(matches!(parsed, DeepLink::Signin(_)));
+    }
+
+    #[test]
+    fn test_parse_deep_link_signin_ignores_malformed_extra_grant_params() {
+        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=not-a-public-key";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+
+        assert!(matches!(parsed, DeepLink::Signin(_)));
+    }
+
+    #[test]
+    fn test_parse_deep_link_signup_ignores_extra_grant_params() {
+        let deep_link = "pubkyauth://signup?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+
+        assert!(matches!(parsed, DeepLink::Signup(_)));
+    }
+
+    #[test]
+    fn test_parse_deep_link_empty_signin_ignores_extra_grant_params() {
+        let deep_link = "pubkyauth:///?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let parsed: DeepLink = deep_link.parse().unwrap();
+
+        assert!(matches!(parsed, DeepLink::Signin(_)));
     }
 
     #[test]

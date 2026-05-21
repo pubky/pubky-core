@@ -16,7 +16,8 @@ test("eventStreamForUser: single-user convenience", async (t) => {
   // Setup: create a user with some events
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("events.test");
   const userPk = session.info.publicKey;
 
   for (let i = 0; i < 5; i++) {
@@ -143,7 +144,8 @@ test("eventStreamFor: homeserver-direct subscription", async (t) => {
   // Setup: create a user
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("events.test");
   const userPk = session.info.publicKey;
 
   for (let i = 0; i < 4; i++) {
@@ -220,12 +222,14 @@ test("addUsers: batch multi-user subscription", async (t) => {
   // Create two users
   const signer1 = sdk.signer(Keypair.random());
   const token1 = await createSignupToken();
-  const session1 = await signer1.signup(HOMESERVER_PUBLICKEY, token1);
+  await signer1.signup(HOMESERVER_PUBLICKEY, token1);
+  const session1 = await signer1.signin("events.test");
   const user1Pk = session1.info.publicKey;
 
   const signer2 = sdk.signer(Keypair.random());
   const token2 = await createSignupToken();
-  const session2 = await signer2.signup(HOMESERVER_PUBLICKEY, token2);
+  await signer2.signup(HOMESERVER_PUBLICKEY, token2);
+  const session2 = await signer2.signin("events.test");
   const user2Pk = session2.info.publicKey;
 
   // Create events for both users

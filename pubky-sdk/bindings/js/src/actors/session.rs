@@ -51,7 +51,10 @@ impl Session {
     /// A base64 string to store (e.g. in `localStorage`).
     #[wasm_bindgen]
     pub fn export(&self) -> String {
-        self.0.export()
+        self.0
+            .as_cookie()
+            .expect("export() is only valid for cookie sessions")
+            .export()
     }
 
     /// Restore a session from an `export()` string.

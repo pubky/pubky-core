@@ -877,6 +877,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1465,6 +1466,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -3938,6 +3940,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 name = "pubky"
 version = "0.8.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "cookie",
  "eventsource-stream",
@@ -3953,6 +3956,7 @@ dependencies = [
  "pubky-testnet",
  "reqwest 0.13.2",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3967,9 +3971,11 @@ version = "0.8.0"
 dependencies = [
  "argon2",
  "base32",
+ "base64 0.22.1",
  "blake3",
  "crypto_secretbox",
  "ed25519-dalek",
+ "getrandom 0.3.4",
  "js-sys",
  "once_cell",
  "pkarr",
@@ -4016,6 +4022,7 @@ dependencies = [
  "base32",
  "base64 0.22.1",
  "bytes",
+ "chrono",
  "clap",
  "dashmap",
  "dav-server",
@@ -4031,6 +4038,7 @@ dependencies = [
  "hostname-validator",
  "httpdate",
  "infer",
+ "jsonwebtoken",
  "mime_guess",
  "opendal",
  "opentelemetry",
@@ -4041,12 +4049,14 @@ dependencies = [
  "prometheus",
  "pubky-common",
  "pubky_test_utils",
+ "rand 0.9.4",
  "reqwest 0.13.2",
  "sea-query",
  "sea-query-binder",
  "serde",
  "serde_json",
  "serde_valid",
+ "sha2 0.10.9",
  "sqlx",
  "temp-env",
  "tempfile",

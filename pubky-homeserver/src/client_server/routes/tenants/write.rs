@@ -8,7 +8,11 @@ use axum::{
 use futures_util::stream::StreamExt;
 
 use crate::{
-    client_server::{extractors::PubkyHost, AppState},
+    client_server::{
+        auth::{has_write_permission, AuthSession},
+        middleware::pubky_host::PubkyHost,
+        AppState,
+    },
     persistence::{
         files::{
             user_quota_layer::{resolve_storage_max_bytes, would_exceed_limit},
@@ -18,16 +22,19 @@ use crate::{
     },
     services::user_service::FILE_METADATA_SIZE,
     shared::{
-        webdav::{EntryPath, WebDavPathPubAxum},
+        webdav::{EntryPath, WebDavPathAxum},
         HttpError, HttpResult,
     },
 };
 
 pub async fn delete(
     State(state): State<AppState>,
+    session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     state
         .user_service
@@ -41,11 +48,14 @@ pub async fn delete(
 
 pub async fn put(
     State(state): State<AppState>,
+    session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
     headers: HeaderMap,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
+    has_write_permission(&session, &pubky, &path.0)?;
+
     let public_key = pubky.public_key();
     let user = state
         .user_service
