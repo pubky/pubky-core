@@ -267,8 +267,8 @@ mod tests {
 
         let deep_link = DeepLink::from_str(&auth_url_str).unwrap();
         let secret = match &deep_link {
-            DeepLink::Signin(s) => *s.secret(),
-            DeepLink::Signup(s) => *s.secret(),
+            DeepLink::Signin(s) => s.params().secret,
+            DeepLink::Signup(s) => s.params().secret,
             _ => panic!("Expected signin or signup deep link"),
         };
 

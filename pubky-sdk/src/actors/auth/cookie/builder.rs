@@ -5,7 +5,9 @@ use pubky_common::crypto::random_bytes;
 use crate::actors::DEFAULT_HTTP_RELAY_INBOX;
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::actors::auth::cookie::flow::PubkyCookieAuthFlow;
-use crate::actors::auth::deep_links::{DeepLink, SigninDeepLink, SignupDeepLink};
+use crate::actors::auth::deep_links::{
+    DeepLink, DeepLinkScheme, SigninDeepLink, SigninParams, SignupDeepLink, SignupParams,
+};
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
 use crate::errors::Result;
@@ -80,18 +82,26 @@ impl CookieAuthFlowBuilder {
         };
 
         let auth_url = match auth_kind {
-            AuthFlowKind::SignIn => {
-                DeepLink::Signin(SigninDeepLink::new(caps, base_relay.clone(), client_secret))
-            }
+            AuthFlowKind::SignIn => DeepLink::Signin(SigninDeepLink::new(
+                DeepLinkScheme::PubkyAuth,
+                SigninParams {
+                    capabilities: caps,
+                    relay: base_relay.clone(),
+                    secret: client_secret,
+                },
+            )),
             AuthFlowKind::SignUp {
                 homeserver_public_key,
                 signup_token,
             } => DeepLink::Signup(SignupDeepLink::new(
-                caps,
-                base_relay.clone(),
-                client_secret,
-                *homeserver_public_key,
-                signup_token,
+                DeepLinkScheme::PubkyAuth,
+                SignupParams {
+                    capabilities: caps,
+                    relay: base_relay.clone(),
+                    secret: client_secret,
+                    homeserver: *homeserver_public_key,
+                    signup_token,
+                },
             )),
         };
 

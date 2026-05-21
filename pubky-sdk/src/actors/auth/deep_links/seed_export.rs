@@ -1,9 +1,9 @@
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use url::Url;
 
 use super::{
     DeepLinkParseError,
-    typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink, parse_secret},
+    query_params::{append_secret_param, parse_secret},
+    typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink},
 };
 
 /// Intent marker for seed-export deep links.
@@ -32,8 +32,7 @@ impl DeepLinkParams for SeedExportParams {
     }
 
     fn append_query_pairs(&self, url: &mut Url) {
-        url.query_pairs_mut()
-            .append_pair("secret", &URL_SAFE_NO_PAD.encode(self.secret));
+        append_secret_param(url, &self.secret);
     }
 }
 
@@ -50,10 +49,9 @@ mod tests {
 
     #[test]
     fn parses_seed_export_deep_link() {
-        let deep_link: SeedExportDeepLink =
-            format!("pubkyring://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
+        let deep_link: SeedExportDeepLink = format!("pubkyring://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
 
         assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyRing);
         assert_eq!(deep_link.intent(), "secret_export");
@@ -62,10 +60,9 @@ mod tests {
 
     #[test]
     fn converts_seed_export_deep_link_to_url() {
-        let deep_link: SeedExportDeepLink =
-            format!("pubkyring://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
+        let deep_link: SeedExportDeepLink = format!("pubkyring://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
         let url = deep_link.to_url();
 
         assert_eq!(url.scheme(), "pubkyring");
@@ -92,20 +89,18 @@ mod tests {
 
     #[test]
     fn display_formats_as_url() {
-        let deep_link: SeedExportDeepLink =
-            format!("pubkyauth://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
+        let deep_link: SeedExportDeepLink = format!("pubkyauth://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
 
         assert_eq!(deep_link.to_string(), deep_link.to_url().to_string());
     }
 
     #[test]
     fn converts_owned_typed_deep_link_into_url() {
-        let deep_link: SeedExportDeepLink =
-            format!("pubkyauth://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
+        let deep_link: SeedExportDeepLink = format!("pubkyauth://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
         let url: Url = deep_link.into();
 
         assert_eq!(url.scheme(), "pubkyauth");

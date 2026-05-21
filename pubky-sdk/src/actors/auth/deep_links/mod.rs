@@ -14,6 +14,7 @@
 
 mod deep_link;
 mod error;
+mod query_params;
 mod schemes;
 mod seed_export;
 mod signin;
@@ -29,8 +30,8 @@ pub use deep_link::DeepLink;
 pub use error::DeepLinkParseError;
 pub use schemes::DeepLinkScheme;
 pub use seed_export::{SecretExportIntent, SeedExportDeepLink, SeedExportParams};
-pub use signin::SigninDeepLink;
-pub use signin_grant::SigninGrantDeepLink;
-pub use signup::SignupDeepLink;
-pub use signup_grant::SignupGrantDeepLink;
+pub use signin::{SigninDeepLink, SigninIntent, SigninParams};
+pub use signin_grant::{SigninGrantDeepLink, SigninGrantIntent, SigninGrantParams};
+pub use signup::{SignupDeepLink, SignupIntent, SignupParams};
+pub use signup_grant::{SignupGrantDeepLink, SignupGrantIntent, SignupGrantParams};
 pub use typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink};

@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
         .to_string()
         .parse::<SigninDeepLink>()
         .map_err(|e| anyhow::anyhow!("Failed to parse sign in deep link: {e}"))?;
-    let caps = deep_link.capabilities();
+    let caps = &deep_link.params().capabilities;
 
     if !caps.is_empty() {
         println!("\nRequested capabilities:\n  {}", caps);

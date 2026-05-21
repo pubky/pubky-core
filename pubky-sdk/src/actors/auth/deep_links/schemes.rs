@@ -23,6 +23,7 @@ pub enum DeepLinkScheme {
 
 impl DeepLinkScheme {
     /// Return the canonical URI scheme string.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::PubkyAuth => PUBKY_AUTH_SCHEME,

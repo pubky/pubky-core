@@ -2,12 +2,10 @@ use std::{fmt::Display, str::FromStr};
 
 use url::Url;
 
-use crate::{
-    actors::auth::deep_links::{
-        DEEP_LINK_SCHEMES, error::DeepLinkParseError, signin::SigninDeepLink,
-        signin_grant::SigninGrantDeepLink, signup::SignupDeepLink,
-        signup_grant::SignupGrantDeepLink, seed_export::SeedExportDeepLink,
-    },
+use crate::actors::auth::deep_links::{
+    DEEP_LINK_SCHEMES, error::DeepLinkParseError, seed_export::SeedExportDeepLink,
+    signin::SigninDeepLink, signin_grant::SigninGrantDeepLink, signup::SignupDeepLink,
+    signup_grant::SignupGrantDeepLink,
 };
 
 /// A parsed Pubky deep link.
@@ -66,19 +64,15 @@ impl FromStr for DeepLink {
         let intent = url.host_str().unwrap_or("").to_string();
         match intent.as_str() {
             "signin" => {
-                if has_grant_params(&url)? {
-                    Ok(DeepLink::SigninGrant(s.parse()?))
-                } else {
-                    Ok(DeepLink::Signin(s.parse()?))
-                }
+                reject_legacy_grant_params(&url, "signin_grant")?;
+                Ok(DeepLink::Signin(s.parse()?))
             }
             "signup" => {
-                if has_grant_params(&url)? {
-                    Ok(DeepLink::SignupGrant(s.parse()?))
-                } else {
-                    Ok(DeepLink::Signup(s.parse()?))
-                }
+                reject_legacy_grant_params(&url, "signup_grant")?;
+                Ok(DeepLink::Signup(s.parse()?))
             }
+            "signin_grant" => Ok(DeepLink::SigninGrant(s.parse()?)),
+            "signup_grant" => Ok(DeepLink::SignupGrant(s.parse()?)),
             "secret_export" => Ok(DeepLink::SeedExport(s.parse()?)),
             "" => {
                 // Backwards compatible with old signin format (no host).
@@ -92,9 +86,10 @@ impl FromStr for DeepLink {
     }
 }
 
-/// Returns `true` if both `cid` and `cpk` are present, `false` if neither is,
-/// and an error if exactly one is present (partial grant binding is rejected).
-fn has_grant_params(url: &Url) -> Result<bool, DeepLinkParseError> {
+fn reject_legacy_grant_params(
+    url: &Url,
+    expected_intent: &'static str,
+) -> Result<(), DeepLinkParseError> {
     let mut has_cid = false;
     let mut has_cpk = false;
     for (key, _) in url.query_pairs() {
@@ -105,8 +100,8 @@ fn has_grant_params(url: &Url) -> Result<bool, DeepLinkParseError> {
         }
     }
     match (has_cid, has_cpk) {
-        (true, true) => Ok(true),
-        (false, false) => Ok(false),
+        (true, true) => Err(DeepLinkParseError::InvalidIntent(expected_intent)),
+        (false, false) => Ok(()),
         (true, false) => Err(DeepLinkParseError::MissingQueryParameter("cpk")),
         (false, true) => Err(DeepLinkParseError::MissingQueryParameter("cid")),
     }
@@ -138,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_parse_deep_link_signin_grant() {
-        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let deep_link = "pubkyauth://signin_grant?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
         let parsed: DeepLink = deep_link.parse().unwrap();
         assert!(matches!(parsed, DeepLink::SigninGrant(_)));
     }
@@ -152,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_parse_deep_link_signup_grant() {
-        let deep_link = "pubkyauth://signup?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&st=1234567890&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let deep_link = "pubkyauth://signup_grant?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&st=1234567890&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
         let parsed: DeepLink = deep_link.parse().unwrap();
         assert!(matches!(parsed, DeepLink::SignupGrant(_)));
     }
@@ -164,6 +159,39 @@ mod tests {
         assert!(matches!(
             result,
             Err(DeepLinkParseError::MissingQueryParameter("cpk"))
+        ));
+    }
+
+    #[test]
+    fn test_parse_deep_link_old_signin_grant_intent_rejected() {
+        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let result: Result<DeepLink, _> = deep_link.parse();
+
+        assert!(matches!(
+            result,
+            Err(DeepLinkParseError::InvalidIntent("signin_grant"))
+        ));
+    }
+
+    #[test]
+    fn test_parse_deep_link_old_signup_grant_intent_rejected() {
+        let deep_link = "pubkyauth://signup?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let result: Result<DeepLink, _> = deep_link.parse();
+
+        assert!(matches!(
+            result,
+            Err(DeepLinkParseError::InvalidIntent("signup_grant"))
+        ));
+    }
+
+    #[test]
+    fn test_parse_deep_link_old_empty_signin_grant_intent_rejected() {
+        let deep_link = "pubkyauth:///?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let result: Result<DeepLink, _> = deep_link.parse();
+
+        assert!(matches!(
+            result,
+            Err(DeepLinkParseError::InvalidIntent("signin_grant"))
         ));
     }
 
