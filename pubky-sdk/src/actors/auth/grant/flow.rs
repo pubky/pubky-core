@@ -110,7 +110,7 @@ impl fmt::Debug for GrantAuthFlowState {
 pub struct PubkyGrantAuthFlow {
     relay_listener: AuthRelayListener,
     client: PubkyHttpClient,
-    auth_url: DeepLink,
+    auth_url: Url,
     client_keypair: Keypair,
 }
 
@@ -129,7 +129,7 @@ impl PubkyGrantAuthFlow {
     pub(crate) fn new(
         relay_listener: AuthRelayListener,
         client: PubkyHttpClient,
-        auth_url: DeepLink,
+        auth_url: Url,
         client_keypair: Keypair,
     ) -> Self {
         Self {
@@ -169,7 +169,7 @@ impl PubkyGrantAuthFlow {
     /// The `pubkyauth://` deep link you display (QR/URL) to the signer.
     #[must_use]
     pub fn authorization_url(&self) -> Url {
-        self.auth_url.clone().into()
+        self.auth_url.clone()
     }
 
     /// Save the sensitive state required to restore this pending grant flow.
@@ -219,7 +219,12 @@ impl PubkyGrantAuthFlow {
             .client(client.clone())
             .start()?;
 
-        Ok(Self::new(relay_listener, client, auth_url, client_keypair))
+        Ok(Self::new(
+            relay_listener,
+            client,
+            auth_url.into(),
+            client_keypair,
+        ))
     }
 
     /// Block until the signer approves and return a ready-to-use

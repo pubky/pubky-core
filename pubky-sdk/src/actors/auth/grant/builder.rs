@@ -140,7 +140,7 @@ impl GrantAuthFlowBuilder {
         Ok(PubkyGrantAuthFlow::new(
             relay_listener,
             client,
-            auth_url,
+            auth_url.into(),
             client_keypair,
         ))
     }
