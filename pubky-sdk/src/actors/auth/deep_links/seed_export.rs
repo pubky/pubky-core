@@ -1,8 +1,9 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use url::Url;
 
 use super::{
     DeepLinkParseError,
-    query_params::{append_secret_param, parse_secret},
+    query_params::parse_secret,
     typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink},
 };
 
@@ -32,7 +33,8 @@ impl DeepLinkParams for SeedExportParams {
     }
 
     fn append_query_pairs(&self, url: &mut Url) {
-        append_secret_param(url, &self.secret);
+        url.query_pairs_mut()
+            .append_pair("secret", &URL_SAFE_NO_PAD.encode(&self.secret));
     }
 }
 
