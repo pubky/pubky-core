@@ -63,14 +63,8 @@ impl FromStr for DeepLink {
         }
         let intent = url.host_str().unwrap_or("").to_string();
         match intent.as_str() {
-            "signin" => {
-                reject_legacy_grant_params(&url, "signin_grant")?;
-                Ok(DeepLink::Signin(s.parse()?))
-            }
-            "signup" => {
-                reject_legacy_grant_params(&url, "signup_grant")?;
-                Ok(DeepLink::Signup(s.parse()?))
-            }
+            "signin" => Ok(DeepLink::Signin(s.parse()?)),
+            "signup" => Ok(DeepLink::Signup(s.parse()?)),
             "signin_grant" => Ok(DeepLink::SigninGrant(s.parse()?)),
             "signup_grant" => Ok(DeepLink::SignupGrant(s.parse()?)),
             "secret_export" => Ok(DeepLink::SeedExport(s.parse()?)),
@@ -83,27 +77,6 @@ impl FromStr for DeepLink {
             }
             _ => Err(DeepLinkParseError::InvalidIntent("")),
         }
-    }
-}
-
-fn reject_legacy_grant_params(
-    url: &Url,
-    expected_intent: &'static str,
-) -> Result<(), DeepLinkParseError> {
-    let mut has_cid = false;
-    let mut has_cpk = false;
-    for (key, _) in url.query_pairs() {
-        match key.as_ref() {
-            "cid" => has_cid = true,
-            "cpk" => has_cpk = true,
-            _ => {}
-        }
-    }
-    match (has_cid, has_cpk) {
-        (true, true) => Err(DeepLinkParseError::InvalidIntent(expected_intent)),
-        (false, false) => Ok(()),
-        (true, false) => Err(DeepLinkParseError::MissingQueryParameter("cpk")),
-        (false, true) => Err(DeepLinkParseError::MissingQueryParameter("cid")),
     }
 }
 
@@ -153,56 +126,35 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_deep_link_signin_partial_cid_rejected() {
+    fn test_parse_deep_link_signin_ignores_extra_grant_params() {
         let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app";
-        let result: Result<DeepLink, _> = deep_link.parse();
-        assert!(matches!(
-            result,
-            Err(DeepLinkParseError::MissingQueryParameter("cpk"))
-        ));
+        let parsed: DeepLink = deep_link.parse().unwrap();
+
+        assert!(matches!(parsed, DeepLink::Signin(_)));
     }
 
     #[test]
-    fn test_parse_deep_link_old_signin_grant_intent_rejected() {
-        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
-        let result: Result<DeepLink, _> = deep_link.parse();
+    fn test_parse_deep_link_signin_ignores_malformed_extra_grant_params() {
+        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=not-a-public-key";
+        let parsed: DeepLink = deep_link.parse().unwrap();
 
-        assert!(matches!(
-            result,
-            Err(DeepLinkParseError::InvalidIntent("signin_grant"))
-        ));
+        assert!(matches!(parsed, DeepLink::Signin(_)));
     }
 
     #[test]
-    fn test_parse_deep_link_old_signup_grant_intent_rejected() {
+    fn test_parse_deep_link_signup_ignores_extra_grant_params() {
         let deep_link = "pubkyauth://signup?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
-        let result: Result<DeepLink, _> = deep_link.parse();
+        let parsed: DeepLink = deep_link.parse().unwrap();
 
-        assert!(matches!(
-            result,
-            Err(DeepLinkParseError::InvalidIntent("signup_grant"))
-        ));
+        assert!(matches!(parsed, DeepLink::Signup(_)));
     }
 
     #[test]
-    fn test_parse_deep_link_old_empty_signin_grant_intent_rejected() {
+    fn test_parse_deep_link_empty_signin_ignores_extra_grant_params() {
         let deep_link = "pubkyauth:///?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cid=franky.pubky.app&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
-        let result: Result<DeepLink, _> = deep_link.parse();
+        let parsed: DeepLink = deep_link.parse().unwrap();
 
-        assert!(matches!(
-            result,
-            Err(DeepLinkParseError::InvalidIntent("signin_grant"))
-        ));
-    }
-
-    #[test]
-    fn test_parse_deep_link_signin_partial_cpk_rejected() {
-        let deep_link = "pubkyauth://signin?caps=/pub/pubky.app/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&relay=https://httprelay.pubky.app/inbox&cpk=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
-        let result: Result<DeepLink, _> = deep_link.parse();
-        assert!(matches!(
-            result,
-            Err(DeepLinkParseError::MissingQueryParameter("cid"))
-        ));
+        assert!(matches!(parsed, DeepLink::Signin(_)));
     }
 
     #[test]

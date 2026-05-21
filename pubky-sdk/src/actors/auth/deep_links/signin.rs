@@ -67,6 +67,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_signin_deep_link_with_extra_query_params() {
+        let deep_link: SigninDeepLink = "pubkyauth://signin?caps=/pub/pubky.app/:rw&relay=https://httprelay.pubky.app/inbox/&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&cid=franky.pubky.app&cpk=not-a-public-key"
+            .parse()
+            .unwrap();
+
+        assert_eq!(deep_link.intent(), "signin");
+    }
+
+    #[test]
     fn creates_signin_deep_link_from_params() {
         let capabilities = Capabilities::builder()
             .read_write("/")
