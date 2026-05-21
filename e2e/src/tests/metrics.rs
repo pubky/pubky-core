@@ -106,8 +106,14 @@ async fn metrics_comprehensive() {
     let signer1 = pubky.signer(keypair1);
     let signer2 = pubky.signer(keypair2);
 
-    let session1 = signer1.signup(&server_public_key, None).await.unwrap();
-    let session2 = signer2.signup(&server_public_key, None).await.unwrap();
+    let session1 = signer1
+        .signup_cookie(&server_public_key, None)
+        .await
+        .unwrap();
+    let session2 = signer2
+        .signup_cookie(&server_public_key, None)
+        .await
+        .unwrap();
 
     let user_pubky1 = signer1.public_key();
     let user_pubky2 = signer2.public_key();

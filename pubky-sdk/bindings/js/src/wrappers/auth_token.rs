@@ -18,9 +18,6 @@
 //    const bytes = token.toBytes();               // Uint8Array
 //    // server -> AuthToken.verify(bytes)
 //
-//  NOTE: `AuthToken.verify(bytes)` does **not** require network access. It checks:
-//    - version, signature, allowed timestamp window, replay protection (if using `AuthVerifier` on server).
-//
 
 use wasm_bindgen::prelude::*;
 

@@ -43,16 +43,11 @@ async fn main() -> Result<()> {
     };
 
     let signer = pubky.signer(keypair);
-    let session = signer
+    signer
         .signup(homeserver, cli.signup_code.as_deref())
         .await?;
 
-    println!("Successfully signed up. Checking session:");
-
-    let session_info = session.info();
-
-    println!("Successfully resolved current session at the homeserver.");
-    println!("{:?}", session_info);
+    println!("Successfully signed up and published the homeserver record.");
 
     Ok(())
 }

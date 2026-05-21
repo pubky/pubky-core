@@ -394,7 +394,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_generate_signup_token_with_limits() {
-        use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+        use crate::persistence::sql::signup_code::{SignupCode, SignupCodeRepository};
         use crate::shared::user_quota::QuotaOverride;
 
         let context = AppContext::test().await;
@@ -416,7 +416,7 @@ mod tests {
 
         // Verify the code was created with custom limits
         let token_str = response.text();
-        let code_id = SignupCodeId::new(token_str).unwrap();
+        let code_id = SignupCode::new(token_str).unwrap();
         let code = SignupCodeRepository::get(&code_id, &mut context.sql_db.pool().into())
             .await
             .unwrap();

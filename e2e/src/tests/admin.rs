@@ -1,5 +1,5 @@
 use pubky_testnet::pubky::{
-    errors::RequestError, Error, Keypair, Method, PubkyHttpClient, StatusCode,
+    errors::RequestError, ClientId, Error, Keypair, Method, PubkyHttpClient, StatusCode,
 };
 use pubky_testnet::{
     pubky_homeserver::{ConfigToml, Domain, MockDataDir},
@@ -102,11 +102,17 @@ async fn per_user_quota_via_admin_api() {
 
     // Create two users
     let signer_a = pubky.signer(Keypair::random());
-    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let session_a = signer_a
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
     let pubkey_a = signer_a.public_key().z32();
 
     let signer_b = pubky.signer(Keypair::random());
-    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+    let session_b = signer_b
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // Set a 1 MB quota on user A via admin API
     let admin_client = PubkyHttpClient::new().unwrap();
@@ -189,11 +195,17 @@ async fn per_user_speed_override_throttles_via_admin_api() {
 
     // Create two users
     let signer_a = pubky.signer(Keypair::random());
-    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let session_a = signer_a
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
     let pubkey_a_z32 = signer_a.public_key().z32();
 
     let signer_b = pubky.signer(Keypair::random());
-    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+    let session_b = signer_b
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // Override user A to 1kb/s write speed via admin API
     let admin_client = PubkyHttpClient::new().unwrap();
@@ -273,11 +285,17 @@ async fn per_user_read_speed_override_throttles_via_admin_api() {
 
     // Create two users
     let signer_a = pubky.signer(Keypair::random());
-    let session_a = signer_a.signup(&server.public_key(), None).await.unwrap();
+    let session_a = signer_a
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
     let pubkey_a_z32 = signer_a.public_key().z32();
 
     let signer_b = pubky.signer(Keypair::random());
-    let session_b = signer_b.signup(&server.public_key(), None).await.unwrap();
+    let session_b = signer_b
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // Both users upload a 3 KB file (fast, using default 1mb/s)
     let body = vec![0u8; 3 * 1024];
@@ -355,7 +373,11 @@ async fn allowed_write_paths_enforced_via_http() {
 
     // Create user
     let signer = pubky.signer(Keypair::random());
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signin(ClientId::new("admin.allowed_write_paths").unwrap())
+        .await
+        .unwrap();
     let pubkey_z32 = signer.public_key().z32();
 
     // Write a file to a path that will later be disallowed (before restriction is applied)

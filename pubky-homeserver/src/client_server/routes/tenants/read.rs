@@ -1,10 +1,7 @@
 use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
-    client_server::{
-        extractors::{ListQueryParams, PubkyHost},
-        AppState,
-    },
+    client_server::{middleware::pubky_host::PubkyHost, query_params::ListQueryParams, AppState},
     shared::webdav::{EntryPath, WebDavPathPubAxum},
 };
 use axum::{

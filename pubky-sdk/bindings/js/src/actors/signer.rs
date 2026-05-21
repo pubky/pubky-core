@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use super::{pkdns::Pkdns, session::Session};
 use crate::js_error::JsResult;
 use crate::wrappers::{keys::Keypair, keys::PublicKey};
+use pubky::ClientId;
 
 /// Holds a user’s `Keypair` and performs identity operations:
 /// - `signup` creates a new homeserver user.
@@ -32,13 +33,13 @@ impl Signer {
         self.0.public_key().into()
     }
 
-    /// Sign up at a homeserver. Returns a ready `Session`.
+    /// Sign up at a homeserver.
     ///
-    /// Creates a valid homeserver Session with root capabilities
+    /// Creates the account and publishes PKDNS. Call `signin(clientId)` to create a session.
     ///
     /// @param {PublicKey} homeserver The homeserver’s public key.
     /// @param {string|null} signupToken Invite/registration token or `null`.
-    /// @returns {Promise<Session>}
+    /// @returns {Promise<void>}
     ///
     /// @throws {PubkyError}
     /// - `AuthenticationError` (bad/expired token)
@@ -48,34 +49,65 @@ impl Signer {
         &self,
         homeserver: &PublicKey,
         signup_token: Option<String>,
-    ) -> JsResult<Session> {
-        let session = self
-            .0
+    ) -> JsResult<()> {
+        self.0
             .signup(homeserver.as_inner(), signup_token.as_deref())
             .await?;
-        Ok(Session(session))
+        Ok(())
     }
 
     /// Fast sign-in for a returning user. Publishes PKDNS in the background.
     ///
-    /// Creates a valid homeserver Session with root capabilities
+    /// Creates a valid grant-backed homeserver Session with root capabilities.
+    /// `clientId` is shown in the user's grant/session list.
+    /// @param {string} clientId App identifier, typically a domain.
     ///
     /// @returns {Promise<Session>}
     ///
     /// @throws {PubkyError}
     #[wasm_bindgen]
-    pub async fn signin(&self) -> JsResult<Session> {
-        Ok(Session(self.0.signin().await?))
+    pub async fn signin(&self, client_id: String) -> JsResult<Session> {
+        let client_id = parse_client_id(&client_id)?;
+        Ok(Session(self.0.signin(client_id).await?))
     }
 
     /// Blocking sign-in. Waits for PKDNS publish to complete (slower; safer).
     ///
-    /// Creates a valid homeserver Session with root capabilities
+    /// Creates a valid grant-backed homeserver Session with root capabilities.
+    /// `clientId` is shown in the user's grant/session list.
+    /// @param {string} clientId App identifier, typically a domain.
     ///
     /// @returns {Promise<Session>}
     #[wasm_bindgen(js_name = "signinBlocking")]
-    pub async fn signin_blocking(&self) -> JsResult<Session> {
-        Ok(Session(self.0.signin_blocking().await?))
+    pub async fn signin_blocking(&self, client_id: String) -> JsResult<Session> {
+        let client_id = parse_client_id(&client_id)?;
+        Ok(Session(self.0.signin_blocking(client_id).await?))
+    }
+
+    /// Legacy cookie signup. Prefer `signup()` plus `signin(clientId)`.
+    #[wasm_bindgen(js_name = "signupCookie")]
+    pub async fn signup_cookie(
+        &self,
+        homeserver: &PublicKey,
+        signup_token: Option<String>,
+    ) -> JsResult<Session> {
+        let session = self
+            .0
+            .signup_cookie(homeserver.as_inner(), signup_token.as_deref())
+            .await?;
+        Ok(Session(session))
+    }
+
+    /// Legacy cookie signin. Prefer `signin(clientId)`.
+    #[wasm_bindgen(js_name = "signinCookie")]
+    pub async fn signin_cookie(&self) -> JsResult<Session> {
+        Ok(Session(self.0.signin_cookie().await?))
+    }
+
+    /// Legacy cookie blocking signin. Prefer `signinBlocking(clientId)`.
+    #[wasm_bindgen(js_name = "signinCookieBlocking")]
+    pub async fn signin_cookie_blocking(&self) -> JsResult<Session> {
+        Ok(Session(self.0.signin_cookie_blocking().await?))
     }
 
     /// Approve a `pubkyauth://` request URL (encrypts & POSTs the signed AuthToken).
@@ -95,4 +127,10 @@ impl Signer {
     pub fn pkdns(&self) -> Pkdns {
         Pkdns(self.0.pkdns())
     }
+}
+
+fn parse_client_id(value: &str) -> JsResult<ClientId> {
+    ClientId::new(value).map_err(|e| {
+        pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string())).into()
+    })
 }

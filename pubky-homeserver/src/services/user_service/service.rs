@@ -119,25 +119,10 @@ impl UserService {
         }
     }
 
-    /// Create a user with explicit quota, commit the transaction, and populate
-    /// the cache so downstream layers (rate limiter, etc.) see the user immediately.
-    pub async fn create_user(
-        &self,
-        public_key: &PublicKey,
-        quota: &UserQuota,
-        tx: sqlx::Transaction<'static, sqlx::Postgres>,
-    ) -> HttpResult<UserEntity> {
-        let mut tx = tx;
-        let user = UserRepository::create(public_key, uexecutor!(tx)).await?;
-        let user = UserRepository::set_quota(user.id, quota, uexecutor!(tx)).await?;
-        tx.commit().await?;
-
-        // Populate cache so the rate limiter sees the new user immediately
-        // (evicts any negative cache entry from pre-signup lookups).
+    /// Populate the quota cache after a user has been committed.
+    pub(crate) fn cache_user_quota(&self, user: &UserEntity) {
         self.quota_cache
-            .insert(public_key.clone(), CachedEntry::found(user.quota()));
-
-        Ok(user)
+            .insert(user.public_key.clone(), CachedEntry::found(user.quota()));
     }
 
     /// Apply a partial quota update.

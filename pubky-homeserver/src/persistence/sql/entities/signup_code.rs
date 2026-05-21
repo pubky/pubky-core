@@ -22,7 +22,7 @@ impl SignupCodeRepository {
     /// Rate limit strings are validated by roundtripping through `BandwidthQuota`
     /// parsing to ensure only well-formed values reach the database.
     pub async fn create<'a>(
-        id: &SignupCodeId,
+        id: &SignupCode,
         limits: &UserQuota,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
@@ -66,7 +66,7 @@ impl SignupCodeRepository {
     /// Get a signup code by its ID.
     /// The executor can either be db.pool() or a transaction.
     pub async fn get<'a>(
-        id: &SignupCodeId,
+        id: &SignupCode,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
         let statement = Query::select()
@@ -127,7 +127,7 @@ impl SignupCodeRepository {
     }
 
     pub async fn mark_as_used<'a>(
-        id: &SignupCodeId,
+        id: &SignupCode,
         used_by: &PublicKey,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<SignupCodeEntity, sqlx::Error> {
@@ -168,9 +168,9 @@ pub enum SignupCodeIden {
 /// Signup code id in the format of "JZY0-D6MY-ZFNG".
 /// Base32 encoded with the Crockford alphabet, separated by hyphens.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct SignupCodeId(pub String);
+pub struct SignupCode(pub String);
 
-impl SignupCodeId {
+impl SignupCode {
     /// Create a new signup code id.
     /// Returns an error if the id is invalid.
     pub fn new(id: String) -> anyhow::Result<Self> {
@@ -202,17 +202,17 @@ impl SignupCodeId {
             with_hyphens.push(ch);
         }
 
-        SignupCodeId(with_hyphens)
+        SignupCode(with_hyphens)
     }
 }
 
-impl Display for SignupCodeId {
+impl Display for SignupCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl FromStr for SignupCodeId {
+impl FromStr for SignupCode {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -229,7 +229,7 @@ pub struct SignupCodeOverview {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SignupCodeEntity {
-    pub id: SignupCodeId,
+    pub id: SignupCode,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
     pub used_by: Option<PublicKey>,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
@@ -263,7 +263,7 @@ impl SignupCodeEntity {
 impl FromRow<'_, PgRow> for SignupCodeEntity {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let token: String = row.try_get(SignupCodeIden::Id.to_string().as_str())?;
-        let id = SignupCodeId::new(token).map_err(|e| {
+        let id = SignupCode::new(token).map_err(|e| {
             sqlx::Error::Decode(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 e,
@@ -317,7 +317,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_create_get_signup_code() {
         let db = SqlDb::test().await;
-        let signup_code_id = SignupCodeId::random();
+        let signup_code_id = SignupCode::random();
 
         // Test create code with default (all-Default) limits
         let code = SignupCodeRepository::create(
@@ -349,7 +349,7 @@ mod tests {
         use std::str::FromStr;
 
         let db = SqlDb::test().await;
-        let signup_code_id = SignupCodeId::random();
+        let signup_code_id = SignupCode::random();
 
         let config = UserQuota {
             storage_quota_mb: QuotaOverride::Value(500),
@@ -374,7 +374,7 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_mark_as_used() {
         let db = SqlDb::test().await;
-        let signup_code_id = SignupCodeId::random();
+        let signup_code_id = SignupCode::random();
         let _ = SignupCodeRepository::create(
             &signup_code_id,
             &UserQuota::default(),
@@ -408,9 +408,9 @@ mod tests {
         assert_eq!(overview.num_unused_signup_codes, 0);
 
         // Create some signup codes
-        let code1 = SignupCodeId::random();
-        let code2 = SignupCodeId::random();
-        let code3 = SignupCodeId::random();
+        let code1 = SignupCode::random();
+        let code2 = SignupCode::random();
+        let code3 = SignupCode::random();
 
         let _ = SignupCodeRepository::create(&code1, &UserQuota::default(), &mut db.pool().into())
             .await
@@ -479,7 +479,7 @@ mod tests {
             rate_write: QuotaOverride::Default,
             ..Default::default()
         };
-        let code_id = SignupCodeId::random();
+        let code_id = SignupCode::random();
         let code = SignupCodeRepository::create(&code_id, &user_quota, &mut db.pool().into())
             .await
             .unwrap();
@@ -528,7 +528,7 @@ mod tests {
             allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/paykit/")]),
             ..Default::default()
         };
-        let code_id = SignupCodeId::random();
+        let code_id = SignupCode::random();
         let code = SignupCodeRepository::create(&code_id, &code_quota, &mut db.pool().into())
             .await
             .unwrap();
