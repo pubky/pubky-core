@@ -47,10 +47,13 @@ async fn test_limit_signin_get_session() {
 
     // Create a user (signup should not hit the POST /session signin limit)
     let signer = pubky.signer(Keypair::random());
-    signer.signup(&server.public_key(), None).await.unwrap();
+    signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // First signin should be OK
-    let session = signer.signin().await.unwrap();
+    let session = signer.signin_cookie().await.unwrap();
 
     // First GET /session (validate/fetch) should be OK
     session.revalidate().await.unwrap();
@@ -66,7 +69,7 @@ async fn test_limit_signin_get_session() {
 
     // Second signin should be rate-limited (429)
     let err = signer
-        .signin()
+        .signin_cookie()
         .await
         .expect_err("Second signin should be rate limited");
     assert!(
@@ -108,10 +111,10 @@ async fn test_limit_signin_get_session_whitelist() {
     // --- Whitelisted user ---
     let whitelisted_signer = pubky.signer(whitelisted_keypair);
     whitelisted_signer
-        .signup(&server.public_key(), None)
+        .signup_cookie(&server.public_key(), None)
         .await
         .unwrap();
-    let session_w = whitelisted_signer.signin().await.unwrap();
+    let session_w = whitelisted_signer.signin_cookie().await.unwrap();
 
     // First GET /session OK
     session_w.revalidate().await.unwrap();
@@ -120,8 +123,11 @@ async fn test_limit_signin_get_session_whitelist() {
 
     // --- Non-whitelisted user ---
     let other = pubky.signer(Keypair::random());
-    other.signup(&server.public_key(), None).await.unwrap();
-    let session_o = other.signin().await.unwrap();
+    other
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let session_o = other.signin_cookie().await.unwrap();
 
     // First GET /session OK
     session_o.revalidate().await.unwrap();
@@ -189,7 +195,10 @@ async fn test_limit_upload() {
 
     // User + session-bound session
     let signer = pubky.signer(Keypair::random());
-    let session = signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
 
     // Upload ~3 KB; at 1 KB/s it should take > 2s total
     let path = "/pub/test.txt";
@@ -232,7 +241,10 @@ async fn test_concurrent_write_read() {
     let mut sessions: Vec<PubkySession> = Vec::with_capacity(user_count);
     for _ in 0..user_count {
         let signer = pubky.signer(Keypair::random());
-        let session = signer.signup(&server.public_key(), None).await.unwrap();
+        let session = signer
+            .signup_cookie(&server.public_key(), None)
+            .await
+            .unwrap();
         sessions.push(session);
     }
 

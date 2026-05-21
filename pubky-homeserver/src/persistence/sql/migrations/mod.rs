@@ -4,6 +4,7 @@ mod m20250813_create_session;
 mod m20250814_create_event;
 mod m20250815_create_entry;
 mod m20251014_events_table_index_and_content_hash;
+pub(crate) mod m20260325_create_grant_sessions;
 mod m20260327_add_quota_columns;
 mod m20260507_add_allowed_write_paths;
 
@@ -13,5 +14,6 @@ pub(crate) use m20250813_create_session::M20250813CreateSessionMigration;
 pub(crate) use m20250814_create_event::M20250814CreateEventMigration;
 pub(crate) use m20250815_create_entry::M20250815CreateEntryMigration;
 pub(crate) use m20251014_events_table_index_and_content_hash::M20251014EventsTableIndexAndContentHashMigration;
+pub(crate) use m20260325_create_grant_sessions::M20260325CreateGrantSessionsMigration;
 pub(crate) use m20260327_add_quota_columns::M20260327AddQuotaColumnsMigration;
 pub(crate) use m20260507_add_allowed_write_paths::M20260507AddAllowedWritePathsMigration;

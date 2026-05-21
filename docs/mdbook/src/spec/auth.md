@@ -119,4 +119,4 @@ While the token itself can only be used for very brief period, it is immediately
 
 The assumption here is that we are authorizing a session to the `Homeserver` such that the user can always access all active sessions and revoke any session that they don't like, all from the `Authenticator` app.
 
-Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a JWT or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.
+Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a Grant or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.

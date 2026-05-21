@@ -21,7 +21,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 
 type Facade = ReturnType<typeof Pubky.testnet>;
 type Signer = ReturnType<Facade["signer"]>;
-type SignupSession = Awaited<ReturnType<Signer["signup"]>>;
+type SignupSession = Awaited<ReturnType<Signer["signupCookie"]>>;
 type SessionStorageType = SignupSession["storage"];
 type PublicStorageType = Facade["publicStorage"];
 
@@ -42,7 +42,7 @@ test("Session: export/import uses browser cookie", async (t) => {
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
 
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
   const exported = session.export();
 
   t.equal(typeof exported, "string", "export() returns a string snapshot");
@@ -84,7 +84,7 @@ test("Auth: basic", async (t) => {
   const signupToken = await createSignupToken();
 
   // 1) Signup -> valid session
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
   t.ok(session, "signup returned a session");
   const userPk = session.info.publicKey.z32();
 
@@ -120,7 +120,7 @@ test("Auth: basic", async (t) => {
   t.equal(res401.status, 401, "PUT without session returns 401");
 
   // 5) Sign in again (local key proves identity)
-  const session2 = await signer.signin();
+  const session2 = await signer.signinCookie();
   t.ok(session2, "signin returned a new session");
 
   // 6) Write succeeds again
@@ -146,12 +146,12 @@ test("Auth: multi-user (cookies)", async (t) => {
   const bobSignup = await createSignupToken();
 
   // 1) Signup Alice
-  const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceSignup);
+  const aliceSession = await alice.signupCookie(HOMESERVER_PUBLICKEY, aliceSignup);
   t.ok(aliceSession, "alice signed up");
   const alicePk = aliceSession.info.publicKey.z32();
 
   // 2) Signup Bob (cookie jar now holds both sessions)
-  const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobSignup);
+  const bobSession = await bob.signupCookie(HOMESERVER_PUBLICKEY, bobSignup);
   t.ok(bobSession, "bob signed up");
   const bobPk = bobSession.info.publicKey.z32();
 
@@ -224,8 +224,8 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   const aliceToken = await createSignupToken();
   const bobToken = await createSignupToken();
 
-  const aliceSession = await alice.signup(HOMESERVER_PUBLICKEY, aliceToken);
-  const bobSession = await bob.signup(HOMESERVER_PUBLICKEY, bobToken);
+  const aliceSession = await alice.signupCookie(HOMESERVER_PUBLICKEY, aliceToken);
+  const bobSession = await bob.signupCookie(HOMESERVER_PUBLICKEY, bobToken);
 
   const A = aliceSession.info.publicKey.z32();
   const B = bobSession.info.publicKey.z32();
@@ -292,7 +292,7 @@ test("Auth: multi-user host isolation + stale-handle safety", async (t) => {
   // 5) Stale-handle safety: Create a third user; ensure earlier Session handles still write correctly.
   const carol = sdk.signer(Keypair.random());
   const carolToken = await createSignupToken();
-  const carolSession = await carol.signup(HOMESERVER_PUBLICKEY, carolToken);
+  const carolSession = await carol.signupCookie(HOMESERVER_PUBLICKEY, carolToken);
   const C = carolSession.info.publicKey.z32();
 
   await aliceSession.storage.putText(P, "alice#4");
@@ -339,7 +339,7 @@ test("Auth: signup/signout loops keep cookies and host in sync", async (t) => {
   }> {
     const signer = sdk.signer(Keypair.random());
     const token = await createSignupToken();
-    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, token);
     const user = session.info.publicKey.z32();
     await session.storage.putText(P, label);
     return { signer, session, user };
@@ -520,7 +520,7 @@ test("Auth: signout removes persisted session cookies", async (t) => {
   for (let i = 0; i < 3; i += 1) {
     const signer = sdk.signer(Keypair.random());
     const token = await createSignupToken();
-    const session = await signer.signup(HOMESERVER_PUBLICKEY, token);
+    const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, token);
     const user = session.info.publicKey.z32();
 
     sessions.push({ session, user });
