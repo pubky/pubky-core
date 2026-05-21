@@ -14,11 +14,13 @@
 
 mod deep_link;
 mod error;
+mod schemes;
 mod seed_export;
 mod signin;
 mod signin_grant;
 mod signup;
 mod signup_grant;
+mod typed_deep_link;
 
 /// Supported deep link schemes.
 pub const DEEP_LINK_SCHEMES: [&str; 2] = ["pubkyauth", "pubkyring"];
