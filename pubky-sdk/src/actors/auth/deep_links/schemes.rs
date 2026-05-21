@@ -12,15 +12,18 @@ const PUBKY_AUTH_SCHEME: &str = "pubkyauth";
 const PUBKY_RING_SCHEME: &str = "pubkyring";
 const EXPECTED_DEEP_LINK_SCHEMES: &str = "pubkyauth or pubkyring";
 
+/// Supported Pubky deep-link URI schemes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeepLinkScheme {
+pub enum DeepLinkScheme {
+    /// Current Pubky auth deep-link scheme.
     PubkyAuth,
+    /// Deprecated Pubky Ring deep-link scheme.
     PubkyRing,
 }
 
 impl DeepLinkScheme {
     /// Return the canonical URI scheme string.
-    pub(super) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::PubkyAuth => PUBKY_AUTH_SCHEME,
             Self::PubkyRing => PUBKY_RING_SCHEME,

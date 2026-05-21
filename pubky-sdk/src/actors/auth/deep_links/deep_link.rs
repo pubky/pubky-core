@@ -6,9 +6,8 @@ use crate::{
     actors::auth::deep_links::{
         DEEP_LINK_SCHEMES, error::DeepLinkParseError, signin::SigninDeepLink,
         signin_grant::SigninGrantDeepLink, signup::SignupDeepLink,
-        signup_grant::SignupGrantDeepLink,
+        signup_grant::SignupGrantDeepLink, seed_export::SeedExportDeepLink,
     },
-    deep_links::seed_export::SeedExportDeepLink,
 };
 
 /// A parsed Pubky deep link.
