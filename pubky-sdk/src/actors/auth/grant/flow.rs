@@ -333,8 +333,16 @@ impl PubkyGrantAuthFlow {
 
 fn grant_deep_link_parts(deep_link: &DeepLink) -> Result<(&Url, &[u8; 32], &PublicKey)> {
     match deep_link {
-        DeepLink::SigninGrant(link) => Ok((link.relay(), link.secret(), link.client_pk())),
-        DeepLink::SignupGrant(link) => Ok((link.relay(), link.secret(), link.client_pk())),
+        DeepLink::SigninGrant(link) => Ok((
+            &link.params().relay,
+            &link.params().secret,
+            &link.params().client_pk,
+        )),
+        DeepLink::SignupGrant(link) => Ok((
+            &link.params().relay,
+            &link.params().secret,
+            &link.params().client_pk,
+        )),
         _ => Err(AuthError::Validation(
             "saved grant auth flow state must contain a grant signin or signup deep link".into(),
         )
@@ -345,7 +353,9 @@ fn grant_deep_link_parts(deep_link: &DeepLink) -> Result<(&Url, &[u8; 32], &Publ
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::auth::deep_links::{SigninDeepLink, SigninGrantDeepLink};
+    use crate::actors::auth::deep_links::{
+        DeepLinkScheme, SigninDeepLink, SigninGrantDeepLink, SigninGrantParams, SigninParams,
+    };
 
     #[tokio::test]
     async fn save_restore_round_trips_authorization_url() {
@@ -375,9 +385,12 @@ mod tests {
     #[test]
     fn restore_rejects_cookie_auth_url() {
         let auth_url = SigninDeepLink::new(
-            Capabilities::default(),
-            Url::parse("http://localhost/inbox").unwrap(),
-            [7; 32],
+            DeepLinkScheme::PubkyAuth,
+            SigninParams {
+                capabilities: Capabilities::default(),
+                relay: Url::parse("http://localhost/inbox").unwrap(),
+                secret: [7; 32],
+            },
         )
         .to_string();
         let state = GrantAuthFlowState {
@@ -397,11 +410,14 @@ mod tests {
         let expected_client = Keypair::random();
         let actual_client = Keypair::random();
         let auth_url = SigninGrantDeepLink::new(
-            Capabilities::default(),
-            Url::parse("http://localhost/inbox").unwrap(),
-            [7; 32],
-            ClientId::new("mismatch.test").unwrap(),
-            expected_client.public_key(),
+            DeepLinkScheme::PubkyAuth,
+            SigninGrantParams {
+                capabilities: Capabilities::default(),
+                relay: Url::parse("http://localhost/inbox").unwrap(),
+                secret: [7; 32],
+                client_id: ClientId::new("mismatch.test").unwrap(),
+                client_pk: expected_client.public_key(),
+            },
         )
         .to_string();
         let state = GrantAuthFlowState {

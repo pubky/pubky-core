@@ -25,8 +25,9 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to parse sign up deep link: {e}"))?;
 
     println!();
-    print!("Signup to homeserver: {}", deep_link.homeserver());
-    if let Some(signup_token) = deep_link.signup_token() {
+    let params = deep_link.params();
+    print!("Signup to homeserver: {}", params.homeserver);
+    if let Some(signup_token) = &params.signup_token {
         println!(" using signup token: {}", signup_token);
     } else {
         println!(" not using a signup token");
@@ -47,14 +48,14 @@ async fn main() -> Result<()> {
 
     // Sign up to the homeserver with the signup token if provided
     signer
-        .signup(deep_link.homeserver(), deep_link.signup_token().as_deref())
+        .signup(&params.homeserver, params.signup_token.as_deref())
         .await?;
     println!("Successfully signed up to the homeserver.");
     println!();
 
     // === Consent form ===
     // Ask the user for consent to the requested capabilities
-    let caps = deep_link.capabilities();
+    let caps = &params.capabilities;
     if !caps.is_empty() {
         println!("\nRequested capabilities:\n  {}", caps);
     }

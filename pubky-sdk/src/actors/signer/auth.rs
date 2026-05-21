@@ -55,56 +55,62 @@ impl PubkySigner {
 
         let (relay, client_secret, encrypted_payload) = match &deep_link {
             DeepLink::Signin(d) => {
+                let params = d.params();
                 cross_log!(
                     info,
                     "Approving legacy signin via relay {} (caps={:?})",
-                    d.relay(),
-                    d.capabilities()
+                    params.relay,
+                    params.capabilities
                 );
-                let payload = self.build_encrypted_token(d.capabilities().clone(), d.secret());
-                (d.relay().clone(), *d.secret(), payload)
+                let payload =
+                    self.build_encrypted_token(params.capabilities.clone(), &params.secret);
+                (params.relay.clone(), params.secret, payload)
             }
             DeepLink::Signup(d) => {
+                let params = d.params();
                 cross_log!(
                     info,
                     "Approving legacy signup via relay {} (caps={:?})",
-                    d.relay(),
-                    d.capabilities()
+                    params.relay,
+                    params.capabilities
                 );
-                let payload = self.build_encrypted_token(d.capabilities().clone(), d.secret());
-                (d.relay().clone(), *d.secret(), payload)
+                let payload =
+                    self.build_encrypted_token(params.capabilities.clone(), &params.secret);
+                (params.relay.clone(), params.secret, payload)
             }
             DeepLink::SigninGrant(d) => {
+                let params = d.params();
                 cross_log!(
                     info,
                     "Approving grant signin via relay {} (client_id={}, caps={:?})",
-                    d.relay(),
-                    d.client_id(),
-                    d.capabilities()
+                    params.relay,
+                    params.client_id,
+                    params.capabilities
                 );
                 let payload = self.build_encrypted_grant(
-                    d.capabilities(),
-                    d.client_id().clone(),
-                    d.client_pk().clone(),
-                    d.secret(),
+                    &params.capabilities,
+                    params.client_id.clone(),
+                    params.client_pk.clone(),
+                    &params.secret,
                 );
-                (d.relay().clone(), *d.secret(), payload)
+                (params.relay.clone(), params.secret, payload)
             }
             DeepLink::SignupGrant(d) => {
+                let params = d.params();
                 cross_log!(
                     info,
                     "Approving grant signup via relay {} (client_id={}, caps={:?})",
-                    d.relay(),
-                    d.client_id(),
-                    d.capabilities()
+                    params.relay,
+                    params.client_id,
+                    params.capabilities
                 );
                 let payload = self.build_encrypted_grant(
-                    d.capabilities(),
-                    d.client_id().clone(),
-                    d.client_pk().clone(),
-                    d.secret(),
+                    &params.capabilities,
+                    params.client_id.clone(),
+                    params.client_pk.clone(),
+                    &params.secret,
                 );
-                (d.relay().clone(), *d.secret(), payload)
+                (params.relay.clone(), params.secret, payload)
             }
             DeepLink::SeedExport(_) => {
                 return Err(AuthError::Validation(
