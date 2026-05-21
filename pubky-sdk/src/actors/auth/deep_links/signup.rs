@@ -94,6 +94,17 @@ mod tests {
     }
 
     #[test]
+    fn parses_signup_deep_link_with_extra_query_params() {
+        let deep_link: SignupDeepLink = format!(
+            "pubkyauth://signup?caps=/pub/pubky.app/:rw&relay=https://httprelay.pubky.app/inbox/&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs={HOMESERVER}&cid=franky.pubky.app&cpk=not-a-public-key"
+        )
+        .parse()
+        .unwrap();
+
+        assert_eq!(deep_link.intent(), "signup");
+    }
+
+    #[test]
     fn creates_signup_deep_link_from_params() {
         let capabilities = Capabilities::builder().read_write("/").finish();
         let relay = Url::parse("https://httprelay.pubky.app/inbox/").unwrap();
