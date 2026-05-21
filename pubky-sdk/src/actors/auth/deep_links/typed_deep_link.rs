@@ -15,18 +15,24 @@ use url::Url;
 
 use super::{DeepLinkParseError, schemes::DeepLinkScheme};
 
-pub(super) trait DeepLinkIntent {
+/// Intent marker for typed Pubky deep links.
+pub trait DeepLinkIntent {
+    /// URI host value used as the deep-link intent.
     const NAME: &'static str;
 }
 
-pub(super) trait DeepLinkParams: Sized {
+/// Typed parameter set for a Pubky deep-link intent.
+pub trait DeepLinkParams: Sized {
+    /// Parse this parameter set from a URL.
     fn parse(url: &Url) -> Result<Self, DeepLinkParseError>;
 
+    /// Append this parameter set as URL query pairs.
     fn append_query_pairs(&self, url: &mut Url);
 }
 
+/// A typed Pubky deep link with a statically selected intent and parameter set.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TypedDeepLink<I, P> {
+pub struct TypedDeepLink<I, P> {
     scheme: DeepLinkScheme,
     params: P,
     _intent: PhantomData<I>,
@@ -34,7 +40,7 @@ pub(super) struct TypedDeepLink<I, P> {
 
 impl<I, P> TypedDeepLink<I, P> {
     /// Create a typed deep link from a scheme and typed params.
-    pub(super) fn new(scheme: DeepLinkScheme, params: P) -> Self {
+    pub fn new(scheme: DeepLinkScheme, params: P) -> Self {
         Self {
             scheme,
             params,
@@ -49,7 +55,7 @@ where
     P: DeepLinkParams,
 {
     /// Parse a typed deep link from a URL.
-    pub(super) fn parse_url(url: &Url) -> Result<Self, DeepLinkParseError> {
+    pub fn parse_url(url: &Url) -> Result<Self, DeepLinkParseError> {
         let scheme = url.scheme().parse()?;
         if url.host_str().unwrap_or("") != I::NAME {
             return Err(DeepLinkParseError::InvalidIntent(I::NAME));
@@ -63,22 +69,22 @@ where
     }
 
     /// Return the validated deep-link scheme.
-    pub(super) fn scheme(&self) -> DeepLinkScheme {
+    pub fn scheme(&self) -> DeepLinkScheme {
         self.scheme
     }
 
     /// Return the statically selected deep-link intent.
-    pub(super) fn intent(&self) -> &'static str {
+    pub fn intent(&self) -> &'static str {
         I::NAME
     }
 
     /// Return the typed parameter set for this deep link.
-    pub(super) fn params(&self) -> &P {
+    pub fn params(&self) -> &P {
         &self.params
     }
 
     /// Convert this typed deep link into a URL.
-    pub(super) fn to_url(&self) -> Url {
+    pub fn to_url(&self) -> Url {
         let mut url = Url::parse(&format!("{}://{}", self.scheme.as_str(), I::NAME))
             .expect("invariant: deep-link scheme and intent form a valid URL");
         self.params.append_query_pairs(&mut url);
@@ -132,18 +138,10 @@ impl DeepLinkIntent for SignupIntent {
     const NAME: &'static str = "signup";
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SecretExportIntent;
-
-impl DeepLinkIntent for SecretExportIntent {
-    const NAME: &'static str = "secret_export";
-}
-
 pub(super) type TypedSigninDeepLink = TypedDeepLink<SigninIntent, SigninParams>;
 pub(super) type TypedSignupDeepLink = TypedDeepLink<SignupIntent, SignupParams>;
 pub(super) type TypedSigninGrantDeepLink = TypedDeepLink<SigninIntent, SigninGrantParams>;
 pub(super) type TypedSignupGrantDeepLink = TypedDeepLink<SignupIntent, SignupGrantParams>;
-pub(super) type TypedSeedExportDeepLink = TypedDeepLink<SecretExportIntent, SeedExportParams>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SigninParams {
@@ -261,24 +259,6 @@ impl DeepLinkParams for SignupGrantParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SeedExportParams {
-    pub(super) secret: [u8; 32],
-}
-
-impl DeepLinkParams for SeedExportParams {
-    fn parse(url: &Url) -> Result<Self, DeepLinkParseError> {
-        Ok(Self {
-            secret: parse_secret(url)?,
-        })
-    }
-
-    fn append_query_pairs(&self, url: &mut Url) {
-        url.query_pairs_mut()
-            .append_pair("secret", &URL_SAFE_NO_PAD.encode(self.secret));
-    }
-}
-
 fn append_signin_params(
     url: &mut Url,
     capabilities: &Capabilities,
@@ -325,7 +305,7 @@ fn parse_relay(url: &Url) -> Result<Url, DeepLinkParseError> {
         .map_err(|e| DeepLinkParseError::InvalidQueryParameter("relay", Box::new(e)))
 }
 
-fn parse_secret(url: &Url) -> Result<[u8; 32], DeepLinkParseError> {
+pub(super) fn parse_secret(url: &Url) -> Result<[u8; 32], DeepLinkParseError> {
     let raw_secret = required_query(url, "secret")?;
     let secret = URL_SAFE_NO_PAD
         .decode(raw_secret.as_str())
@@ -439,18 +419,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_seed_export_deep_link() {
-        let deep_link: TypedSeedExportDeepLink =
-            format!("pubkyring://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
-
-        assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyRing);
-        assert_eq!(deep_link.intent(), "secret_export");
-        assert_eq!(deep_link.params().secret, SECRET_BYTES);
-    }
-
-    #[test]
     fn parses_from_url() {
         let url = Url::parse(&format!(
             "pubkyauth://signin?caps=/:rw&relay=https://relay.test/inbox&secret={SECRET}"
@@ -487,62 +455,6 @@ mod tests {
         let parsed_again = TypedSignupGrantDeepLink::parse_url(&url).unwrap();
 
         assert_eq!(parsed_again, deep_link);
-    }
-
-    #[test]
-    fn converts_seed_export_deep_link_to_url() {
-        let deep_link: TypedSeedExportDeepLink =
-            format!("pubkyring://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
-        let url = deep_link.to_url();
-
-        assert_eq!(url.scheme(), "pubkyring");
-        assert_eq!(url.host_str(), Some("secret_export"));
-        assert_eq!(TypedSeedExportDeepLink::parse_url(&url).unwrap(), deep_link);
-    }
-
-    #[test]
-    fn creates_seed_export_deep_link_from_params() {
-        let deep_link = TypedSeedExportDeepLink::new(
-            DeepLinkScheme::PubkyAuth,
-            SeedExportParams {
-                secret: SECRET_BYTES,
-            },
-        );
-        let url = deep_link.to_url();
-        let parsed_again = TypedSeedExportDeepLink::parse_url(&url).unwrap();
-
-        assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyAuth);
-        assert_eq!(deep_link.intent(), "secret_export");
-        assert_eq!(deep_link.params().secret, SECRET_BYTES);
-        assert_eq!(parsed_again, deep_link);
-    }
-
-    #[test]
-    fn display_formats_as_url() {
-        let deep_link: TypedSeedExportDeepLink =
-            format!("pubkyauth://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
-
-        assert_eq!(deep_link.to_string(), deep_link.to_url().to_string());
-    }
-
-    #[test]
-    fn converts_owned_typed_deep_link_into_url() {
-        let deep_link: TypedSeedExportDeepLink =
-            format!("pubkyauth://secret_export?secret={SECRET}")
-                .parse()
-                .unwrap();
-        let url: Url = deep_link.into();
-
-        assert_eq!(url.scheme(), "pubkyauth");
-        assert_eq!(url.host_str(), Some("secret_export"));
-        url.query_pairs()
-            .find(|(key, _)| key == "secret")
-            .map(|(_, value)| assert_eq!(value, SECRET))
-            .expect("Expected 'secret' query parameter");
     }
 
     #[test]

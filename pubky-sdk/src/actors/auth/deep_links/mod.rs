@@ -27,8 +27,10 @@ pub const DEEP_LINK_SCHEMES: [&str; 2] = ["pubkyauth", "pubkyring"];
 
 pub use deep_link::DeepLink;
 pub use error::DeepLinkParseError;
-pub use seed_export::SeedExportDeepLink;
+pub use schemes::DeepLinkScheme;
+pub use seed_export::{SecretExportIntent, SeedExportDeepLink, SeedExportParams};
 pub use signin::SigninDeepLink;
 pub use signin_grant::SigninGrantDeepLink;
 pub use signup::SignupDeepLink;
 pub use signup_grant::SignupGrantDeepLink;
+pub use typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink};
