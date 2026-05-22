@@ -41,18 +41,18 @@ opt-level = 'z'
 # Member crates that need "default-features = false" should leave it out of their dependency specification, as it's inherited from here.
 # Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
 pkarr = { version = "6", default-features = false }
-mainline = { version = "6.1.1" }
+mainline = { version = "6.2.0" }
 pkarr-relay = { version = "0.12" }
 log = "0.4.29"
 url = "2.5.8"
 anyhow = "1.0.101"
 axum = "0.8.8"
 axum-server = "0.8.0"
-reqwest = { version = "0.13.2", default-features = false }
+reqwest = { version = "0.13.3", default-features = false }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
-tokio = "1.49.0"
-tower-http = "0.6.8"
+tokio = "1.52.3"
+tower-http = "0.6.11"
 thiserror = "2.0.18"
 clap = "4.6.0"
 http-relay = "0.7.0"

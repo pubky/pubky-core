@@ -56,7 +56,7 @@ pubky = { path = "../../pubky-sdk" , version = "0.8.0" }
 pubky-testnet = { path = "../../pubky-testnet" , version = "0.8.0" }
 pubky-common = { path = "../../pubky-common" , version = "0.8.0" }
 reqwest.workspace = true
-rpassword = "7.4.0"
+rpassword = "7.5.2"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
