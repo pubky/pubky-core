@@ -4,7 +4,7 @@ Learn how to enable verbose tracing for the Pubky SDK before performing a simple
 
 ## Usage
 
-By default, this example uses embedded PostgreSQL for a fully self-contained setup. The first run downloads PostgreSQL binaries (~50-100MB), which are cached for subsequent runs.
+By default, this example uses Docker to run PostgreSQL in a container for a fully self-contained setup. Docker must be running on the host.
 
 ```bash
 cargo run --bin logging -- --level debug
