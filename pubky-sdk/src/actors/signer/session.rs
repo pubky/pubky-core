@@ -198,12 +198,20 @@ impl PubkySigner {
                         "Background publish of homeserver for {} started",
                         signer.keypair.public_key()
                     );
-                    let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
+                    if let Err(e) = signer.pkdns().publish_homeserver_if_stale(None).await {
+                        cross_log!(
+                            error,
+                            "Background publish for {} failed: {:?}",
+                            signer.keypair.public_key(),
+                            e
+                        );
+                    } else {
                     cross_log!(
                         info,
                         "Background publish task for {} completed",
                         signer.keypair.public_key()
                     );
+                    }
                 };
                 #[cfg(not(target_arch = "wasm32"))]
                 tokio::spawn(fut);

@@ -14,7 +14,7 @@
 //! # async fn run() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
 //!
-//! let caps = Capabilities::default();
+//! let caps = Capabilities::from(Capability::write("/pub/demoapp/"));
 //! let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
 //! println!("Scan to sign in: {}", flow.authorization_url());
 //!
@@ -23,7 +23,7 @@
 //! # Ok(()) }
 //! ```
 //!
-//! ### 2) Script that holds a key and signs in locally with root capabilities
+//! ### 2) Script that holds a key and signs in locally with write capabilities for a demo app
 //! ```no_run
 //! use pubky::{ClientId, Pubky, PubkySigner, Keypair};
 //!
@@ -34,7 +34,7 @@
 //!
 //! let session = signer.signin(ClientId::new("demo.app").unwrap()).await?;
 //! // do writes as-me
-//! session.storage().put("/pub/demo/hello.txt", "hi").await?;
+//! session.storage().put("/pub/demoapp/hello.txt", "hi").await?;
 //! # Ok(()) }
 //! ```
 //!
@@ -45,7 +45,7 @@
 //! # async fn run(user: pubky::PublicKey) -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
 //! let public = pubky.public_storage();
-//! let addr = format!("{}/pub/site/index.html", user);
+//! let addr = format!("{}/pub/pubky.app/profile.json", user);
 //! let html = public.get(addr).await?.text().await?;
 //! # Ok(()) }
 //! ```
