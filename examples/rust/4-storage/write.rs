@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::Pubky;
+use pubky::{ClientId, Pubky};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -37,7 +37,7 @@ pub async fn run(args: Args) -> Result<()> {
     };
 
     let signer = pubky.signer(keypair);
-    let session = signer.signin().await?;
+    let session = signer.signin(ClientId::new("storage.example")?).await?;
     println!("Signed in successfully!");
 
     let storage = session.storage();

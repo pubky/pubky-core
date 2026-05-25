@@ -4,7 +4,7 @@ use core::str::FromStr;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{io, path::Path};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 type ParseError = <pkarr::PublicKey as TryFrom<String>>::Error;
 
@@ -110,10 +110,9 @@ impl From<Keypair> for pkarr::Keypair {
 
 /// Wrapper around [`pkarr::PublicKey`] that renders with the `pubky` prefix.
 ///
-/// Note: serde/transport/database formats continue to use raw z32 strings. Use
+/// Note: human-readable serde, transport, and database formats use raw z32 strings. Use
 /// [`PublicKey::z32()`] for hostnames, query parameters, storage, and wire formats.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PublicKey(pkarr::PublicKey);
 
 impl PublicKey {
@@ -158,6 +157,27 @@ impl fmt::Display for PublicKey {
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("PublicKey").field(&self.to_string()).finish()
+    }
+}
+
+impl Serialize for PublicKey {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.z32())
+        } else {
+            self.0.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if deserializer.is_human_readable() {
+            let value = String::deserialize(deserializer)?;
+            Self::try_from_z32(&value).map_err(serde::de::Error::custom)
+        } else {
+            pkarr::PublicKey::deserialize(deserializer).map(Self)
+        }
     }
 }
 
@@ -222,5 +242,36 @@ impl FromStr for PublicKey {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_public_key(s).map(Self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_key_serializes_as_z32() {
+        let public_key = Keypair::random().public_key();
+
+        let json = serde_json::to_string(&public_key).unwrap();
+
+        assert_eq!(json, format!("\"{}\"", public_key.z32()));
+    }
+
+    #[test]
+    fn public_key_deserializes_from_z32() {
+        let public_key = Keypair::random().public_key();
+        let json = format!("\"{}\"", public_key.z32());
+
+        let parsed: PublicKey = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed, public_key);
+    }
+
+    #[test]
+    fn public_key_display_uses_pubky_prefix() {
+        let public_key = Keypair::random().public_key();
+
+        assert_eq!(public_key.to_string(), format!("pubky{}", public_key.z32()));
     }
 }

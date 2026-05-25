@@ -1,6 +1,6 @@
 //! Signup token resource endpoints.
 
-use crate::persistence::sql::signup_code::{SignupCodeId, SignupCodeRepository};
+use crate::persistence::sql::signup_code::{SignupCode, SignupCodeRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{client_server::AppState, SignupMode};
 use axum::{
@@ -42,7 +42,7 @@ pub async fn get(
         ));
     }
 
-    let signup_code_id = SignupCodeId::new(token).map_err(|e| {
+    let signup_code_id = SignupCode::new(token).map_err(|e| {
         HttpError::new_with_message(
             StatusCode::BAD_REQUEST,
             format!("Invalid signup token format: {}", e),

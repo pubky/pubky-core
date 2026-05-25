@@ -1,5 +1,8 @@
 use clap::Parser;
-use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
+use pubky_testnet::{
+    pubky::{ClientId, Keypair},
+    EphemeralTestnet,
+};
 
 #[derive(Parser)]
 struct Args {
@@ -33,10 +36,9 @@ async fn main() -> anyhow::Result<()> {
     let pubky = testnet.sdk()?;
 
     // Create a random signer and sign up
-    let session = pubky
-        .signer(Keypair::random())
-        .signup(&homeserver.public_key(), None)
-        .await?;
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&homeserver.public_key(), None).await?;
+    let session = signer.signin(ClientId::new("testnet.example")?).await?;
 
     // Write a file
     session

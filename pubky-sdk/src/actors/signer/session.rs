@@ -1,11 +1,28 @@
-use pubky_common::auth::AuthToken;
+use std::sync::Arc;
+
+use pubky_common::auth::{
+    AuthToken,
+    grant::GrantClaims,
+    jws::{ClientId, GRANT_JWS_TYP, GrantId},
+};
+use pubky_common::crypto::Keypair;
 use reqwest::Method;
 use url::Url;
 
 use super::PubkySigner;
 use crate::{
-    Capabilities, Capability, PubkySession, PublicKey, Result, cross_log, util::check_http_status,
+    Capabilities, Capability, PubkySession, PublicKey, Result,
+    actors::auth::{
+        cookie::CookieCredential,
+        grant::constants::DEFAULT_GRANT_LIFETIME_SECS,
+        grant::grant_exchange::{credential_from_grant_exchange, signup_account_from_grant},
+    },
+    cross_log,
+    util::check_http_status,
 };
+
+const SIGNUP_CLIENT_ID: &str = "pubky.signup";
+const SIGNUP_GRANT_LIFETIME_SECS: u64 = 5 * 60;
 
 #[derive(Debug, Clone, Copy)]
 enum PublishMode {
@@ -14,33 +31,35 @@ enum PublishMode {
 }
 
 impl PubkySigner {
-    /// Create an account on a homeserver and return a ready-to-use `PubkySession`.
+    /// Create an account on a homeserver.
     ///
     /// Side effects:
     /// - Publishes the `_pubky` pkarr record pointing to `homeserver` (force mode).
     ///
     /// Notes:
-    /// - Uses a **root** capability token (sufficient for signup).
+    /// - Uses a short-lived root grant + `PoP` proof (sufficient for signup).
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Parse`] if the homeserver URL cannot be constructed.
     /// - Propagates transport failures while creating the account or publishing the homeserver record.
     /// - Propagates validation errors from the session hydration step.
-    pub async fn signup(
-        &self,
-        homeserver: &PublicKey,
-        signup_token: Option<&str>,
-    ) -> Result<PubkySession> {
-        let url = Self::build_signup_url(homeserver, signup_token)?;
+    pub async fn signup(&self, homeserver: &PublicKey, signup_token: Option<&str>) -> Result<()> {
         cross_log!(info, "Signing up new account on homeserver {}", homeserver);
 
-        let auth_token = self.root_capability_token();
-        let response = self
-            .send_signup_request(url, auth_token.serialize())
-            .await?;
+        let client_keypair = Keypair::random();
+        let (grant_jws, grant_claims) = self.signup_grant(&client_keypair)?;
+        signup_account_from_grant(
+            &self.client,
+            &grant_jws,
+            &grant_claims,
+            &client_keypair,
+            homeserver,
+            signup_token,
+        )
+        .await?;
 
         self.publish_signup_homeserver(homeserver).await?;
-        PubkySession::new_from_response(self.client.clone(), response).await
+        Ok(())
     }
 
     // All of these methods use root capabilities
@@ -55,8 +74,9 @@ impl PubkySigner {
     /// # Errors
     /// - Propagates transport failures during the session exchange.
     /// - Propagates validation errors from the session exchange or PKDNS publishing.
-    pub async fn signin(&self) -> Result<PubkySession> {
-        self.signin_with_publish(PublishMode::Background).await
+    pub async fn signin(&self, client_id: ClientId) -> Result<PubkySession> {
+        self.signin_with_publish(client_id, PublishMode::Background)
+            .await
     }
 
     /// Sign in by locally signing a root-capability token. Returns a session-bound session.
@@ -68,15 +88,34 @@ impl PubkySigner {
     /// # Errors
     /// - Propagates transport failures during the session exchange.
     /// - Propagates validation errors from the session exchange or PKDNS publishing.
-    pub async fn signin_blocking(&self) -> Result<PubkySession> {
-        self.signin_with_publish(PublishMode::Blocking).await
+    pub async fn signin_blocking(&self, client_id: ClientId) -> Result<PubkySession> {
+        self.signin_with_publish(client_id, PublishMode::Blocking)
+            .await
     }
 
     /// Internal helper to sign in, then optionally refresh `_pubky` record.
-    async fn signin_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
-        let capabilities = Capabilities::builder().cap(Capability::root()).finish();
-        let token = AuthToken::sign(&self.keypair, capabilities);
-        let session = PubkySession::new(&token, self.client.clone()).await?;
+    async fn signin_with_publish(
+        &self,
+        client_id: ClientId,
+        mode: PublishMode,
+    ) -> Result<PubkySession> {
+        let homeserver = self.pkdns().get_homeserver().await?.ok_or_else(|| {
+            crate::errors::AuthError::Validation(format!(
+                "could not resolve homeserver for {}",
+                self.keypair.public_key().z32()
+            ))
+        })?;
+        let client_keypair = Keypair::random();
+        let (grant_jws, grant_claims) = self.session_grant(client_id, &client_keypair);
+        let credential = credential_from_grant_exchange(
+            &self.client,
+            grant_jws,
+            grant_claims,
+            client_keypair,
+            homeserver,
+        )
+        .await?;
+        let session = PubkySession::from_grant_credential(self.client.clone(), credential);
         cross_log!(
             info,
             "Signin completed for {}; mode {:?}",
@@ -84,6 +123,64 @@ impl PubkySigner {
             mode
         );
 
+        self.publish_after_signin(mode).await?;
+
+        Ok(session)
+    }
+
+    /// Legacy cookie signup. Prefer [`Self::signup`] plus [`Self::signin`].
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Parse`] if the homeserver URL cannot be constructed.
+    /// - Propagates transport failures while creating the account or publishing the homeserver record.
+    /// - Propagates validation errors while hydrating the cookie session.
+    pub async fn signup_cookie(
+        &self,
+        homeserver: &PublicKey,
+        signup_token: Option<&str>,
+    ) -> Result<PubkySession> {
+        let url = Self::build_signup_url(homeserver, signup_token)?;
+        let auth_token = self.root_capability_token();
+        let response = self
+            .send_signup_request(url, auth_token.serialize())
+            .await?;
+
+        self.publish_signup_homeserver(homeserver).await?;
+        let cookie_credential = CookieCredential::from_response(response).await?;
+        Ok(PubkySession::from_credential(
+            self.client.clone(),
+            Arc::new(cookie_credential),
+        ))
+    }
+
+    /// Legacy cookie signin. Prefer [`Self::signin`].
+    ///
+    /// # Errors
+    /// - Propagates transport failures during the session exchange.
+    /// - Propagates validation errors while creating the cookie credential.
+    pub async fn signin_cookie(&self) -> Result<PubkySession> {
+        self.signin_cookie_with_publish(PublishMode::Background)
+            .await
+    }
+
+    /// Legacy cookie signin with blocking PKDNS refresh. Prefer [`Self::signin_blocking`].
+    ///
+    /// # Errors
+    /// - Propagates transport failures during the session exchange.
+    /// - Propagates failures while refreshing the homeserver record.
+    pub async fn signin_cookie_blocking(&self) -> Result<PubkySession> {
+        self.signin_cookie_with_publish(PublishMode::Blocking).await
+    }
+
+    async fn signin_cookie_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
+        let token = self.root_capability_token();
+        let credential = CookieCredential::from_auth_token(&token, &self.client).await?;
+        let session = PubkySession::from_cookie_credential(self.client.clone(), credential);
+        self.publish_after_signin(mode).await?;
+        Ok(session)
+    }
+
+    async fn publish_after_signin(&self, mode: PublishMode) -> Result<()> {
         match mode {
             PublishMode::Blocking => {
                 cross_log!(
@@ -94,7 +191,6 @@ impl PubkySigner {
                 self.pkdns().publish_homeserver_if_stale(None).await?;
             }
             PublishMode::Background => {
-                // Fire-and-forget path: refresh in the background
                 let signer = self.clone();
                 let fut = async move {
                     cross_log!(
@@ -102,12 +198,20 @@ impl PubkySigner {
                         "Background publish of homeserver for {} started",
                         signer.keypair.public_key()
                     );
-                    let _ = signer.pkdns().publish_homeserver_if_stale(None).await;
-                    cross_log!(
-                        info,
-                        "Background publish task for {} completed",
-                        signer.keypair.public_key()
-                    );
+                    if let Err(e) = signer.pkdns().publish_homeserver_if_stale(None).await {
+                        cross_log!(
+                            error,
+                            "Background publish for {} failed: {:?}",
+                            signer.keypair.public_key(),
+                            e
+                        );
+                    } else {
+                        cross_log!(
+                            info,
+                            "Background publish task for {} completed",
+                            signer.keypair.public_key()
+                        );
+                    }
                 };
                 #[cfg(not(target_arch = "wasm32"))]
                 tokio::spawn(fut);
@@ -115,8 +219,7 @@ impl PubkySigner {
                 wasm_bindgen_futures::spawn_local(fut);
             }
         }
-
-        Ok(session)
+        Ok(())
     }
 
     fn build_signup_url(homeserver: &PublicKey, signup_token: Option<&str>) -> Result<Url> {
@@ -131,6 +234,48 @@ impl PubkySigner {
     fn root_capability_token(&self) -> AuthToken {
         let capabilities = Capabilities::builder().cap(Capability::root()).finish();
         AuthToken::sign(&self.keypair, capabilities)
+    }
+
+    fn signup_grant(&self, client_keypair: &Keypair) -> Result<(String, GrantClaims)> {
+        let client_id = ClientId::new(SIGNUP_CLIENT_ID)
+            .map_err(|e| crate::errors::AuthError::Validation(e.to_string()))?;
+        let claims = self.grant_claims(client_id, client_keypair, SIGNUP_GRANT_LIFETIME_SECS);
+        let jws = claims.sign(&self.keypair, GRANT_JWS_TYP);
+        Ok((jws, claims))
+    }
+
+    fn session_grant(
+        &self,
+        client_id: ClientId,
+        client_keypair: &Keypair,
+    ) -> (String, GrantClaims) {
+        let claims = self.grant_claims(client_id, client_keypair, DEFAULT_GRANT_LIFETIME_SECS);
+        let jws = claims.sign(&self.keypair, GRANT_JWS_TYP);
+        (jws, claims)
+    }
+
+    fn grant_claims(
+        &self,
+        client_id: ClientId,
+        client_keypair: &Keypair,
+        lifetime_secs: u64,
+    ) -> GrantClaims {
+        let now = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        GrantClaims {
+            iss: self.keypair.public_key(),
+            client_id,
+            caps: Capabilities::builder()
+                .cap(Capability::root())
+                .finish()
+                .to_vec(),
+            cnf: client_keypair.public_key(),
+            jti: GrantId::generate(),
+            iat: now,
+            exp: now + lifetime_secs,
+        }
     }
 
     async fn send_signup_request(&self, url: Url, body: Vec<u8>) -> Result<reqwest::Response> {

@@ -285,7 +285,7 @@ mod test {
 
         let signer = sdk.signer(Keypair::random());
 
-        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        let session = signer.signup_cookie(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.info().public_key(), &signer.public_key());
     }
 

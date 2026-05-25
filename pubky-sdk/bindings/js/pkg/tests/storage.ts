@@ -23,7 +23,7 @@ const HOMESERVER_PUBLICKEY = PublicKey.from(
 
 type Facade = ReturnType<typeof Pubky.testnet>;
 type Signer = ReturnType<Facade["signer"]>;
-type SessionType = Awaited<ReturnType<Signer["signup"]>>;
+type SessionType = Awaited<ReturnType<Signer["signin"]>>;
 type SessionStorageType = SessionType["storage"];
 type PublicStorageType = Facade["publicStorage"];
 
@@ -50,7 +50,8 @@ test("session: putJson/getJson/delete, public: getJson", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey;
   const path: Path = "/pub/example.com/arbitrary";
@@ -88,7 +89,8 @@ test("session: putText/getText/delete, public: getText", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const path: Path = "/pub/example.com/hello.txt";
@@ -126,7 +128,8 @@ test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const path: Path = "/pub/example.com/blob.bin";
@@ -165,7 +168,8 @@ test("forbidden: writing outside /pub returns 403", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const forbiddenPath = "/priv/example.com/arbitrary";
   try {
@@ -191,7 +195,8 @@ test("list (public dir listing with limit/cursor/reverse)", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
 
@@ -308,7 +313,8 @@ test("list shallow under /pub/", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const pubky = session.info.publicKey.z32();
   const put = (p: Path) => session.storage.putBytes(p, new Uint8Array());
@@ -427,7 +433,8 @@ test("not found", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const addr = `pubky${userPk}/pub/example.com/definitely-missing.json` as Address;
@@ -455,7 +462,8 @@ test("unauthorized (no cookie) PUT returns 401", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const url = `https://_pubky.${userPk}/pub/example.com/unauth.json`;
@@ -478,7 +486,8 @@ test("stats & exists: JSON (session + public)", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const path = `/pub/example.com/stats-${Date.now()}.json` as Path;
@@ -598,7 +607,8 @@ test("stats & exists: missing resource", async (t) => {
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const userPk = session.info.publicKey.z32();
   const path = `/pub/example.com/missing-${Date.now()}.json` as Path;
@@ -635,7 +645,8 @@ test("storage.get streams a Web Response for session/public storage", async (t) 
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("storage.test");
 
   const decoder = new TextDecoder();
   const userPk = session.info.publicKey.z32();
