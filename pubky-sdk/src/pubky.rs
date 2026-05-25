@@ -14,7 +14,7 @@
 //! # async fn run() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
 //!
-//! let caps = Capabilities::from(Capability::write("/pub/demoapp/"));
+//! let caps = Capabilities::builder().write("/pub/demoapp/").finish();
 //! let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
 //! println!("Scan to sign in: {}", flow.authorization_url());
 //!

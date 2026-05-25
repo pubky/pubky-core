@@ -206,11 +206,11 @@ impl PubkySigner {
                             e
                         );
                     } else {
-                    cross_log!(
-                        info,
-                        "Background publish task for {} completed",
-                        signer.keypair.public_key()
-                    );
+                        cross_log!(
+                            info,
+                            "Background publish task for {} completed",
+                            signer.keypair.public_key()
+                        );
                     }
                 };
                 #[cfg(not(target_arch = "wasm32"))]
