@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c4b53002.js";
+            window.path_to_searchindex_js = "../searchindex-1d2ec532.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-77b5a118.js"></script>
@@ -284,7 +284,7 @@ action        = "r" / "w" ; Read or write (more actions can be specified later)
 <h3 id="expiration-is-out-of-scope"><a class="header" href="#expiration-is-out-of-scope">Expiration is out of scope</a></h3>
 <p>While the token itself can only be used for very brief period, it is immediately exchanged for another authentication mechanism (usually a session ID). Deciding the expiration date of that authentication, if any, is out of the scope of this spec.</p>
 <p>The assumption here is that we are authorizing a session to the <code>Homeserver</code> such that the user can always access all active sessions and revoke any session that they don’t like, all from the <code>Authenticator</code> app.</p>
-<p>Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a JWT or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.</p>
+<p>Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a Grant or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.</p>
 
                     </main>
 
