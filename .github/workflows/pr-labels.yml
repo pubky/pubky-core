@@ -1,0 +1,33 @@
+# Enforces conventional commit format on PR titles (e.g. "feat:", "fix(scope)!:").
+# This ensures clean commit messages on main (via squash merge) which are then
+# parsed by requarks/changelog-action to generate categorised release notes.
+name: PR Title
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited]
+
+jobs:
+  pr-title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            ci
+            build
+            chore
+            deps
+          requireScope: false
+          subjectPattern: ^.+$
+          subjectPatternError: "PR title must have a subject after the type prefix"

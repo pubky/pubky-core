@@ -4,7 +4,7 @@ You can use this example to learn how to locally test your Pubky App fully offli
 
 ## Usage
 
-By default, this example uses embedded PostgreSQL for a fully self-contained setup. The first run downloads PostgreSQL binaries (~50-100MB), which are cached for subsequent runs.
+By default, this example uses Docker to run PostgreSQL in a container for a fully self-contained setup. Docker must be running on the host.
 
 ```bash
 cargo run --bin testnet
