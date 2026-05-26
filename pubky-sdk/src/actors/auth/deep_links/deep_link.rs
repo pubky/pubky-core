@@ -63,11 +63,11 @@ impl FromStr for DeepLink {
         }
         let intent = url.host_str().unwrap_or("").to_string();
         match intent.as_str() {
-            "signin" => Ok(DeepLink::Signin(s.parse()?)),
-            "signup" => Ok(DeepLink::Signup(s.parse()?)),
-            "signin_grant" => Ok(DeepLink::SigninGrant(s.parse()?)),
-            "signup_grant" => Ok(DeepLink::SignupGrant(s.parse()?)),
-            "secret_export" => Ok(DeepLink::SeedExport(s.parse()?)),
+            "signin" => Ok(DeepLink::Signin(SigninDeepLink::parse_url(&url)?)),
+            "signup" => Ok(DeepLink::Signup(SignupDeepLink::parse_url(&url)?)),
+            "signin_grant" => Ok(DeepLink::SigninGrant(SigninGrantDeepLink::parse_url(&url)?)),
+            "signup_grant" => Ok(DeepLink::SignupGrant(SignupGrantDeepLink::parse_url(&url)?)),
+            "secret_export" => Ok(DeepLink::SeedExport(SeedExportDeepLink::parse_url(&url)?)),
             "" => {
                 // Backwards compatible with old signin format (no host).
                 let mut url = url.clone();
