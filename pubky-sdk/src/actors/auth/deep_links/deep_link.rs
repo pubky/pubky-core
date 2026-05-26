@@ -75,7 +75,7 @@ impl FromStr for DeepLink {
                 let string_value = url.to_string();
                 string_value.parse()
             }
-            _ => Err(DeepLinkParseError::InvalidIntent("")),
+            _ => Err(DeepLinkParseError::InvalidIntent("Intent not recognized.")),
         }
     }
 }

@@ -25,7 +25,7 @@ test("signin deep link valid", async (t) => {
   t.equal(deepLink.baseRelayUrl, TESTNET_HTTP_RELAY);
   t.deepEqual(deepLink.secret, new Uint8Array([146, 169, 220, 120, 67, 32, 172, 212, 12, 255, 24, 180, 234, 132, 23, 140, 13, 220, 36, 117, 255, 69, 9, 176, 212, 22, 58, 36, 77, 91, 177, 239]));
 
-  t.equal(SigninDeepLink.parse(deepLink.toString()).capabilities, deepLink.capabilities);
+  t.equal(SigninDeepLink.parse(deepLink.toString()).toString(), deepLink.toString());
 
   t.end();
 });
