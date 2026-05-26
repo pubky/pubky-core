@@ -322,7 +322,7 @@ impl Pubky {
     /// - Propagates transport/server errors while validating or restoring the session.
     pub async fn restore_session(&self, token: &str) -> Result<PubkySession> {
         if GrantCredential::is_secret_token(token) {
-            return PubkySession::import_grant_secret(token, Some(self.client.clone())).await
+            return PubkySession::import_grant_secret(token, Some(self.client.clone())).await;
         }
 
         PubkySession::import_secret(token, Some(self.client.clone())).await
