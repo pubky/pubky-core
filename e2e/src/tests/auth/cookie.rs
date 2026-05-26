@@ -342,9 +342,7 @@ async fn session_secret_export_import_restores_session() {
     drop(session);
 
     // Rehydrate from the exported secret (validates the session)
-    let restored = PubkySession::import_secret(&secret_token, Some(pubky.client().clone()))
-        .await
-        .unwrap();
+    let restored = pubky.restore_session(&secret_token).await.unwrap();
 
     assert_eq!(restored.info().public_key(), &signer.public_key());
 

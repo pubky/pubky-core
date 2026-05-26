@@ -98,6 +98,41 @@ async fn auth_flow() {
 
 #[tokio::test]
 #[pubky_testnet::test]
+async fn grant_secret_restore_mints_fresh_bearer() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signin(ClientId::new("restore-bearer.test").unwrap())
+        .await
+        .unwrap();
+
+    let original_bearer = session.as_grant().unwrap().current_bearer().await;
+    let secret_token = session.as_grant().unwrap().export_secret().await;
+
+    let restored = pubky.restore_session(&secret_token).await.unwrap();
+    let restored_bearer = restored.as_grant().unwrap().current_bearer().await;
+
+    assert_ne!(
+        original_bearer, restored_bearer,
+        "restoring a grant secret must mint a fresh bearer"
+    );
+    assert!(
+        session.revalidate().await.unwrap().is_none(),
+        "minting the restored bearer replaces the old grant session"
+    );
+    restored
+        .storage()
+        .put("/pub/restore-bearer.test/hello", b"world".to_vec())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
 async fn auth_flow_survives_long_poll_timeout() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
