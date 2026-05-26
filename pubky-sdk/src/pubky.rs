@@ -57,13 +57,13 @@ use crate::PublicKey;
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::PubkyCookieAuthFlow;
 use crate::{
-    Capabilities, ClientId, EventCursor, EventStreamBuilder, Pkdns, PubkyGrantAuthFlow,
-    PubkyHttpClient, PubkySigner, PublicStorage, Result, actors::AuthFlowKind,
-    deep_links::DeepLink, errors::AuthError,
+    Capabilities, ClientId, EventCursor, EventStreamBuilder, GrantCredential, Pkdns,
+    PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
+    actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::{PubkySession, errors::RequestError};
+use crate::errors::RequestError;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
@@ -302,6 +302,30 @@ impl Pubky {
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn session_from_file<P: AsRef<Path>>(&self, path: P) -> Result<PubkySession> {
         PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
+    }
+
+    /// Restore a session from an exported session secret token.
+    ///
+    /// Accepts both legacy cookie session tokens from
+    /// [`CookieSessionView::export_secret`](crate::CookieSessionView::export_secret)
+    /// and grant session tokens from
+    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret).
+    /// Grant restore mints a fresh short-lived bearer; cookie restore revalidates
+    /// the stored cookie secret.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::RequestError::Validation`] when the token is malformed.
+    /// - Returns [`crate::errors::AuthError::RequestExpired`] when a stored cookie
+    ///   session is no longer valid.
+    /// - Returns [`crate::errors::Error::Authentication`] when a stored grant is
+    ///   expired or its stored `PoP` key does not match the grant.
+    /// - Propagates transport/server errors while validating or restoring the session.
+    pub async fn restore_session(&self, token: &str) -> Result<PubkySession> {
+        if GrantCredential::is_secret_token(token) {
+            return PubkySession::import_grant_secret(token, Some(self.client.clone())).await;
+        }
+
+        PubkySession::import_secret(token, Some(self.client.clone())).await
     }
 
     /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].

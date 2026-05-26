@@ -11,7 +11,7 @@ use pubky_common::auth::{
 };
 use reqwest::Method;
 
-use super::credential::GrantCredential;
+use super::GrantCredential;
 use crate::actors::session::core::PubkySession;
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
@@ -54,6 +54,14 @@ impl<'a> GrantSessionView<'a> {
     /// accessor.
     pub async fn session_info(&self) -> GrantSessionInfo {
         self.credential.state.lock().await.session.clone()
+    }
+
+    /// Export the durable refresh material needed to restore this session.
+    ///
+    /// The returned token contains the grant JWS and `PoP` client secret. Treat
+    /// it as a bearer-equivalent secret until the grant expires or is revoked.
+    pub async fn export_secret(&self) -> String {
+        self.credential.export_secret().await
     }
 
     /// List all active grants for this user.

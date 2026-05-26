@@ -1,5 +1,13 @@
 use super::*;
-
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use pubky_testnet::pubky_common::{
+    auth::{
+        grant::GrantClaims,
+        jws::{GrantId, GRANT_JWS_TYP},
+    },
+    crypto::PublicKey,
+};
+use std::time::{SystemTime, UNIX_EPOCH};
 // =====================================================================
 // Grant + Proof-of-Possession auth flow tests
 // =====================================================================
@@ -94,6 +102,126 @@ async fn auth_flow() {
     assert_eq!(session.info().public_key(), &signer.public_key());
 
     assert_scoped_write_access(&session).await;
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn grant_secret_restore_mints_fresh_bearer() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signin(ClientId::new("restore-bearer.test").unwrap())
+        .await
+        .unwrap();
+
+    let original_bearer = session.as_grant().unwrap().current_bearer().await;
+    let secret_token = session.as_grant().unwrap().export_secret().await;
+
+    let restored = pubky.restore_session(&secret_token).await.unwrap();
+    let restored_bearer = restored.as_grant().unwrap().current_bearer().await;
+
+    assert_ne!(
+        original_bearer, restored_bearer,
+        "restoring a grant secret must mint a fresh bearer"
+    );
+    assert!(
+        session.revalidate().await.unwrap().is_none(),
+        "minting the restored bearer replaces the old grant session"
+    );
+    restored
+        .storage()
+        .put("/pub/restore-bearer.test/hello", b"world".to_vec())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn grant_secret_restore_rejects_revoked_grant() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signin(ClientId::new("revoked-restore.test").unwrap())
+        .await
+        .unwrap();
+
+    let secret_token = session.as_grant().unwrap().export_secret().await;
+    let grant_id = session.as_grant().unwrap().grant_id().await;
+    session
+        .as_grant()
+        .unwrap()
+        .revoke_grant(&grant_id)
+        .await
+        .unwrap();
+
+    let err = pubky.restore_session(&secret_token).await.unwrap_err();
+
+    assert!(
+        matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::UNAUTHORIZED),
+        "restoring a revoked grant must fail with 401, got {err:?}"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn grant_secret_restore_rejects_expired_grant() {
+    const STORED_GRANT_CREDENTIAL_PREFIX: &str = "pubky-grant-credential-v1";
+
+    fn grant_secret_token(
+        grant_jws: String,
+        client_keypair: &Keypair,
+        homeserver_pk: &PublicKey,
+    ) -> String {
+        let client_secret = URL_SAFE_NO_PAD.encode(client_keypair.secret());
+        format!(
+            "{STORED_GRANT_CREDENTIAL_PREFIX}:{}:{client_secret}:{grant_jws}",
+            homeserver_pk.z32()
+        )
+    }
+
+    fn current_unix() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0)
+    }
+
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let user_keypair = Keypair::random();
+    let signer = pubky.signer(user_keypair.clone());
+    signer.signup(&server.public_key(), None).await.unwrap();
+
+    let client_keypair = Keypair::random();
+    let now = current_unix();
+    let claims = GrantClaims {
+        iss: user_keypair.public_key(),
+        client_id: ClientId::new("expired-restore.test").unwrap(),
+        caps: vec![Capability::root()],
+        cnf: client_keypair.public_key(),
+        jti: GrantId::generate(),
+        iat: now.saturating_sub(120),
+        exp: now.saturating_sub(1),
+    };
+    let grant_jws = claims.sign(&user_keypair, GRANT_JWS_TYP);
+    let secret_token = grant_secret_token(grant_jws, &client_keypair, &server.public_key());
+
+    let err = pubky.restore_session(&secret_token).await.unwrap_err();
+
+    assert!(
+        matches!(err, Error::Authentication(_)) && err.to_string().contains("has expired"),
+        "restoring an expired grant must fail before minting a bearer, got {err:?}"
+    );
 }
 
 #[tokio::test]
