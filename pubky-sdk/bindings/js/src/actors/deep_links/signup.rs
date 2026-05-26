@@ -27,27 +27,27 @@ impl SignupDeepLink {
 
     #[wasm_bindgen(getter)]
     pub fn capabilities(&self) -> String {
-        self.0.capabilities().to_string()
+        self.0.params().capabilities.to_string()
     }
 
     #[wasm_bindgen(js_name = "baseRelayUrl", getter)]
     pub fn base_relay_url(&self) -> String {
-        self.0.relay().to_string()
+        self.0.params().relay.to_string()
     }
 
     #[wasm_bindgen(getter)]
     pub fn secret(&self) -> Uint8Array {
-        Uint8Array::from(self.0.secret().as_ref())
+        Uint8Array::from(self.0.params().secret.as_ref())
     }
 
     #[wasm_bindgen(getter)]
     pub fn homeserver(&self) -> PublicKey {
-        PublicKey(self.0.homeserver().clone())
+        PublicKey(self.0.params().homeserver.clone())
     }
 
     #[wasm_bindgen(js_name = "signupToken", getter)]
     pub fn signup_token(&self) -> Option<String> {
-        self.0.signup_token().clone()
+        self.0.params().signup_token.clone()
     }
 
     #[allow(

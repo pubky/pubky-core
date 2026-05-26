@@ -6,7 +6,10 @@ use pubky_common::{
 };
 
 use crate::actors::DEFAULT_HTTP_RELAY_INBOX;
-use crate::actors::auth::deep_links::{DeepLink, SigninGrantDeepLink, SignupGrantDeepLink};
+use crate::actors::auth::deep_links::{
+    DeepLink, DeepLinkScheme, SigninGrantDeepLink, SigninGrantParams, SignupGrantDeepLink,
+    SignupGrantParams,
+};
 use crate::actors::auth::grant::flow::PubkyGrantAuthFlow;
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
@@ -100,11 +103,14 @@ impl GrantAuthFlowBuilder {
 
         let auth_url = match auth_kind {
             AuthFlowKind::SignIn => DeepLink::SigninGrant(SigninGrantDeepLink::new(
-                caps,
-                base_relay.clone(),
-                client_secret,
-                client_id,
-                client_pk,
+                DeepLinkScheme::PubkyAuth,
+                SigninGrantParams {
+                    capabilities: caps,
+                    relay: base_relay.clone(),
+                    secret: client_secret,
+                    client_id,
+                    client_pk,
+                },
             )),
             AuthFlowKind::SignUp {
                 homeserver_public_key,
@@ -112,13 +118,16 @@ impl GrantAuthFlowBuilder {
             } => {
                 let hs_pk = *homeserver_public_key;
                 DeepLink::SignupGrant(SignupGrantDeepLink::new(
-                    caps,
-                    base_relay.clone(),
-                    client_secret,
-                    hs_pk.clone(),
-                    signup_token.clone(),
-                    client_id,
-                    client_pk,
+                    DeepLinkScheme::PubkyAuth,
+                    SignupGrantParams {
+                        capabilities: caps,
+                        relay: base_relay.clone(),
+                        secret: client_secret,
+                        homeserver: hs_pk,
+                        signup_token: signup_token.clone(),
+                        client_id,
+                        client_pk,
+                    },
                 ))
             }
         };
@@ -131,7 +140,7 @@ impl GrantAuthFlowBuilder {
         Ok(PubkyGrantAuthFlow::new(
             relay_listener,
             client,
-            auth_url,
+            auth_url.into(),
             client_keypair,
         ))
     }

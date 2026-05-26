@@ -87,9 +87,9 @@ async fn cookie_auth_flow() {
         DeepLink::Signin(signin) => signin,
         _ => panic!("Expected a signin deep link"),
     };
-    assert_eq!(signin_deep_link.capabilities(), &caps);
+    assert_eq!(&signin_deep_link.params().capabilities, &caps);
     assert_eq!(
-        signin_deep_link.relay().as_str(),
+        signin_deep_link.params().relay.as_str(),
         testnet.http_relay().local_link_url().as_str()
     );
 
@@ -145,21 +145,21 @@ async fn auth_flow_signup_preserves_deep_link_fields() {
         DeepLink::Signup(signup) => signup,
         _ => panic!("Expected a signup deep link"),
     };
-    assert_eq!(signup_deep_link.capabilities(), &caps);
+    assert_eq!(&signup_deep_link.params().capabilities, &caps);
     assert_eq!(
-        signup_deep_link.relay().as_str(),
+        signup_deep_link.params().relay.as_str(),
         testnet.http_relay().local_link_url().as_str()
     );
-    assert_eq!(signup_deep_link.homeserver(), &server.public_key());
+    assert_eq!(&signup_deep_link.params().homeserver, &server.public_key());
     assert_eq!(
-        signup_deep_link.signup_token(),
-        Some("1234567890".to_string())
+        signup_deep_link.params().signup_token.as_deref(),
+        Some("1234567890")
     );
 
     // Signer authenticator
     let signer = pubky.signer(Keypair::random());
     signer
-        .signup_cookie(signup_deep_link.homeserver(), None)
+        .signup_cookie(&signup_deep_link.params().homeserver, None)
         .await
         .unwrap();
     signer
