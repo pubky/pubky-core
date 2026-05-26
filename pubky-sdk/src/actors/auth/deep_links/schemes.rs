@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "Scheme type is introduced before the deep link parser refactor uses it"
-)]
-
 use std::{fmt::Display, str::FromStr};
 
 use super::DeepLinkParseError;
