@@ -69,6 +69,35 @@ test("Session: export/import uses browser cookie", async (t) => {
   t.end();
 });
 
+test("Session: grant exportSecret restores with fresh bearer", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("grant-restore-js.test");
+  const exported = await session.exportSecret();
+
+  t.equal(typeof exported, "string", "exportSecret() returns a string token");
+
+  const restored = await sdk.restoreSession(exported);
+  t.equal(
+    restored.info.publicKey.z32(),
+    session.info.publicKey.z32(),
+    "restored grant session keeps the same identity",
+  );
+
+  const path = `/pub/example.com/grant-restore-${Date.now()}.txt` as Path;
+  await restored.storage.putText(path, "grant persisted");
+  t.equal(
+    await restored.storage.getText(path),
+    "grant persisted",
+    "restored grant session can read/write",
+  );
+
+  t.end();
+});
+
 /**
  * Basic auth lifecycle:
  *  - signer -> signup -> session (cookie stored)

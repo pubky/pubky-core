@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 
 use super::storage::SessionStorage;
 use crate::client::constructor::Client;
-use crate::js_error::{JsResult, PubkyError};
+use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use crate::wrappers::session_info::SessionInfo;
 
 /// An authenticated context “as the user”.
@@ -55,6 +55,38 @@ impl Session {
             .as_cookie()
             .expect("export() is only valid for cookie sessions")
             .export()
+    }
+
+    /// Export the secret material needed to restore this session.
+    ///
+    /// For grant sessions this exports the grant JWS and PoP client secret; restoring
+    /// mints a fresh bearer. For legacy cookie sessions this exports the cookie secret
+    /// when the SDK owns it.
+    ///
+    /// Treat the returned string as a bearer-equivalent secret until the grant or
+    /// cookie session expires or is revoked.
+    ///
+    /// @returns {Promise<string>}
+    /// A secret token that can be passed to `pubky.restoreSession()`.
+    #[wasm_bindgen(js_name = "exportSecret")]
+    pub async fn export_secret(&self) -> JsResult<String> {
+        if let Some(grant) = self.0.as_grant() {
+            return Ok(grant.export_secret().await);
+        }
+
+        if let Some(cookie) = self.0.as_cookie() {
+            return cookie.export_secret().ok_or_else(|| {
+                PubkyError::new(
+                    PubkyErrorName::ClientStateError,
+                    "This cookie session cannot export a secret in the current runtime.",
+                )
+            });
+        }
+
+        Err(PubkyError::new(
+            PubkyErrorName::ClientStateError,
+            "Unsupported session credential type.",
+        ))
     }
 
     /// Restore a session from an `export()` string.

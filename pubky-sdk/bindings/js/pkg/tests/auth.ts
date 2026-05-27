@@ -1,5 +1,6 @@
 import test from "tape";
 import {
+  SigninGrantDeepLink,
   Keypair,
   Pubky,
   PublicKey,
@@ -98,6 +99,53 @@ test("Auth: 3rd party signin", async (t) => {
   t.end();
 });
 
+test("Grant auth: 3rd party signin", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const pubky = signer.publicKey.z32();
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
+  const clientId = "grant-js.test";
+  const flow = sdk.startGrantAuthFlow(
+    capabilities,
+    AuthFlowKind.signin(),
+    clientId,
+    TESTNET_HTTP_RELAY,
+  );
+
+  type Flow = typeof flow;
+  type SessionPromise = ReturnType<Flow["awaitApproval"]>;
+  type Session = Awaited<SessionPromise>;
+
+  const _flowUrl: Assert<IsExact<Flow["authorizationUrl"], string>> = true;
+  const _sessionInfo: Assert<IsExact<Session["info"], SessionInfo>> = true;
+
+  const deepLink = SigninGrantDeepLink.parse(flow.authorizationUrl);
+  t.equal(deepLink.clientId, clientId, "grant deep link includes client id");
+  t.ok(deepLink.clientPublicKey.z32(), "grant deep link includes client public key");
+
+  await signer.approveAuthRequest(flow.authorizationUrl);
+  const session = await flow.awaitApproval();
+
+  t.equal(
+    session.info.publicKey.z32(),
+    pubky,
+    "grant session belongs to expected user",
+  );
+  t.deepEqual(
+    session.info.capabilities,
+    capabilities.split(","),
+    "grant session capabilities match",
+  );
+
+  await session.storage.putText("/pub/pubky.app/grant-js.txt", "hello");
+
+  t.end();
+});
+
 test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
   const sdk = Pubky.testnet(); // uses local testnet mapping so URLs are resolvable in-node
 
@@ -157,6 +205,49 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
     const caps = url.searchParams.get("caps");
     t.equal(caps, "", "empty input allowed (no scopes)");
   }
+
+  t.end();
+});
+
+test("Grant auth: resume signin flow from saved state", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const pubky = signer.publicKey.z32();
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const capabilities = "/pub/pubky.app/:rw";
+  const originalFlow = sdk.startGrantAuthFlow(
+    capabilities,
+    AuthFlowKind.signin(),
+    "grant-resume-js.test",
+    TESTNET_HTTP_RELAY,
+  );
+  const savedState = originalFlow.save();
+  const savedUrl = originalFlow.authorizationUrl;
+  originalFlow.free();
+
+  await signer.approveAuthRequest(savedUrl);
+
+  const resumedFlow = sdk.resumeGrantAuthFlow(savedState);
+  t.equal(
+    resumedFlow.authorizationUrl,
+    savedUrl,
+    "resumed grant flow produces the same authorization URL",
+  );
+
+  const session = await resumedFlow.awaitApproval();
+  t.equal(
+    session.info.publicKey.z32(),
+    pubky,
+    "resumed grant session belongs to expected user",
+  );
+  t.deepEqual(
+    session.info.capabilities,
+    capabilities.split(","),
+    "resumed grant session capabilities match",
+  );
 
   t.end();
 });

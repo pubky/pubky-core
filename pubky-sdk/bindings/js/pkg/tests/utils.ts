@@ -1,7 +1,7 @@
 /**
  * Request a signup token from the homeserver admin endpoint.
  *
- * @param {string} [homeserverAddress="localhost:6288"]
+ * @param {string} [homeserverAddress="127.0.0.1:6288"]
  *   Host:port of the homeserver admin HTTP endpoint (testnet default).
  * @param {string} [adminPassword="admin"]
  *   Admin password sent as `X-Admin-Password`.
@@ -19,7 +19,7 @@ export type IsExact<A, B> =
     : false;
 
 export async function createSignupToken(
-  homeserverAddress = "localhost:6288",
+  homeserverAddress = "127.0.0.1:6288",
   adminPassword = "admin",
 ): Promise<string> {
   const url = `http://${homeserverAddress}/generate_signup_token`;
@@ -91,4 +91,3 @@ export function getStatusCode(error: PubkyError): number | undefined {
 
   return undefined;
 }
-

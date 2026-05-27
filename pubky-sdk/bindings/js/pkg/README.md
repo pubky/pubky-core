@@ -31,7 +31,8 @@ const homeserver = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 const signupToken = "<your-invite-code-or-null>";
-const session = await signer.signup(homeserver, signupToken);
+await signer.signup(homeserver, signupToken);
+const session = await signer.signin("example.com");
 
 // 3) Write a public JSON file (session-scoped storage uses cookies automatically)
 const path = "/pub/example.com/hello.json";
@@ -42,8 +43,12 @@ const userPk = session.info.publicKey.toString();
 const addr = `${userPk}/pub/example.com/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 
-// 5) Authenticate on a 3rd-party app
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin()); // require permissions to read and write into `my.app`
+// 5) Authenticate on a 3rd-party app with grant auth
+const authFlow = pubky.startGrantAuthFlow(
+  "/pub/my-cool-app/:rw",
+  AuthFlowKind.signin(),
+  "my-cool-app.example",
+);
 renderQr(authFlow.authorizationUrl); // show to user
 const session = await authFlow.awaitApproval();
 ```
@@ -84,8 +89,12 @@ const pubkyLocal = Pubky.testnet("localhost");
 // Signer (bind your keypair to a new Signer actor)
 const signer = pubky.signer(Keypair.random());
 
-// Pubky Auth flow (with capabilities)
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind::signin());
+// Grant Pubky Auth flow (with capabilities)
+const authFlow = pubky.startGrantAuthFlow(
+  "/pub/my-cool-app/:rw",
+  AuthFlowKind.signin(),
+  "my-cool-app.example",
+);
 
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
@@ -172,19 +181,19 @@ const caps = session.info.capabilities; // -> string[] permissions and paths
 const storage = session.storage; // -> This User's storage API (absolute paths)
 ```
 
-**Persist a session across tab refreshes (browser)**
+**Persist a grant session**
 
 ```js
-// Save the session snapshot (no secrets inside; relies on the HTTP-only cookie).
-const snapshot = session.export();
-localStorage.setItem("pubky-session", snapshot);
+// Save the session secret. Treat this string like a bearer token.
+const secret = await session.exportSecret();
+localStorage.setItem("pubky-session", secret);
 
-// Later (after a reload), rehydrate using the browser's stored cookie.
+// Later, restore by minting a fresh short-lived bearer.
 const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
 ```
 
-> The exported string contains only public session metadata. The browser must keep the
-> HTTP-only cookie alive for the restored session to remain authenticated.
+> `session.export()` is still available for legacy cookie sessions, but new
+> applications should use grant auth plus `exportSecret()`.
 
 **Approve a pubkyauth request URL**
 
@@ -194,7 +203,7 @@ await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
 
 ---
 
-### AuthFlow (pubkyauth)
+### GrantAuthFlow (pubkyauth)
 
 End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
 
@@ -208,8 +217,13 @@ const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 // Optional relay; defaults to Synonym-hosted relay if omitted
 const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to this)
 
-// Start the auth polling
-const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin(), relay);
+// Start grant auth polling
+const flow = pubky.startGrantAuthFlow(
+  caps,
+  AuthFlowKind.signin(),
+  "my-cool-app.example",
+  relay,
+);
 
 renderQr(flow.authorizationUrl); // show to user
 
@@ -220,7 +234,7 @@ const session = await flow.awaitApproval();
 #### Validate and normalize capabilities
 
 If you accept capability strings from user input (forms, CLI arguments, etc.),
-use `validateCapabilities` before calling `startAuthFlow`. The helper returns a
+use `validateCapabilities` before calling `startGrantAuthFlow`. The helper returns a
 normalized string (ordering actions like `:rw`) and throws a structured error
 when the input is malformed.
 
@@ -233,7 +247,7 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startAuthFlow(caps, AuthFlowKind::signin());
+  const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), "my-cool-app.example");
   renderQr(flow.authorizationUrl);
   const session = await flow.awaitApproval();
   // ...
