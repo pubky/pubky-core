@@ -24,6 +24,8 @@ use crate::{
 /// 1) `AuthFlow.start(...)` or `pubky.startAuthFlow(...)`
 /// 2) Show `authorizationUrl()` as QR/deeplink to the user’s signing device
 /// 3) `awaitApproval()` to receive a ready `Session`
+///
+/// @deprecated Use `GrantAuthFlow` instead.
 #[wasm_bindgen]
 pub struct AuthFlow {
     inner: RefCell<Option<Rc<PubkyCookieAuthFlow>>>,
@@ -64,6 +66,8 @@ impl AuthFlow {
     /// const flow = AuthFlow.start("/pub/my-cool-app/:rw,/pub/pubky.app/:w");
     /// renderQRCode(flow.authorizationUrl());
     /// const session = await flow.awaitApproval();
+    ///
+    /// @deprecated Use `GrantAuthFlow.start(...)` instead.
     #[wasm_bindgen(js_name = "start")]
     pub fn start(
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,

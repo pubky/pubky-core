@@ -96,6 +96,8 @@ impl Pubky {
     /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
     /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
+    ///
+    /// @deprecated Use `Pubky.startGrantAuthFlow(...)` instead.
     #[wasm_bindgen(js_name = "startAuthFlow")]
     pub fn start_auth_flow(
         &self,

@@ -85,6 +85,8 @@ impl Signer {
     }
 
     /// Legacy cookie signup. Prefer `signup()` plus `signin(clientId)`.
+    ///
+    /// @deprecated Prefer `signup()` followed by `signin(clientId)`.
     #[wasm_bindgen(js_name = "signupCookie")]
     pub async fn signup_cookie(
         &self,
@@ -99,12 +101,16 @@ impl Signer {
     }
 
     /// Legacy cookie signin. Prefer `signin(clientId)`.
+    ///
+    /// @deprecated Prefer `signin(clientId)`.
     #[wasm_bindgen(js_name = "signinCookie")]
     pub async fn signin_cookie(&self) -> JsResult<Session> {
         Ok(Session(self.0.signin_cookie().await?))
     }
 
     /// Legacy cookie blocking signin. Prefer `signinBlocking(clientId)`.
+    ///
+    /// @deprecated Prefer `signinBlocking(clientId)`.
     #[wasm_bindgen(js_name = "signinCookieBlocking")]
     pub async fn signin_cookie_blocking(&self) -> JsResult<Session> {
         Ok(Session(self.0.signin_cookie_blocking().await?))

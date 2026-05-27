@@ -49,6 +49,8 @@ impl Session {
     ///
     /// @returns {string}
     /// A base64 string to store (e.g. in `localStorage`).
+    ///
+    /// @deprecated Prefer `exportSecret()` for grant sessions.
     #[wasm_bindgen]
     pub fn export(&self) -> String {
         self.0
@@ -99,6 +101,8 @@ impl Session {
     /// @param {Client=} client
     /// Optional client to reuse transport configuration.
     /// @returns {Promise<Session>}
+    ///
+    /// @deprecated Prefer `Pubky.restoreSession(...)`.
     #[wasm_bindgen(js_name = "restore")]
     pub async fn restore(exported: String, client: Option<Client>) -> JsResult<Session> {
         let session = match client {
