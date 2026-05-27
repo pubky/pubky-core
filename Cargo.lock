@@ -3717,9 +3717,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "6.0.0"
+version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997d5cbd9be48de01468085ecb82e951b82a04496cd76b1b3a1ea20b2fa84107"
+checksum = "51c6a54ffd41eaecab1c5736251f48f229638430939fcf1e02a22ddc632471be"
 dependencies = [
  "async-compat",
  "base32",
@@ -4005,7 +4005,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
