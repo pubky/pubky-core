@@ -32,25 +32,28 @@ const homeserver = PublicKey.from(
 );
 const signupToken = "<your-invite-code-or-null>";
 await signer.signup(homeserver, signupToken);
+
+// 3a) Signin with the signer directly
 const session = await signer.signin("example.com");
 
-// 3) Write a public JSON file (session-scoped storage uses cookies automatically)
-const path = "/pub/example.com/hello.json";
-await session.storage.putJson(path, { hello: "world" });
-
-// 4) Read it publicly (no auth needed)
-const userPk = session.info.publicKey.toString();
-const addr = `${userPk}/pub/example.com/hello.json`;
-const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
-
-// 5) Authenticate on a 3rd-party app with grant auth
+// 3b) Alternatively if you do not have the keypair available, authenticate on a 3rd-party app 
+// by delegating the authentication to a signer with a QR code.
 const authFlow = pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
   AuthFlowKind.signin(),
   "my-cool-app.example",
 );
-renderQr(authFlow.authorizationUrl); // show to user
+renderQr(authFlow.authorizationUrl); // Show to user the signin deeplink via a QR code
 const session = await authFlow.awaitApproval();
+
+// 4) Write a public JSON file
+const path = "/pub/example.com/hello.json";
+await session.storage.putJson(path, { hello: "world" });
+
+// 5) Read it publicly (no auth needed)
+const userPk = session.info.publicKey.toString();
+const addr = `${userPk}/pub/example.com/hello.json`;
+const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 ```
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
@@ -164,10 +167,10 @@ const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 
 const homeserver = PublicKey.from("8pinxxgq…");
-const session = await signer.signup(homeserver, /* invite */ null);
+await signer.signup(homeserver, /* invite */ null);
 
-const session2 = await signer.signin(); // fast, prefer this; publishes PKDNS in background
-const session3 = await signer.signinBlocking(); // slower but safer; waits for PKDNS publish
+const session1 = await signer.signin(); // fast, prefer this; publishes PKDNS in background
+const session2 = await signer.signinBlocking(); // slower but safer; waits for PKDNS publish
 
 await session.signout(); // invalidates server session
 ```
@@ -198,7 +201,7 @@ const restored = await pubky.restoreSession(localStorage.getItem("pubky-session"
 **Approve a pubkyauth request URL**
 
 ```js
-await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
+await signer.approveAuthRequest("pubkyauth://signin?caps=...&secret=...&relay=...");
 ```
 
 ---
@@ -267,8 +270,7 @@ surface precise feedback to the user.
 #### Http Relay & reliability
 
 - If you don’t specify a relay, the auth flow defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
-- For production and larger apps, run **your own http relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
-  The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
+- For production and larger apps, run **your own http relay** (MIT, Docker): [https://github.com/pubky/http-relay](https://github.com/pubky/http-relay).
 
 ---
 
@@ -304,7 +306,7 @@ await pub.list(
 
 Use `get()` when you need the raw `Response` for streaming or custom parsing.
 
-#### SessionStorage (read/write; uses cookies)
+#### SessionStorage (read/write)
 
 ```js
 const s = session.storage;
@@ -436,12 +438,6 @@ try {
   }
 }
 ```
-
-## Browser environment notes
-
-- Keep the Pubky client UI and the homeserver on the **same origin family** (both local or both remote). Browsers partition cookies by scheme/host, and cross-site requests (e.g., http://localhost calling https://staging…​) can silently drop or cache `SameSite`/`Secure` session cookies.
-- If you must mix environments, use a reverse proxy so the browser always talks to one consistent origin (or disable caching via devtools and clear cookies between switches).
-- When troubleshooting auth/session caching: open a fresh incognito window, clear site data for the target origin, and verify the request includes credentials.
 
 ---
 
