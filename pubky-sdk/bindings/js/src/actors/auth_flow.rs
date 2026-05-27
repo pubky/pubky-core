@@ -12,7 +12,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::session::Session;
+use super::{in_flight::InFlightGuard, session::Session};
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
     wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
@@ -224,15 +224,7 @@ impl From<PubkyCookieAuthFlow> for AuthFlow {
 
 impl AuthFlow {
     fn begin_call(&self, caller: &str) -> JsResult<InFlightGuard<'_>> {
-        let mut flag = self.in_flight.borrow_mut();
-        if *flag {
-            Err(self.in_use_error(caller))
-        } else {
-            *flag = true;
-            Ok(InFlightGuard {
-                in_flight: &self.in_flight,
-            })
-        }
+        InFlightGuard::begin(&self.in_flight, || self.in_use_error(caller))
     }
 
     fn borrow_inner(&self) -> JsResult<Rc<PubkyCookieAuthFlow>> {
@@ -274,17 +266,6 @@ impl AuthFlow {
             PubkyErrorName::ClientStateError,
             format!("AuthFlow.{caller}() cannot run while another call is in-flight."),
         )
-    }
-}
-
-struct InFlightGuard<'a> {
-    in_flight: &'a RefCell<bool>,
-}
-
-impl Drop for InFlightGuard<'_> {
-    fn drop(&mut self) {
-        let mut flag = self.in_flight.borrow_mut();
-        *flag = false;
     }
 }
 

@@ -7,7 +7,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::{auth_flow::AuthFlowKind, session::Session};
+use super::{auth_flow::AuthFlowKind, in_flight::InFlightGuard, session::Session};
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
     wrappers::capabilities::validate_caps_for_start,
@@ -176,15 +176,7 @@ impl From<PubkyGrantAuthFlow> for GrantAuthFlow {
 
 impl GrantAuthFlow {
     fn begin_call(&self, caller: &str) -> JsResult<InFlightGuard<'_>> {
-        let mut flag = self.in_flight.borrow_mut();
-        if *flag {
-            Err(self.in_use_error(caller))
-        } else {
-            *flag = true;
-            Ok(InFlightGuard {
-                in_flight: &self.in_flight,
-            })
-        }
+        InFlightGuard::begin(&self.in_flight, || self.in_use_error(caller))
     }
 
     fn borrow_inner(&self) -> JsResult<Rc<PubkyGrantAuthFlow>> {
@@ -233,15 +225,4 @@ fn parse_client_id(value: &str) -> JsResult<ClientId> {
     ClientId::new(value).map_err(|e| {
         pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string())).into()
     })
-}
-
-struct InFlightGuard<'a> {
-    in_flight: &'a RefCell<bool>,
-}
-
-impl Drop for InFlightGuard<'_> {
-    fn drop(&mut self) {
-        let mut flag = self.in_flight.borrow_mut();
-        *flag = false;
-    }
 }
