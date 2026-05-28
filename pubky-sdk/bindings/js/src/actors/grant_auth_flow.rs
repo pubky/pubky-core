@@ -72,7 +72,7 @@ impl GrantAuthFlow {
                 pubky::errors::AuthError::Validation(e.to_string()),
             ))
         })?;
-        
+
         let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id);
         if let Some(c) = client {
             builder = builder.client(c);

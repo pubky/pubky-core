@@ -40,9 +40,9 @@ npm run logging -- --testnet --level debug
 
 Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
 
-### 1) Testnet End-to-end roundtrip (signup -> write -> read)
+### 1) Testnet End-to-end roundtrip (signup -> signin -> write -> read)
 
-Creates a random user, signs up on the local testnet, writes a file to `/pub/my-cool-app/hello.txt`, and reads it back.
+Creates a random user, signs up on the local testnet, signs in with a grant-backed session, writes a file to `/pub/my-cool-app/hello.txt`, and reads it back.
 
 ```bash
 npm run testnet
@@ -115,7 +115,7 @@ npm run request -- \
 ## Concepts you’ll bump into
 
 - **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
-- **Signer** -> **Session**: `signer.signin(homeserver, invite?)` -> returns `session`.
+- **Signer** -> **Session**: `signer.signup(homeserver, invite?)` creates the account; `signer.signin(clientId)` returns a grant-backed `session`.
 - **SessionStorage** (read/write): absolute paths like `"/pub/my-cool-app/file.txt"`.
 - **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my-cool-app/file.txt"`.
 - **https://\_pubky.<key> subdomains and key TLDs**: `https://_pubky.<public_key>/<abs-path>`, supported by the Pubky client.

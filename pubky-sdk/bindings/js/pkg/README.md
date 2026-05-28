@@ -169,10 +169,10 @@ const signer = pubky.signer(keypair);
 const homeserver = PublicKey.from("8pinxxgq…");
 await signer.signup(homeserver, /* invite */ null);
 
-const session1 = await signer.signin(); // fast, prefer this; publishes PKDNS in background
-const session2 = await signer.signinBlocking(); // slower but safer; waits for PKDNS publish
+const session1 = await signer.signin("example.com"); // fast, prefer this; publishes PKDNS in background
+const session2 = await signer.signinBlocking("example.com"); // slower but safer; waits for PKDNS publish
 
-await session.signout(); // invalidates server session
+await session1.signout(); // invalidates server session
 ```
 
 **Session details**
