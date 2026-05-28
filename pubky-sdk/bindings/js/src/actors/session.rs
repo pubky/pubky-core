@@ -1,7 +1,7 @@
 // js/src/wrappers/session.rs
 use wasm_bindgen::prelude::*;
 
-use super::storage::SessionStorage;
+use super::{grant_session::GrantSession, storage::SessionStorage};
 use crate::client::constructor::Client;
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use crate::wrappers::session_info::SessionInfo;
@@ -28,6 +28,16 @@ impl Session {
     #[wasm_bindgen(getter)]
     pub fn storage(&self) -> SessionStorage {
         SessionStorage(pubky::SessionStorage::new(&self.0))
+    }
+
+    /// Grant-only management view for grant-backed sessions.
+    ///
+    /// Cookie-backed sessions return `undefined`.
+    ///
+    /// @returns {GrantSession|undefined}
+    #[wasm_bindgen(js_name = "asGrant", getter)]
+    pub fn as_grant(&self) -> Option<GrantSession> {
+        self.0.as_grant().map(|_| GrantSession(self.0.clone()))
     }
 
     /// Invalidate the session on the server (clears server cookie).

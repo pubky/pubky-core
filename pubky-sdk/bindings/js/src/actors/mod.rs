@@ -2,6 +2,7 @@ pub mod auth_flow;
 pub mod deep_links;
 pub mod event_stream;
 pub mod grant_auth_flow;
+pub mod grant_session;
 mod in_flight;
 pub mod pkdns;
 pub mod session;

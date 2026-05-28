@@ -1,6 +1,10 @@
 import test from "tape";
 
 import {
+  AuthFlowKind,
+  GrantInfo,
+  GrantSession,
+  GrantSessionInfo,
   Keypair,
   Pubky,
   PublicKey,
@@ -13,11 +17,13 @@ import {
   IsExact,
   assertPubkyError,
   createSignupToken,
+  getStatusCode,
 } from "./utils.js";
 
 const HOMESERVER_PUBLICKEY = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
 );
+const TESTNET_HTTP_RELAY = "http://localhost:15412/inbox";
 
 type Facade = ReturnType<typeof Pubky.testnet>;
 type Signer = ReturnType<Facade["signer"]>;
@@ -33,6 +39,16 @@ type _StorageGetBytes = Assert<
 >;
 type _PublicGetText = Assert<
   IsExact<ReturnType<PublicStorageType["getText"]>, Promise<string>>
+>;
+
+type _SessionAsGrant = Assert<
+  IsExact<SignupSession["asGrant"], GrantSession | undefined>
+>;
+type _GrantSessionInfo = Assert<
+  IsExact<ReturnType<GrantSession["sessionInfo"]>, Promise<GrantSessionInfo>>
+>;
+type _GrantListGrants = Assert<
+  IsExact<ReturnType<GrantSession["listGrants"]>, Promise<GrantInfo[]>>
 >;
 
 const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
@@ -100,6 +116,154 @@ test("Session: cookie exportSecret restores from secret token", async (t) => {
     "cookie secret persisted",
     "restored cookie session can read/write",
   );
+
+  t.end();
+});
+
+test("Session: grant-only view exposes grant metadata and management", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const clientId = "grant-view-js.test";
+  const session = await signer.signin(clientId);
+  const grant = session.asGrant;
+
+  t.ok(grant, "grant-backed session exposes asGrant");
+  if (!grant) {
+    t.end();
+    return;
+  }
+
+  const info = await grant.sessionInfo();
+  t.equal(
+    info.publicKey.z32(),
+    session.info.publicKey.z32(),
+    "grant info belongs to expected user",
+  );
+  t.equal(info.homeserver.z32(), HOMESERVER_PUBLICKEY.z32(), "homeserver matches");
+  t.equal(info.clientId, clientId, "client id matches");
+  t.deepEqual(info.capabilities, session.info.capabilities, "capabilities match");
+  t.ok(info.grantId, "grant id is present");
+  t.ok(info.tokenExpiresAt > 0, "token expiry is present");
+  t.ok(info.grantExpiresAt > 0, "grant expiry is present");
+  t.ok(info.createdAt > 0, "created timestamp is present");
+  t.equal(await grant.grantId(), info.grantId, "grantId() matches sessionInfo()");
+
+  const exported = await grant.exportSecret();
+  const restored = await sdk.restoreSession(exported);
+  const restoredGrant = restored.asGrant;
+  t.ok(restoredGrant, "restored grant session exposes asGrant");
+  if (!restoredGrant) {
+    t.end();
+    return;
+  }
+  t.equal(
+    restored.info.publicKey.z32(),
+    session.info.publicKey.z32(),
+    "restored grant keeps identity",
+  );
+
+  const grants = await restoredGrant.listGrants();
+  t.ok(
+    grants.some((entry) => entry.grantId === info.grantId && entry.clientId === clientId),
+    "listGrants includes the active grant",
+  );
+
+  await restoredGrant.revokeGrant(info.grantId);
+  try {
+    await sdk.restoreSession(exported);
+    t.fail("restoring a revoked grant should fail");
+  } catch (error) {
+    assertPubkyError(t, error, "revoked grant restore throws PubkyError");
+    t.ok(
+      error.name === "RequestError" || error.name === "AuthenticationError",
+      "revoked grant restore uses existing auth/request error shape",
+    );
+  }
+
+  t.end();
+});
+
+test("Session: cookie sessions do not expose grant-only view", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
+  t.equal(session.asGrant, undefined, "cookie-backed session has no asGrant view");
+
+  t.end();
+});
+
+test("Session: non-root grant management calls return homeserver 403", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  const capabilities = "/pub/pubky.app/:r";
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const flow = sdk.startGrantAuthFlow(
+    capabilities,
+    AuthFlowKind.signin(),
+    { clientId: "grant-non-root-js.test", relay: TESTNET_HTTP_RELAY },
+  );
+
+  await signer.approveAuthRequest(flow.authorizationUrl);
+  const session = await flow.awaitApproval();
+  const grant = session.asGrant;
+
+  t.ok(grant, "non-root grant session exposes asGrant");
+  if (!grant) {
+    t.end();
+    return;
+  }
+
+  const info = await grant.sessionInfo();
+
+  try {
+    await grant.listGrants();
+    t.fail("non-root listGrants should fail");
+  } catch (error) {
+    assertPubkyError(t, error, "listGrants throws PubkyError");
+    t.equal(error.name, "RequestError", "listGrants maps to RequestError");
+    t.equal(getStatusCode(error), 403, "listGrants status code is 403");
+  }
+
+  try {
+    await grant.revokeGrant(info.grantId);
+    t.fail("non-root revokeGrant should fail");
+  } catch (error) {
+    assertPubkyError(t, error, "revokeGrant throws PubkyError");
+    t.equal(error.name, "RequestError", "revokeGrant maps to RequestError");
+    t.equal(getStatusCode(error), 403, "revokeGrant status code is 403");
+  }
+
+  t.end();
+});
+
+test("Session: invalid grant id throws InvalidInput", async (t) => {
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const session = await signer.signin("grant-invalid-id-js.test");
+  const grant = session.asGrant;
+
+  t.ok(grant, "grant-backed session exposes asGrant");
+  if (!grant) {
+    t.end();
+    return;
+  }
+
+  try {
+    await grant.revokeGrant("");
+    t.fail("empty grant id should fail");
+  } catch (error) {
+    assertPubkyError(t, error, "invalid grant id throws PubkyError");
+    t.equal(error.name, "InvalidInput", "invalid grant id maps to InvalidInput");
+  }
 
   t.end();
 });
