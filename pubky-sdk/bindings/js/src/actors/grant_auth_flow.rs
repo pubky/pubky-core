@@ -67,8 +67,12 @@ impl GrantAuthFlow {
     ) -> JsResult<GrantAuthFlow> {
         let normalized = validate_caps_for_start(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
-        let client_id = parse_client_id(&client_id)?;
-
+        let client_id = ClientId::new(&client_id).map_err(|e| {
+            PubkyError::from(pubky::Error::Authentication(
+                pubky::errors::AuthError::Validation(e.to_string()),
+            ))
+        })?;
+        
         let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id);
         if let Some(c) = client {
             builder = builder.client(c);
@@ -219,10 +223,4 @@ impl GrantAuthFlow {
             format!("GrantAuthFlow.{caller}() cannot run while another call is in-flight."),
         )
     }
-}
-
-fn parse_client_id(value: &str) -> JsResult<ClientId> {
-    ClientId::new(value).map_err(|e| {
-        pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string())).into()
-    })
 }
