@@ -167,7 +167,7 @@ const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 
 const homeserver = PublicKey.from("8pinxxgq…");
-await signer.signup(homeserver, /* invite */ null);
+await signer.signup(homeserver); // Add optional signup code here if required
 
 const session1 = await signer.signin("example.com"); // fast, prefer this; publishes PKDNS in background
 const session2 = await signer.signinBlocking("example.com"); // slower but safer; waits for PKDNS publish

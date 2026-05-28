@@ -29,7 +29,7 @@ const signer = pubky.signer(keypair);
 
 // 3) Signup at the homeserver (optional invite)
 const homeserver = PublicKey.from(homeserverArg);
-await signer.signup(homeserver, signupCode ?? null);
+await signer.signup(homeserver, signupCode);
 
 // 4) Sign in to create a grant-backed session for this example client
 const session = await signer.signin("pubky-js-signup.example");

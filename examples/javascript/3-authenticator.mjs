@@ -39,7 +39,7 @@ const signer = pubky.signer(keypair);
 if (a.testnet) {
   const homeserver = PublicKey.from(a.homeserver);
   try {
-    await signer.signup(homeserver, null);
+    await signer.signup(homeserver);
     console.log("Testnet user signed up!");
   } catch {
     console.log("Testnet user was already signed up 👌");

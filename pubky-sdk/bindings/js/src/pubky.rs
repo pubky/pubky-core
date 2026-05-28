@@ -184,7 +184,7 @@ impl Pubky {
     ///
     /// @example
     /// const signer = pubky.signer(Keypair.random());
-    /// const session = await signer.signup(homeserverPk, null);
+    /// await signer.signup(homeserverPk);
     #[wasm_bindgen(js_name = "signer")]
     pub fn signer(&self, keypair: &Keypair) -> Signer {
         Signer(self.0.signer(keypair.as_inner().clone()))

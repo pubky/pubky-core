@@ -34,7 +34,7 @@ async function isTestnetAvailable() {
     const keypair = Keypair.random();
     const signer = pubky.signer(keypair);
     const homeserver = PublicKey.from(TESTNET_HOMESERVER);
-    await signer.signup(homeserver, null);
+    await signer.signup(homeserver);
 
     // 3) Sign in to create a grant-backed session for storage access
     const session = await signer.signin("my-cool-app.example");
