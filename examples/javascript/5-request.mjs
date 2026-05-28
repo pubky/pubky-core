@@ -5,16 +5,16 @@ import { args, printHttpResponse } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
+  node 5-request.mjs <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 Examples:
-  npm run request -- GET https://_pubky.<user>/pub/my-cool-app/info.json --testnet
-  npm run request -- \\
+  node 5-request.mjs GET https://_pubky.<user>/pub/my-cool-app/info.json --testnet
+  node 5-request.mjs \\
     -H "Content-Type: application/json" \\
     -H "Accept: application/json" \\
     -d '{"msg":"hello"}' \\
     POST https://example.com/data.json
-  npm run request -- GET https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
+  node 5-request.mjs GET https://_pubky.operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0033X02JAN0SG
 `;
 
 const a = args(process.argv.slice(2), {

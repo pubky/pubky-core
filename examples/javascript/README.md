@@ -38,47 +38,46 @@ To check the basic flow from another terminal:
 
 ```bash
 cd examples/javascript
-npm run testnet
+node 0-check-testnet.mjs
 ```
 
 Expected output includes:
 
 ```text
-Data write succeeded on path: /pub/my-cool-app/hello.txt
-Roundtrip succeeded, response data: hi
+Testnet is available, roundtrip succeeded.
 ```
 
 ## Scripts
 
-Each script is a single, commented file under the project root. Run with `npm run <name> -- <args…>`.
+Each script is a single, commented file under the project root. Run examples explicitly with `node <script>.mjs <args...>`.
 
-### 0) Logging and verbosity
+### 0) Check local testnet availability
+
+Helper script that checks whether the local testnet is ready by performing a signup, signin, write, and read roundtrip.
+
+```bash
+node 0-check-testnet.mjs
+```
+
+### 1) Logging and verbosity
 
 Demonstrates how to use `setLogLevel()` to surface the SDK's internal tracing while performing a quick storage roundtrip.
 
 ```bash
-npm run logging -- --testnet --level debug
+node 1-logging.mjs --testnet --level debug
 ```
 
 Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
-
-### 1) Testnet End-to-end roundtrip (signup -> signin -> write -> read)
-
-Creates a random user, signs up on the local testnet, signs in with a grant-backed session, writes a file to `/pub/my-cool-app/hello.txt`, and reads it back.
-
-```bash
-npm run testnet
-```
 
 ### 2) Signup with a recovery file
 
 Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 
 ```bash
-npm run signup -- <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
+node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
 
 # example (testnet homeserver)
-npm run signup -- pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+node 2-signup.mjs pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
 ```
 
 You’ll be prompted for the recovery **passphrase**.
@@ -89,7 +88,7 @@ Given a `pubkyauth://` URL (QR/deeplink), approves it using a recovery file.
 With `--testnet`, it first ensures the user exists by doing a signup (no invite required).
 
 ```bash
-npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+node 3-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 ```
 
 Example URL looks like:
@@ -106,11 +105,11 @@ Reads a public resource via the **addressed** form: `pubky<z32>/pub/my-cool-app/
 This requires a public resource whose Pubky key is already resolvable. It is not the best first smoke test for a fresh local testnet user because PKDNS publication can lag or fail independently of authenticated storage.
 
 ```bash
-npm run storage -- <pubky>/<absolute-path> [--testnet]
+node 4-storage.mjs <pubky>/<absolute-path> [--testnet]
 
 # examples
-npm run storage -- pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
-npm run storage -- pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
+node 4-storage.mjs pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
+node 4-storage.mjs pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 ```
 
 Shows **exists**, **stats**, and downloads the content.
@@ -123,13 +122,13 @@ Low-level fetch through the Pubky client. Handy for debugging.
 > As with `storage`, Pubky URLs require a resolvable public key record.
 
 ```bash
-  npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
+node 5-request.mjs <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
-npm run request -- GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
+node 5-request.mjs GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
 
 # https:// JSON POST
-npm run request -- \
+node 5-request.mjs \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{"msg":"hello"}' \
@@ -172,7 +171,7 @@ npm run request -- \
   ```
 
 - **PkarrError: No HTTPS endpoints found**
-  The testnet is not running, is not ready, or the public key has not published/resolved yet. Use `npm run testnet` as the first smoke test because it performs an authenticated write/read without requiring public PKDNS resolution for the new user.
+  The testnet is not running, is not ready, or the public key has not published/resolved yet. Use `node 0-check-testnet.mjs` as the first smoke test because it performs an authenticated write/read without requiring public PKDNS resolution for the new user.
 
 - **401 Unauthorized**
   You tried to write without a valid session cookie (e.g., after `signout()`), or against the wrong user.
