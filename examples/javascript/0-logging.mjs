@@ -46,7 +46,7 @@ const signer = pubky.signer(keypair);
 console.log("Generated ephemeral signer:", keypair.publicKey.toString());
 
 console.log("Signing up to homeserver... (watch the debug logs above)");
-await signer.signup(homeserver);
+await signer.signup(homeserver, null);
 
 console.log("Signing in with a grant-backed session...");
 const session = await signer.signin("logging.example");
