@@ -69,6 +69,41 @@ test("Session: export/import uses browser cookie", async (t) => {
   t.end();
 });
 
+test("Session: cookie exportSecret restores from secret token", async (t) => {
+  if (typeof window !== "undefined") {
+    t.comment("cookie exportSecret() is Node-only; browsers cannot read HTTP-only Set-Cookie");
+    t.end();
+    return;
+  }
+
+  const sdk = Pubky.testnet();
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+
+  const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
+  const exported = await session.exportSecret();
+
+  t.equal(typeof exported, "string", "cookie exportSecret() returns a string token");
+  t.ok(exported.includes(":"), "cookie secret token includes public key and cookie secret");
+
+  const restored = await sdk.restoreSession(exported);
+  t.equal(
+    restored.info.publicKey.z32(),
+    session.info.publicKey.z32(),
+    "restored cookie session keeps the same identity",
+  );
+
+  const path = `/pub/example.com/cookie-secret-${Date.now()}.txt` as Path;
+  await restored.storage.putText(path, "cookie secret persisted");
+  t.equal(
+    await restored.storage.getText(path),
+    "cookie secret persisted",
+    "restored cookie session can read/write",
+  );
+
+  t.end();
+});
+
 test("Session: grant exportSecret restores with fresh bearer", async (t) => {
   const sdk = Pubky.testnet();
   const signer = sdk.signer(Keypair.random());

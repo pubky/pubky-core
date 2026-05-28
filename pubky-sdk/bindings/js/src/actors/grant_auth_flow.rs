@@ -1,6 +1,8 @@
 use pubky::{GrantAuthFlowState, PubkyGrantAuthFlow};
 use pubky_common::{auth::jws::ClientId, capabilities::Capabilities};
+use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
+use tsify::Tsify;
 use url::Url;
 
 use wasm_bindgen::JsValue;
@@ -12,6 +14,18 @@ use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
     wrappers::capabilities::validate_caps_for_start,
 };
+
+/// Options for starting a grant-backed pubkyauth flow.
+#[derive(Tsify, Serialize, Deserialize, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantAuthFlowOptions {
+    /// App identifier shown in the user's grant/session list, typically a domain.
+    pub(crate) client_id: String,
+    /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/inbox/"`.
+    #[tsify(optional, type = "string | null")]
+    pub(crate) relay: Option<String>,
+}
 
 /// Start and control a grant-backed pubkyauth authorization flow.
 ///
@@ -38,11 +52,8 @@ impl GrantAuthFlow {
     /// @param {AuthFlowKind} kind
     /// The kind of authentication flow to perform.
     ///
-    /// @param {string} clientId
-    /// App identifier shown in the user's grant/session list, typically a domain.
-    ///
-    /// @param {string} [relay]
-    /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/inbox/"`.
+    /// @param {GrantAuthFlowOptions} options
+    /// Options for the grant flow: `{ clientId, relay? }`.
     ///
     /// @returns {GrantAuthFlow}
     /// A running grant auth flow. Call `authorizationUrl()` to show the deep link,
@@ -51,23 +62,21 @@ impl GrantAuthFlow {
     pub fn start(
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
-        client_id: String,
-        relay: Option<String>,
+        options: GrantAuthFlowOptions,
     ) -> JsResult<GrantAuthFlow> {
-        Self::start_with_client(capabilities, kind, client_id, relay, None)
+        Self::start_with_client(capabilities, kind, options, None)
     }
 
     /// Internal helper that threads an explicit transport.
     pub(crate) fn start_with_client(
         capabilities: String,
         kind: AuthFlowKind,
-        client_id: String,
-        relay: Option<String>,
+        options: GrantAuthFlowOptions,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<GrantAuthFlow> {
         let normalized = validate_caps_for_start(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
-        let client_id = ClientId::new(&client_id).map_err(|e| {
+        let client_id = ClientId::new(&options.client_id).map_err(|e| {
             PubkyError::from(pubky::Error::Authentication(
                 pubky::errors::AuthError::Validation(e.to_string()),
             ))
@@ -78,7 +87,7 @@ impl GrantAuthFlow {
             builder = builder.client(c);
         }
 
-        if let Some(r) = relay {
+        if let Some(r) = options.relay {
             builder = builder.relay(Url::parse(&r)?);
         }
 

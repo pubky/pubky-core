@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
     event_stream::EventStreamBuilder,
-    grant_auth_flow::GrantAuthFlow,
+    grant_auth_flow::{GrantAuthFlow, GrantAuthFlowOptions},
     session::Session,
     signer::Signer,
     storage::PublicStorage,
@@ -117,8 +117,7 @@ impl Pubky {
     ///
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
-    /// @param {string} clientId App identifier shown in the user's grant/session list.
-    /// @param {string=} relay Optional HTTP relay base (e.g. `"https://…/inbox/"`).
+    /// @param {GrantAuthFlowOptions} options Options for the grant flow: `{ clientId, relay? }`.
     /// @returns {GrantAuthFlow}
     /// A running grant auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a grant-backed `Session`.
@@ -127,23 +126,16 @@ impl Pubky {
     /// const flow = pubky.startGrantAuthFlow(
     ///   "/pub/my-cool-app/:rw",
     ///   AuthFlowKind.signin(),
-    ///   "my-cool-app.example",
+    ///   { clientId: "my-cool-app.example" },
     /// );
     #[wasm_bindgen(js_name = "startGrantAuthFlow")]
     pub fn start_grant_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
-        client_id: String,
-        relay: Option<String>,
+        options: GrantAuthFlowOptions,
     ) -> JsResult<GrantAuthFlow> {
-        GrantAuthFlow::start_with_client(
-            capabilities,
-            kind,
-            client_id,
-            relay,
-            Some(self.0.client().clone()),
-        )
+        GrantAuthFlow::start_with_client(capabilities, kind, options, Some(self.0.client().clone()))
     }
 
     /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.

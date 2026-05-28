@@ -41,7 +41,7 @@ const session = await signer.signin("example.com");
 const authFlow = pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
   AuthFlowKind.signin(),
-  "my-cool-app.example",
+  { clientId: "my-cool-app.example" },
 );
 renderQr(authFlow.authorizationUrl); // Show to user the signin deeplink via a QR code
 const session = await authFlow.awaitApproval();
@@ -96,7 +96,7 @@ const signer = pubky.signer(Keypair.random());
 const authFlow = pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
   AuthFlowKind.signin(),
-  "my-cool-app.example",
+  { clientId: "my-cool-app.example" },
 );
 
 // Public storage (read-only)
@@ -224,8 +224,7 @@ const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to thi
 const flow = pubky.startGrantAuthFlow(
   caps,
   AuthFlowKind.signin(),
-  "my-cool-app.example",
-  relay,
+  { clientId: "my-cool-app.example", relay },
 );
 
 renderQr(flow.authorizationUrl); // show to user
@@ -250,7 +249,9 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), "my-cool-app.example");
+  const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
+    clientId: "my-cool-app.example",
+  });
   renderQr(flow.authorizationUrl);
   const session = await flow.awaitApproval();
   // ...
