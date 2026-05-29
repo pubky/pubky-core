@@ -23,6 +23,7 @@ pub struct GrantAuthFlowOptions {
     /// App identifier shown in the user's grant/session list, typically a domain.
     pub(crate) client_id: String,
     /// Optional HTTP relay base, e.g. `"https://demo.httprelay.io/inbox/"`.
+    /// Defaults to the default Synonym-hosted relay when omitted.
     #[tsify(optional, type = "string | null")]
     pub(crate) relay: Option<String>,
 }
@@ -77,9 +78,9 @@ impl GrantAuthFlow {
         let normalized = validate_caps_for_start(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
         let client_id = ClientId::new(&options.client_id).map_err(|e| {
-            PubkyError::from(pubky::Error::Authentication(
+            pubky::Error::Authentication(
                 pubky::errors::AuthError::Validation(e.to_string()),
-            ))
+            )
         })?;
 
         let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id);

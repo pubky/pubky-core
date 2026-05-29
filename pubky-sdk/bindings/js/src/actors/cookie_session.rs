@@ -38,9 +38,7 @@ impl CookieSession {
             )
         })
     }
-}
 
-impl CookieSession {
     fn as_cookie(&self) -> JsResult<pubky::CookieSessionView<'_>> {
         self.0.as_cookie().ok_or_else(|| {
             PubkyError::new(

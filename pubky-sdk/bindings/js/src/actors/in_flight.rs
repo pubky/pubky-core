@@ -38,7 +38,6 @@ impl<'a> InFlightGuard<'a> {
 
 impl Drop for InFlightGuard<'_> {
     fn drop(&mut self) {
-        let mut flag = self.in_flight.borrow_mut();
-        *flag = false;
+        self.in_flight.replace(false);
     }
 }
