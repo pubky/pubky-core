@@ -7,56 +7,77 @@ Tiny CLI scripts that teach the **@synonymdev/pubky** SDK with real flows.
 ## Prerequisites
 
 - **Node 20+** (fetch + WebCrypto)
-- **npm** (or `pnpm`/`yarn`)
-- (Optional) A **local testnet** so you can develop fully offline:
-
-  ```bash
-  # Requires the rust toolchain
-  cargo install pubky-testnet
-  pubky-testnet
-  ```
-
-  This spins up a local DHT + homeserver + Pkarr relay + Http relay. Scripts that take `--testnet` will use it.
+- **npm**
+- **Rust toolchain** for local checkout usage. These examples link to the local JS SDK package under `pubky-sdk/bindings/js/pkg`, so the SDK package must be built before the examples can import it.
 
 ## Install
 
 ```bash
+cd pubky-sdk/bindings/js/pkg
+npm install
+npm run build
+
+cd ../../../../examples/javascript
 npm install
 ```
 
-> The examples depend on `@synonymdev/pubky`.
+> The examples depend on the local `@synonymdev/pubky` package in this repo. If you see a missing `index.cjs` or `pubky_bg.wasm`, run `npm run build` in `pubky-sdk/bindings/js/pkg`. If you see a missing `fetch-cookie`, run `npm install` in that SDK package.
+
+## Local Testnet
+
+Scripts that take `--testnet` expect a local testnet process to be running in another terminal:
+
+```bash
+cd pubky-sdk/bindings/js/pkg
+npm run testnet
+```
+
+Wait for `Testnet running`. This starts a local DHT, homeserver, Pkarr relay, and HTTP relay. Keep that terminal open while running examples.
+
+To check the basic flow from another terminal:
+
+```bash
+cd examples/javascript
+node 0-check-testnet.mjs
+```
+
+Expected output includes:
+
+```text
+Testnet is available, roundtrip succeeded.
+```
 
 ## Scripts
 
-Each script is a single, commented file under the project root. Run with `npm run <name> -- <args…>`.
+Each script is a single, commented file under the project root. Run examples explicitly with `node <script>.mjs <args...>`.
 
-### 0) Logging and verbosity
+### 0) Check local testnet availability
+
+Helper script that checks whether the local testnet is ready by performing a signup, signin, write, and read roundtrip.
+
+```bash
+node 0-check-testnet.mjs
+```
+
+### 1) Logging and verbosity
 
 Demonstrates how to use `setLogLevel()` to surface the SDK's internal tracing while performing a quick storage roundtrip.
 
 ```bash
-npm run logging -- --testnet --level debug
+node 1-logging.mjs --testnet --level debug
 ```
 
 Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
-
-### 1) Testnet End-to-end roundtrip (signup -> write -> read)
-
-Creates a random user, signs up on the local testnet, writes a file to `/pub/my-cool-app/hello.txt`, and reads it back.
-
-```bash
-npm run testnet
-```
 
 ### 2) Signup with a recovery file
 
 Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 
 ```bash
-npm run signup -- <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
+node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
 
 # example (testnet homeserver)
-npm run signup -- pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+node 2-signup.mjs pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
 ```
 
 You’ll be prompted for the recovery **passphrase**.
@@ -67,7 +88,7 @@ Given a `pubkyauth://` URL (QR/deeplink), approves it using a recovery file.
 With `--testnet`, it first ensures the user exists by doing a signup (no invite required).
 
 ```bash
-npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+node 3-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 ```
 
 Example URL looks like:
@@ -81,13 +102,14 @@ You can run a Browser 3rd party app that requires authentication with [**3rd-par
 ### 4) Public storage read (no auth)
 
 Reads a public resource via the **addressed** form: `pubky<z32>/pub/my-cool-app/path/to/file.txt`.
+This requires a public resource whose Pubky key is already resolvable. It is not the best first smoke test for a fresh local testnet user because PKDNS publication can lag or fail independently of authenticated storage.
 
 ```bash
-npm run storage -- <pubky>/<absolute-path> [--testnet]
+node 4-storage.mjs <pubky>/<absolute-path> [--testnet]
 
 # examples
-npm run storage -- pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
-npm run storage -- pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
+node 4-storage.mjs pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
+node 4-storage.mjs pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 ```
 
 Shows **exists**, **stats**, and downloads the content.
@@ -97,15 +119,16 @@ Shows **exists**, **stats**, and downloads the content.
 Low-level fetch through the Pubky client. Handy for debugging.
 
 > Use the **raw z-base32** key (no `pubky` prefix) in the `_pubky.<key>` host portion. Call `publicKey.z32()` to get it.
+> As with `storage`, Pubky URLs require a resolvable public key record.
 
 ```bash
-  npm run request -- <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
+node 5-request.mjs <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
-npm run request -- GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
+node 5-request.mjs GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
 
 # https:// JSON POST
-npm run request -- \
+node 5-request.mjs \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{"msg":"hello"}' \
@@ -115,7 +138,7 @@ npm run request -- \
 ## Concepts you’ll bump into
 
 - **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
-- **Signer** -> **Session**: `signer.signin(homeserver, invite?)` -> returns `session`.
+- **Signer** -> **Session**: `signer.signup(homeserver, invite?)` creates the account; `signer.signin(clientId)` returns a grant-backed `session`.
 - **SessionStorage** (read/write): absolute paths like `"/pub/my-cool-app/file.txt"`.
 - **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my-cool-app/file.txt"`.
 - **https://\_pubky.<key> subdomains and key TLDs**: `https://_pubky.<public_key>/<abs-path>`, supported by the Pubky client.
@@ -123,12 +146,32 @@ npm run request -- \
 
 ## Quick troubleshooting
 
-- **ECONNREFUSED / transport errors**
-  The local testnet probably isn’t running. Start it:
+- **Cannot find `index.cjs` / `pubky_bg.wasm`**
+  Build the local SDK package:
 
   ```bash
-  pubky-testnet
+  cd pubky-sdk/bindings/js/pkg
+  npm run build
   ```
+
+- **Cannot find module `fetch-cookie`**
+  Install the local SDK package dependencies:
+
+  ```bash
+  cd pubky-sdk/bindings/js/pkg
+  npm install
+  ```
+
+- **ECONNREFUSED / transport errors**
+  The local testnet probably isn’t running, or it is still starting. Start it in another terminal and wait for `Testnet running`:
+
+  ```bash
+  cd pubky-sdk/bindings/js/pkg
+  npm run testnet
+  ```
+
+- **PkarrError: No HTTPS endpoints found**
+  The testnet is not running, is not ready, or the public key has not published/resolved yet. Use `node 0-check-testnet.mjs` as the first smoke test because it performs an authenticated write/read without requiring public PKDNS resolution for the new user.
 
 - **401 Unauthorized**
   You tried to write without a valid session cookie (e.g., after `signout()`), or against the wrong user.

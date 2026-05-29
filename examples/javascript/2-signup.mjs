@@ -5,10 +5,10 @@ import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  npm run signup -- <homeserver_pubky> </path/to/recovery_file> [signup_code] [--testnet]
+  node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [signup_code] [--testnet]
 
 Example:
-  npm run signup -- pubky8pinxxg... ./alice.recovery INVITE-123 --testnet
+  node 2-signup.mjs pubky8pinxxg... ./alice.recovery INVITE-123 --testnet
 `;
 
 const a = args(process.argv.slice(2), { usage });
@@ -29,8 +29,11 @@ const signer = pubky.signer(keypair);
 
 // 3) Signup at the homeserver (optional invite)
 const homeserver = PublicKey.from(homeserverArg);
-const session = await signer.signup(homeserver, signupCode ?? null);
+await signer.signup(homeserver, signupCode);
 
-// 4) Show session owner + capabilities
+// 4) Sign in to create a grant-backed session for this example client
+const session = await signer.signin("pubky-js-signup.example");
+
+// 5) Show session owner + capabilities
 console.log("\nSigned up as:", session.info.publicKey.toString());
 console.log("Capabilities:", session.info.capabilities);

@@ -1,9 +1,9 @@
 // js/src/wrappers/session.rs
 use wasm_bindgen::prelude::*;
 
-use super::storage::SessionStorage;
+use super::{cookie_session::CookieSession, grant_session::GrantSession, storage::SessionStorage};
 use crate::client::constructor::Client;
-use crate::js_error::{JsResult, PubkyError};
+use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use crate::wrappers::session_info::SessionInfo;
 
 /// An authenticated context “as the user”.
@@ -30,6 +30,26 @@ impl Session {
         SessionStorage(pubky::SessionStorage::new(&self.0))
     }
 
+    /// Grant-only management view for grant-backed sessions.
+    ///
+    /// Cookie-backed sessions return `undefined`.
+    ///
+    /// @returns {GrantSession|undefined}
+    #[wasm_bindgen(getter)]
+    pub fn grant(&self) -> Option<GrantSession> {
+        self.0.as_grant().map(|_| GrantSession(self.0.clone()))
+    }
+
+    /// Cookie-only view for cookie-backed sessions.
+    ///
+    /// Grant-backed sessions return `undefined`.
+    ///
+    /// @returns {CookieSession|undefined}
+    #[wasm_bindgen(getter)]
+    pub fn cookie(&self) -> Option<CookieSession> {
+        self.0.as_cookie().map(|_| CookieSession(self.0.clone()))
+    }
+
     /// Invalidate the session on the server (clears server cookie).
     /// Further calls to storage API will fail.
     ///
@@ -49,12 +69,46 @@ impl Session {
     ///
     /// @returns {string}
     /// A base64 string to store (e.g. in `localStorage`).
+    ///
+    /// @deprecated Prefer `exportSecret()` for grant sessions.
     #[wasm_bindgen]
     pub fn export(&self) -> String {
         self.0
             .as_cookie()
             .expect("export() is only valid for cookie sessions")
             .export()
+    }
+
+    /// Export the secret material needed to restore this session.
+    ///
+    /// For grant sessions this exports the grant JWS and PoP client secret; restoring
+    /// mints a fresh bearer. For legacy cookie sessions this exports the cookie secret
+    /// when the SDK owns it.
+    ///
+    /// Treat the returned string as a bearer-equivalent secret until the grant or
+    /// cookie session expires or is revoked.
+    ///
+    /// @returns {Promise<string>}
+    /// A secret token that can be passed to `pubky.restoreSession()`.
+    #[wasm_bindgen(js_name = "exportSecret")]
+    pub async fn export_secret(&self) -> JsResult<String> {
+        if let Some(grant) = self.0.as_grant() {
+            return Ok(grant.export_secret().await);
+        }
+
+        if let Some(cookie) = self.0.as_cookie() {
+            return cookie.export_secret().ok_or_else(|| {
+                PubkyError::new(
+                    PubkyErrorName::ClientStateError,
+                    "This cookie session cannot export a secret in the current runtime.",
+                )
+            });
+        }
+
+        Err(PubkyError::new(
+            PubkyErrorName::ClientStateError,
+            "Unsupported session credential type.",
+        ))
     }
 
     /// Restore a session from an `export()` string.
@@ -67,6 +121,8 @@ impl Session {
     /// @param {Client=} client
     /// Optional client to reuse transport configuration.
     /// @returns {Promise<Session>}
+    ///
+    /// @deprecated Prefer `Pubky.restoreSession(...)`.
     #[wasm_bindgen(js_name = "restore")]
     pub async fn restore(exported: String, client: Option<Client>) -> JsResult<Session> {
         let session = match client {

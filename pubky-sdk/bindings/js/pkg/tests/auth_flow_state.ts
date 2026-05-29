@@ -74,3 +74,81 @@ test("AuthFlow: tryPollOnce after completion reports ClientStateError", async (t
 
   t.end();
 });
+
+// GrantAuthFlow should match AuthFlow's repeat-call behavior.
+test("GrantAuthFlow: repeat awaitApproval reports ClientStateError", async (t) => {
+  const sdk = Pubky.testnet();
+  const flow = sdk.startGrantAuthFlow(
+    "",
+    AuthFlowKind.signin(),
+    { clientId: "grant-state-repeat.test", relay: DEAD_RELAY },
+  );
+
+  await flow.awaitApproval().catch(() => {});
+
+  try {
+    await flow.awaitApproval();
+    t.fail("calling awaitApproval twice should reject with ClientStateError");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "second awaitApproval -> ClientStateError");
+    t.ok(
+      /already called/i.test(error.message),
+      "error message explains the grant flow was already awaited",
+    );
+  }
+
+  t.end();
+});
+
+test("GrantAuthFlow: awaitApproval blocked while tryPollOnce is in-flight", async (t) => {
+  const sdk = Pubky.testnet();
+  const flow = sdk.startGrantAuthFlow(
+    "",
+    AuthFlowKind.signin(),
+    { clientId: "grant-state-in-flight.test", relay: DEAD_RELAY },
+  );
+
+  const pendingPoll = flow.tryPollOnce();
+
+  try {
+    await flow.awaitApproval();
+    t.fail("concurrent awaitApproval should reject with ClientStateError");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "rejects with ClientStateError while in use");
+    t.ok(
+      /in-flight/i.test(error.message),
+      "message explains another grant flow call is in-flight",
+    );
+  }
+
+  await pendingPoll.catch(() => {});
+
+  t.end();
+});
+
+test("GrantAuthFlow: tryPollOnce after completion reports ClientStateError", async (t) => {
+  const sdk = Pubky.testnet();
+  const flow = sdk.startGrantAuthFlow(
+    "",
+    AuthFlowKind.signin(),
+    { clientId: "grant-state-completed.test", relay: DEAD_RELAY },
+  );
+
+  await flow.awaitApproval().catch(() => {});
+
+  try {
+    await flow.tryPollOnce();
+    t.fail("tryPollOnce after completion should reject with ClientStateError");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "polling after completion -> ClientStateError");
+    t.ok(
+      /already completed/i.test(error.message),
+      "error message states the grant flow already completed",
+    );
+  }
+
+  t.end();
+});

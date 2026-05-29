@@ -7,11 +7,11 @@ const TESTNET_HOMESERVER = "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn4
 
 const usage = `
 Usage:
-  npm run logging -- [--testnet] [--homeserver <pubky>] [--level <error|warn|info|debug|trace>]
+  node 1-logging.mjs [--testnet] [--homeserver <pubky>] [--level <error|warn|info|debug|trace>]
 
 Examples:
-  npm run logging -- --testnet --level debug
-  npm run logging -- --homeserver <mainnet_pk> --level info
+  node 1-logging.mjs --testnet --level debug
+  node 1-logging.mjs --homeserver <mainnet_pk> --level info
 `;
 
 const a = args(process.argv.slice(2), {
@@ -46,7 +46,10 @@ const signer = pubky.signer(keypair);
 console.log("Generated ephemeral signer:", keypair.publicKey.toString());
 
 console.log("Signing up to homeserver... (watch the debug logs above)");
-const session = await signer.signup(homeserver, null);
+await signer.signup(homeserver);
+
+console.log("Signing in with a grant-backed session...");
+const session = await signer.signin("logging.example");
 
 const path = `/pub/logging.example/${Date.now()}.txt`;
 console.log(`Writing sample data to ${path}`);
