@@ -78,9 +78,7 @@ impl GrantAuthFlow {
         let normalized = validate_caps_for_start(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
         let client_id = ClientId::new(&options.client_id).map_err(|e| {
-            pubky::Error::Authentication(
-                pubky::errors::AuthError::Validation(e.to_string()),
-            )
+            pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string()))
         })?;
 
         let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id);
