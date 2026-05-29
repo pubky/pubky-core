@@ -1,8 +1,10 @@
 import test from "tape";
-import { Pubky, AuthFlowKind } from "../index.js";
+import { Pubky, AuthFlowKind, GrantAuthFlow } from "../index.js";
 import { assertPubkyError } from "./utils.js";
 
 const DEAD_RELAY = "http://127.0.0.1:9/inbox"; // port 9 is typically closed; yields quick connection refusal
+
+const _delegationAvailableType: boolean = GrantAuthFlow.isDelegationAvailable;
 
 // Ensure a second awaitApproval call returns a ClientStateError instead of panicking the WASM layer.
 test("AuthFlow: repeat awaitApproval reports ClientStateError", async (t) => {
@@ -147,6 +149,39 @@ test("GrantAuthFlow: tryPollOnce after completion reports ClientStateError", asy
     t.ok(
       /already completed/i.test(error.message),
       "error message states the grant flow already completed",
+    );
+  }
+
+  t.end();
+});
+
+test("Delegated grant auth: unsupported runtime reports ClientStateError", async (t) => {
+  if (typeof indexedDB !== "undefined") {
+    t.comment("browser runtime has IndexedDB; unsupported-runtime check is Node-only");
+    t.end();
+    return;
+  }
+
+  t.equal(
+    GrantAuthFlow.isDelegationAvailable,
+    false,
+    "delegated grant availability is false without browser key storage",
+  );
+
+  const sdk = Pubky.testnet();
+  try {
+    await sdk.startDelegatedGrantAuthFlow(
+      "",
+      AuthFlowKind.signin(),
+      { clientId: "delegated-unsupported.test", relay: DEAD_RELAY },
+    );
+    t.fail("delegated grant auth should reject without IndexedDB");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "unsupported runtime -> ClientStateError");
+    t.ok(
+      /secure browser context|WebCrypto and IndexedDB/i.test(error.message),
+      "error message names missing browser primitives",
     );
   }
 

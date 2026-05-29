@@ -62,6 +62,7 @@ use crate::actors::auth::grant::approval::GrantApproval;
 use crate::actors::auth::grant::builder::GrantAuthFlowBuilder;
 use crate::actors::auth::grant::credential::GrantCredential;
 use crate::actors::auth::grant::grant_exchange::credential_from_grant_exchange;
+use crate::actors::auth::grant::pop_signer::{DelegatedSignFn, GrantPopSigner};
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
 use crate::errors::{AuthError, Result};
@@ -81,6 +82,18 @@ pub struct GrantAuthFlowState {
     pub authorization_url: String,
     /// Secret bytes for the `PoP` client keypair bound by the deep link `cpk`.
     pub client_key_secret: [u8; 32],
+}
+
+/// Serializable state for resuming a pending delegated browser grant auth flow.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize))]
+pub struct DelegatedGrantAuthFlowState {
+    /// Original grant authorization URL shown to the signer.
+    pub authorization_url: String,
+    /// IndexedDB key id for the non-extractable private CryptoKey.
+    pub key_id: String,
+    /// Public key for the delegated PoP signer bound by the deep link `cpk`.
+    pub client_pk: PublicKey,
 }
 
 impl fmt::Debug for GrantAuthFlowState {
@@ -111,7 +124,7 @@ pub struct PubkyGrantAuthFlow {
     relay_listener: AuthRelayListener,
     client: PubkyHttpClient,
     auth_url: Url,
-    client_keypair: Keypair,
+    client_signer: GrantPopSigner,
 }
 
 impl fmt::Debug for PubkyGrantAuthFlow {
@@ -120,7 +133,7 @@ impl fmt::Debug for PubkyGrantAuthFlow {
             .field("relay_listener", &self.relay_listener)
             .field("client", &self.client)
             .field("auth_url", &self.auth_url)
-            .field("client_keypair", &"<redacted>")
+            .field("client_signer", &self.client_signer)
             .finish()
     }
 }
@@ -130,13 +143,13 @@ impl PubkyGrantAuthFlow {
         relay_listener: AuthRelayListener,
         client: PubkyHttpClient,
         auth_url: Url,
-        client_keypair: Keypair,
+        client_signer: GrantPopSigner,
     ) -> Self {
         Self {
             relay_listener,
             client,
             auth_url,
-            client_keypair,
+            client_signer,
         }
     }
 
@@ -172,20 +185,34 @@ impl PubkyGrantAuthFlow {
         self.auth_url.clone()
     }
 
-    /// Save the sensitive state required to restore this pending grant flow.
+    /// Save the sensitive state required to restore this pending local grant flow.
     ///
     /// The returned state is only useful while the relay inbox still exists.
     /// It should be stored temporarily and deleted once the flow completes,
     /// expires, or is abandoned.
     #[must_use]
-    pub fn save(&self) -> GrantAuthFlowState {
+    pub fn save_local(&self) -> GrantAuthFlowState {
         GrantAuthFlowState {
             authorization_url: self.authorization_url().to_string(),
-            client_key_secret: self.client_keypair.secret(),
+            client_key_secret: self
+                .client_signer
+                .local_secret()
+                .expect("local grant flow state requires an exportable signer"),
         }
     }
 
-    /// Restore a pending grant auth flow from state produced by [`Self::save`].
+    /// Save non-secret state required to resume a pending delegated grant flow.
+    #[must_use]
+    pub fn save_delegated(&self) -> Option<DelegatedGrantAuthFlowState> {
+        let signer = self.client_signer.delegated_state()?;
+        Some(DelegatedGrantAuthFlowState {
+            authorization_url: self.authorization_url().to_string(),
+            key_id: signer.key_id,
+            client_pk: signer.public_key,
+        })
+    }
+
+    /// Restore a pending grant auth flow from state produced by [`Self::save_local`].
     ///
     /// This re-subscribes to the relay channel encoded in the authorization URL
     /// and validates that the saved `PoP` client key matches the `cpk` in the
@@ -223,7 +250,45 @@ impl PubkyGrantAuthFlow {
             relay_listener,
             client,
             auth_url.into(),
-            client_keypair,
+            GrantPopSigner::local(client_keypair),
+        ))
+    }
+
+    /// Restore a pending delegated grant auth flow from browser state.
+    #[doc(hidden)]
+    pub fn restore_delegated(
+        state: DelegatedGrantAuthFlowState,
+        client: PubkyHttpClient,
+        sign: DelegatedSignFn,
+    ) -> Result<Self> {
+        let DelegatedGrantAuthFlowState {
+            authorization_url,
+            key_id,
+            client_pk,
+        } = state;
+        let auth_url = DeepLink::from_str(&authorization_url).map_err(|e| {
+            AuthError::Validation(format!("failed to parse grant auth flow state URL: {e}"))
+        })?;
+        let (relay, secret, expected_client_pk) = grant_deep_link_parts(&auth_url)?;
+
+        if &client_pk != expected_client_pk {
+            return Err(AuthError::Validation(
+                "saved delegated grant auth flow client key does not match the deep link client public key"
+                    .into(),
+            )
+            .into());
+        }
+
+        let relay_listener = AuthRelayListener::builder(*secret)
+            .relay_base_url(relay.clone())
+            .client(client.clone())
+            .start()?;
+
+        Ok(Self::new(
+            relay_listener,
+            client,
+            auth_url.into(),
+            GrantPopSigner::delegated(key_id, client_pk, sign),
         ))
     }
 
@@ -260,11 +325,11 @@ impl PubkyGrantAuthFlow {
         let Self {
             relay_listener,
             client,
-            client_keypair,
+            client_signer,
             ..
         } = self;
         let approval = Self::await_decoded_approval(relay_listener).await?;
-        Self::exchange_for_credential(&client, approval, client_keypair).await
+        Self::exchange_for_credential(&client, approval, client_signer).await
     }
 
     /// Non-blocking probe (single step) that **consumes any ready grant** and
@@ -301,7 +366,7 @@ impl PubkyGrantAuthFlow {
             return Ok(None);
         };
         let credential =
-            Self::exchange_for_credential(&self.client, approval, self.client_keypair.clone())
+            Self::exchange_for_credential(&self.client, approval, self.client_signer.clone())
                 .await?;
         Ok(Some(credential))
     }
@@ -309,7 +374,7 @@ impl PubkyGrantAuthFlow {
     async fn exchange_for_credential(
         client: &PubkyHttpClient,
         approval: GrantApproval,
-        client_keypair: Keypair,
+        client_signer: GrantPopSigner,
     ) -> Result<GrantCredential> {
         let GrantApproval { jws, claims } = approval;
 
@@ -320,7 +385,7 @@ impl PubkyGrantAuthFlow {
                 claims.iss.z32()
             ))
         })?;
-        credential_from_grant_exchange(client, jws, claims, client_keypair, hs_pk).await
+        credential_from_grant_exchange(client, jws, claims, client_signer, hs_pk).await
     }
 
     async fn await_decoded_approval(relay_listener: AuthRelayListener) -> Result<GrantApproval> {
@@ -382,7 +447,7 @@ mod tests {
         .start()
         .unwrap();
 
-        let restored = PubkyGrantAuthFlow::restore(flow.save(), client).unwrap();
+        let restored = PubkyGrantAuthFlow::restore(flow.save_local(), client).unwrap();
 
         assert_eq!(restored.authorization_url(), flow.authorization_url());
     }

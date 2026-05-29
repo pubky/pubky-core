@@ -11,7 +11,7 @@ use pubky_common::auth::{
 };
 use reqwest::Method;
 
-use super::GrantCredential;
+use super::{DelegatedGrantCredentialState, GrantCredential};
 use crate::actors::session::core::PubkySession;
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
@@ -62,6 +62,12 @@ impl<'a> GrantSessionView<'a> {
     /// it as a bearer-equivalent secret until the grant expires or is revoked.
     pub async fn export_secret(&self) -> String {
         self.credential.export_secret().await
+    }
+
+    /// Export non-secret delegated restore metadata, if this session uses a
+    /// browser-held delegated PoP key.
+    pub async fn export_delegated_state(&self) -> Option<DelegatedGrantCredentialState> {
+        self.credential.export_delegated_state().await
     }
 
     /// List all active grants for this user.

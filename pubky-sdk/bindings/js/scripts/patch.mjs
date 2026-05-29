@@ -2,7 +2,7 @@
 //
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path, { dirname } from "node:path";
 
@@ -22,11 +22,42 @@ const content = await readFile(
   "utf8",
 );
 
+const inlineSnippetPattern =
+  /const \{[^}]*__pubkyGrant[^}]*\} = require\(String\.raw`\.\/snippets\/[^`]+\/inline0\.js`\);\n?/;
+const inlineSnippetModulePattern =
+  /const (import\d+) = require\("\.\/snippets\/[^"]+\/inline0\.js"\);\n?/;
+let delegatedGrantSnippet = "";
+if (inlineSnippetPattern.test(content) || inlineSnippetModulePattern.test(content)) {
+  const snippetDir = path.join(__dirname, "../pkg/nodejs/snippets");
+  const [snippetRoot] = await readdir(snippetDir);
+  delegatedGrantSnippet = await readFile(
+    path.join(snippetDir, snippetRoot, "inline0.js"),
+    "utf8",
+  );
+  delegatedGrantSnippet = delegatedGrantSnippet.replace(
+    /export async function/g,
+    "async function",
+  );
+  delegatedGrantSnippet = delegatedGrantSnippet.replace(
+    /export function/g,
+    "function",
+  );
+}
+
 const needsNamedExport = new Set();
 
 const hasModuleExports = content.includes("= module.exports");
 
 let patched = content
+  .replace(inlineSnippetPattern, delegatedGrantSnippet)
+  .replace(inlineSnippetModulePattern, (_match, importName) => {
+    return `const ${importName} = {
+  __pubkyGrantDelegatedSign,
+  __pubkyGrantEnsureDelegatedKey,
+  __pubkyGrantIsDelegationAvailable,
+  __pubkyGrantLoadDelegatedPublicKey,
+};\n`;
+  })
   // use global TextDecoder TextEncoder
   .replace("require(`util`)", "globalThis")
   // attach to `imports` instead of module.exports
@@ -127,6 +158,16 @@ const headerContent = await readFile(
   path.join(__dirname, `../pkg/node-header.cjs`),
   "utf8",
 );
-const indexcjsContent = await readFile(indexcjsPath, "utf8");
+let indexcjsContent = await readFile(indexcjsPath, "utf8");
+indexcjsContent = indexcjsContent
+  .replace(inlineSnippetPattern, delegatedGrantSnippet)
+  .replace(inlineSnippetModulePattern, (_match, importName) => {
+    return `const ${importName} = {
+  __pubkyGrantDelegatedSign,
+  __pubkyGrantEnsureDelegatedKey,
+  __pubkyGrantIsDelegationAvailable,
+  __pubkyGrantLoadDelegatedPublicKey,
+};\n`;
+  });
 
 await writeFile(indexcjsPath, headerContent + "\n" + indexcjsContent, "utf8");

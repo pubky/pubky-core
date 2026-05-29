@@ -10,8 +10,9 @@ pub(crate) mod constants;
 pub(crate) mod credential;
 pub(crate) mod flow;
 pub(crate) mod grant_exchange;
+pub(crate) mod pop_signer;
 pub mod view;
 
-pub use credential::GrantCredential;
-pub use flow::{GrantAuthFlowState, PubkyGrantAuthFlow};
+pub use credential::{DelegatedGrantCredentialState, GrantCredential};
+pub use flow::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
 pub use view::GrantSessionView;

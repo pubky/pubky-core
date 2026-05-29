@@ -366,7 +366,7 @@ test("Grant auth: resume signin flow from saved state", async (t) => {
     AuthFlowKind.signin(),
     { clientId: "grant-resume-js.test", relay: TESTNET_HTTP_RELAY },
   );
-  const savedState = originalFlow.save();
+  const savedState = originalFlow.saveLocal();
   const savedUrl = originalFlow.authorizationUrl;
   originalFlow.free();
 

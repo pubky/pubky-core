@@ -54,6 +54,9 @@ type _GrantSessionInfo = Assert<
 type _GrantListGrants = Assert<
   IsExact<ReturnType<GrantSession["listGrants"]>, Promise<GrantInfo[]>>
 >;
+type _GrantExportDelegated = Assert<
+  IsExact<ReturnType<GrantSession["exportDelegatedState"]>, Promise<string>>
+>;
 type _CookieExportSecret = Assert<
   IsExact<ReturnType<CookieSession["exportSecret"]>, Promise<string>>
 >;
