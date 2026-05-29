@@ -380,5 +380,5 @@ jobs:
         run: docker build -f deployments/umbrel/Dockerfile -t test-umbrel:latest .
       - name: Verify required files are in image
         run: |
-          docker run --rm test-umbrel:latest test -f /usr/local/share/config.toml.template || (echo "ERROR: config.toml.template not found in image" && exit 1)
-          docker run --rm test-umbrel:latest test -x /usr/local/bin/entrypoint.sh || (echo "ERROR: entrypoint.sh not executable" && exit 1)
+          docker run --rm --entrypoint test test-umbrel:latest -f /usr/local/share/config.toml.template || (echo "ERROR: config.toml.template not found in image" && exit 1)
+          docker run --rm --entrypoint test test-umbrel:latest -x /usr/local/bin/entrypoint.sh || (echo "ERROR: entrypoint.sh not executable" && exit 1)
