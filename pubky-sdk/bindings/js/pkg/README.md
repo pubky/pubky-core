@@ -47,12 +47,12 @@ renderQr(authFlow.authorizationUrl); // Show to user the signin deeplink via a Q
 const session = await authFlow.awaitApproval();
 
 // 4) Write a public JSON file
-const path = "/pub/example.com/hello.json";
+const path = "/pub/my-cool-app/hello.json";
 await session.storage.putJson(path, { hello: "world" });
 
 // 5) Read it publicly (no auth needed)
 const userPk = session.info.publicKey.toString();
-const addr = `${userPk}/pub/example.com/hello.json`;
+const addr = `${userPk}/pub/my-cool-app/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
 ```
 
@@ -118,7 +118,7 @@ const client = new Client(); // or: pubky.client.fetch(); instead of constructin
 
 // Convert the identifier into a transport URL before fetching.
 const userId = PublicKey.from("pubky<z32>").toString();
-const url = resolvePubky(`${userId}/pub/example.com/file.txt`);
+const url = resolvePubky(`${userId}/pub/my-cool-app/file.txt`);
 const res = await client.fetch(url);
 ```
 
