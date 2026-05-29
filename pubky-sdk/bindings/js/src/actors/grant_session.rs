@@ -6,7 +6,7 @@ use pubky_common::auth::jws::GrantId;
 
 /// Grant-only view over a grant-backed `Session`.
 ///
-/// Cookie-backed sessions do not expose this view; use `session.asGrant` and
+/// Cookie-backed sessions do not expose this view; use `session.grant` and
 /// check for `undefined` before calling grant management methods.
 #[wasm_bindgen]
 pub struct GrantSession(pub(crate) pubky::PubkySession);

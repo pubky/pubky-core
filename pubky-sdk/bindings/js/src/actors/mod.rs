@@ -1,4 +1,5 @@
 pub mod auth_flow;
+pub mod cookie_session;
 pub mod deep_links;
 pub mod event_stream;
 pub mod grant_auth_flow;

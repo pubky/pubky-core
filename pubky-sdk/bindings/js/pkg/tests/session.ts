@@ -2,6 +2,7 @@ import test from "tape";
 
 import {
   AuthFlowKind,
+  CookieSession,
   GrantInfo,
   GrantSession,
   GrantSessionInfo,
@@ -41,14 +42,20 @@ type _PublicGetText = Assert<
   IsExact<ReturnType<PublicStorageType["getText"]>, Promise<string>>
 >;
 
-type _SessionAsGrant = Assert<
-  IsExact<SignupSession["asGrant"], GrantSession | undefined>
+type _SessionGrant = Assert<
+  IsExact<SignupSession["grant"], GrantSession | undefined>
+>;
+type _SessionCookie = Assert<
+  IsExact<SignupSession["cookie"], CookieSession | undefined>
 >;
 type _GrantSessionInfo = Assert<
   IsExact<ReturnType<GrantSession["sessionInfo"]>, Promise<GrantSessionInfo>>
 >;
 type _GrantListGrants = Assert<
   IsExact<ReturnType<GrantSession["listGrants"]>, Promise<GrantInfo[]>>
+>;
+type _CookieExportSecret = Assert<
+  IsExact<ReturnType<CookieSession["exportSecret"]>, Promise<string>>
 >;
 
 const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
@@ -59,7 +66,16 @@ test("Session: export/import uses browser cookie", async (t) => {
   const signupToken = await createSignupToken();
 
   const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
+  const cookie = session.cookie;
+  t.ok(cookie, "cookie-backed session exposes cookie view");
+  t.equal(session.grant, undefined, "cookie-backed session has no grant view");
+  if (!cookie) {
+    t.end();
+    return;
+  }
+
   const exported = session.export();
+  t.equal(cookie.export(), exported, "cookie export() matches legacy session export()");
 
   t.equal(typeof exported, "string", "export() returns a string snapshot");
 
@@ -97,7 +113,14 @@ test("Session: cookie exportSecret restores from secret token", async (t) => {
   const signupToken = await createSignupToken();
 
   const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
-  const exported = await session.exportSecret();
+  const cookie = session.cookie;
+  t.ok(cookie, "cookie-backed session exposes cookie view");
+  if (!cookie) {
+    t.end();
+    return;
+  }
+
+  const exported = await cookie.exportSecret();
 
   t.equal(typeof exported, "string", "cookie exportSecret() returns a string token");
   t.ok(exported.includes(":"), "cookie secret token includes public key and cookie secret");
@@ -128,9 +151,10 @@ test("Session: grant-only view exposes grant metadata and management", async (t)
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   const clientId = "grant-view-js.test";
   const session = await signer.signin(clientId);
-  const grant = session.asGrant;
+  const grant = session.grant;
 
-  t.ok(grant, "grant-backed session exposes asGrant");
+  t.ok(grant, "grant-backed session exposes grant view");
+  t.equal(session.cookie, undefined, "grant-backed session has no cookie view");
   if (!grant) {
     t.end();
     return;
@@ -153,8 +177,9 @@ test("Session: grant-only view exposes grant metadata and management", async (t)
 
   const exported = await grant.exportSecret();
   const restored = await sdk.restoreSession(exported);
-  const restoredGrant = restored.asGrant;
-  t.ok(restoredGrant, "restored grant session exposes asGrant");
+  const restoredGrant = restored.grant;
+  t.ok(restoredGrant, "restored grant session exposes grant view");
+  t.equal(restored.cookie, undefined, "restored grant session has no cookie view");
   if (!restoredGrant) {
     t.end();
     return;
@@ -186,13 +211,18 @@ test("Session: grant-only view exposes grant metadata and management", async (t)
   t.end();
 });
 
-test("Session: cookie sessions do not expose grant-only view", async (t) => {
+test("Session: cookie sessions expose cookie-only view", async (t) => {
   const sdk = Pubky.testnet();
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
 
   const session = await signer.signupCookie(HOMESERVER_PUBLICKEY, signupToken);
-  t.equal(session.asGrant, undefined, "cookie-backed session has no asGrant view");
+  const cookie = session.cookie;
+  t.ok(cookie, "cookie-backed session exposes cookie view");
+  t.equal(session.grant, undefined, "cookie-backed session has no grant view");
+  if (cookie) {
+    t.equal(cookie.export(), session.export(), "cookie export() matches session export()");
+  }
 
   t.end();
 });
@@ -211,9 +241,10 @@ test("Session: non-root grant management calls return homeserver 403", async (t)
 
   await signer.approveAuthRequest(flow.authorizationUrl);
   const session = await flow.awaitApproval();
-  const grant = session.asGrant;
+  const grant = session.grant;
 
-  t.ok(grant, "non-root grant session exposes asGrant");
+  t.ok(grant, "non-root grant session exposes grant view");
+  t.equal(session.cookie, undefined, "non-root grant session has no cookie view");
   if (!grant) {
     t.end();
     return;
@@ -249,9 +280,9 @@ test("Session: invalid grant id throws InvalidInput", async (t) => {
 
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   const session = await signer.signin("grant-invalid-id-js.test");
-  const grant = session.asGrant;
+  const grant = session.grant;
 
-  t.ok(grant, "grant-backed session exposes asGrant");
+  t.ok(grant, "grant-backed session exposes grant view");
   if (!grant) {
     t.end();
     return;
