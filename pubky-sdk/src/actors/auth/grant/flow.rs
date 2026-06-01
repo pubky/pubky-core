@@ -191,19 +191,12 @@ impl PubkyGrantAuthFlow {
     /// It should be stored temporarily and deleted once the flow completes,
     /// expires, or is abandoned.
     ///
-    /// # Panics
-    ///
-    /// Panics if called on a delegated grant flow. Use `save_delegated` for
-    /// delegated flows.
     #[must_use]
-    pub fn save_local(&self) -> GrantAuthFlowState {
-        GrantAuthFlowState {
+    pub fn save_local(&self) -> Option<GrantAuthFlowState> {
+        Some(GrantAuthFlowState {
             authorization_url: self.authorization_url().to_string(),
-            client_key_secret: self
-                .client_signer
-                .local_secret()
-                .expect("local grant flow state requires an exportable signer"),
-        }
+            client_key_secret: self.client_signer.local_secret()?,
+        })
     }
 
     /// Save non-secret state required to resume a pending delegated grant flow.
@@ -452,9 +445,48 @@ mod tests {
         .start()
         .unwrap();
 
-        let restored = PubkyGrantAuthFlow::restore(flow.save_local(), client).unwrap();
+        let restored = PubkyGrantAuthFlow::restore(flow.save_local().unwrap(), client).unwrap();
 
         assert_eq!(restored.authorization_url(), flow.authorization_url());
+    }
+
+    #[tokio::test]
+    async fn save_local_is_only_available_for_local_signers() {
+        let relay = http_relay::HttpRelay::builder()
+            .http_port(0)
+            .run()
+            .await
+            .unwrap();
+        let relay_url = relay.local_url().join("inbox").unwrap();
+        let keypair = Keypair::random();
+        let delegated_signer = std::sync::Arc::new(|_| Box::pin(async { Ok(vec![0_u8; 64]) }) as _);
+        let client_id = ClientId::new("save-local.test").unwrap();
+
+        let local_flow = PubkyGrantAuthFlow::builder(
+            &Capabilities::default(),
+            AuthFlowKind::signin(),
+            client_id.clone(),
+        )
+        .relay(relay_url.clone())
+        .client_keypair(keypair.clone())
+        .start()
+        .unwrap();
+        let delegated_flow = PubkyGrantAuthFlow::builder(
+            &Capabilities::default(),
+            AuthFlowKind::signin(),
+            client_id,
+        )
+        .relay(relay_url)
+        .delegated_client_signer("key-1".into(), keypair.public_key(), delegated_signer)
+        .start()
+        .unwrap();
+
+        assert_eq!(
+            local_flow.save_local().unwrap().client_key_secret,
+            keypair.secret()
+        );
+        assert!(delegated_flow.save_local().is_none());
+        assert!(delegated_flow.save_delegated().is_some());
     }
 
     #[test]

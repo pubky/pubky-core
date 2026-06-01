@@ -228,13 +228,13 @@ impl GrantAuthFlow {
     #[wasm_bindgen(js_name = "saveLocal")]
     pub fn save_local(&self) -> JsResult<String> {
         let flow = self.borrow_inner()?;
-        if flow.save_delegated().is_some() {
-            return Err(PubkyError::new(
+        let state = flow.save_local().ok_or_else(|| {
+            PubkyError::new(
                 PubkyErrorName::ClientStateError,
                 "Delegated grant auth flows cannot export raw secret state. Use saveDelegated().",
-            ));
-        }
-        serde_json::to_string(&flow.save_local()).map_err(|e| {
+            )
+        })?;
+        serde_json::to_string(&state).map_err(|e| {
             PubkyError::new(
                 PubkyErrorName::InternalError,
                 format!("Failed to serialize grant auth flow state: {e}"),
