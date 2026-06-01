@@ -6,11 +6,8 @@
 //! - [`signup_account_from_grant`] creates a user via grant + `PoP` without
 //!   minting a session.
 //!
-//! All grant-management operations (`list_grants`, `revoke_grant`,
-//! `current_bearer`, `force_refresh`, `grant_id`) live on
-//! [`super::view::GrantSessionView`] — they are reachable via
-//! [`PubkySession::as_grant`](crate::actors::session::core::PubkySession::as_grant)
-//! and only compile when the credential is grant-based.
+//! Current grant-session operations (`current_bearer`, `force_refresh`,
+//! `grant_id`) live on [`super::view::GrantSessionView`].
 
 use pubky_common::{
     auth::{grant::GrantClaims, grant_session_responses::GrantSessionResponse},

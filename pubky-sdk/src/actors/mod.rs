@@ -11,7 +11,7 @@ pub use auth::cookie::PubkyCookieAuthFlow;
 pub use auth::cookie::{CookieCredential, CookieSessionView};
 pub use auth::deep_links;
 pub use auth::grant::{GrantAuthFlowState, PubkyGrantAuthFlow};
-pub use auth::grant::{GrantCredential, GrantSessionView};
+pub use auth::grant::{GrantCredential, GrantManager, GrantSessionView};
 pub use auth::relay::http_relay_inbox_channel::{
     DEFAULT_HTTP_RELAY_INBOX, EncryptedHttpRelayInboxChannel, HttpRelayInboxChannel,
 };
