@@ -10,10 +10,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use super::{
-    auth_flow::AuthFlowKind,
-    browser_grant_keys::{delegated_signer, ensure_delegated_key, is_delegation_available},
-    in_flight::InFlightGuard,
-    session::Session,
+    auth_flow::AuthFlowKind, browser_grant_key_store::BrowserGrantKeyStore,
+    in_flight::InFlightGuard, session::Session,
 };
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
@@ -21,7 +19,7 @@ use crate::{
 };
 
 /// Options for starting a grant-backed pubkyauth flow.
-#[derive(Tsify, Serialize, Deserialize, Debug)]
+#[derive(Tsify, Serialize, Deserialize, Debug, Clone)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantAuthFlowOptions {
@@ -51,12 +49,13 @@ impl GrantAuthFlow {
     /// Whether delegated grant auth is available in the current JS runtime.
     ///
     /// This checks for a secure browser context with WebCrypto `crypto.subtle`
-    /// and IndexedDB. It is a feature-detection helper only; delegated
-    /// start/resume/restore can still fail if storage access is denied or a
-    /// saved key id no longer exists.
+    /// and IndexedDB. It is a coarse synchronous feature-detection helper only;
+    /// some runtimes expose those primitives without Ed25519 support. Delegated
+    /// start/resume/restore can still fail if Ed25519 is unsupported, storage
+    /// access is denied, or a saved key id no longer exists.
     #[wasm_bindgen(js_name = "isDelegationAvailable", getter)]
     pub fn is_delegation_available() -> bool {
-        is_delegation_available()
+        BrowserGrantKeyStore::is_available()
     }
 
     /// Start a grant-backed flow (standalone).
@@ -138,8 +137,8 @@ impl GrantAuthFlow {
         let client_id = ClientId::new(&options.client_id).map_err(|e| {
             pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string()))
         })?;
-        let (key_id, public_key) = ensure_delegated_key(None).await?;
-        let sign = delegated_signer(key_id.clone());
+        let (key_id, public_key) = BrowserGrantKeyStore::ensure_key(None).await?;
+        let sign = BrowserGrantKeyStore::signer(key_id.clone());
 
         let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id)
             .delegated_client_signer(key_id, public_key, sign);
@@ -212,7 +211,7 @@ impl GrantAuthFlow {
             Some(c) => c,
             None => pubky::PubkyHttpClient::new()?,
         };
-        let sign = delegated_signer(state.key_id.clone());
+        let sign = BrowserGrantKeyStore::signer(state.key_id.clone());
         Ok(PubkyGrantAuthFlow::restore_delegated(state, client, sign)?.into())
     }
 

@@ -116,9 +116,9 @@ pub struct DelegatedGrantCredentialState {
     pub grant_jws: String,
     /// Homeserver public key used as the `PoP` audience.
     pub homeserver_pk: PublicKey,
-    /// IndexedDB key id for the non-extractable private CryptoKey.
+    /// `IndexedDB` key id for the non-extractable private `CryptoKey`.
     pub key_id: String,
-    /// Public key for the delegated PoP signer.
+    /// Public key for the delegated `PoP` signer.
     pub client_pk: PublicKey,
 }
 
@@ -288,6 +288,12 @@ impl GrantCredential {
     }
 
     /// Restore a delegated grant credential from origin-bound browser metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delegated grant metadata is invalid, if the
+    /// grant claims cannot be verified, or if the homeserver rejects the grant
+    /// session exchange.
     pub async fn import_delegated_state(
         state: DelegatedGrantCredentialState,
         client: &PubkyHttpClient,

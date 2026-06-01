@@ -2,10 +2,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
-    browser_grant_keys::{delegated_signer, load_delegated_public_key},
+    browser_grant_key_store::BrowserGrantKeyStore,
     event_stream::EventStreamBuilder,
     grant_auth_flow::{GrantAuthFlow, GrantAuthFlowOptions},
     session::Session,
+    session_store::BrowserSessionStore,
     signer::Signer,
     storage::PublicStorage,
 };
@@ -119,48 +120,37 @@ impl Pubky {
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
     /// @param {GrantAuthFlowOptions} options Options for the grant flow: `{ clientId, relay? }`.
-    /// @returns {GrantAuthFlow}
+    /// @returns {Promise<GrantAuthFlow>}
     /// A running grant auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a grant-backed `Session`.
     ///
     /// @example
-    /// const flow = pubky.startGrantAuthFlow(
+    /// const flow = await pubky.startGrantAuthFlow(
     ///   "/pub/my-cool-app/:rw",
     ///   AuthFlowKind.signin(),
     ///   { clientId: "my-cool-app.example" },
     /// );
     #[wasm_bindgen(js_name = "startGrantAuthFlow")]
-    pub fn start_grant_auth_flow(
+    pub async fn start_grant_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
         options: GrantAuthFlowOptions,
     ) -> JsResult<GrantAuthFlow> {
-        GrantAuthFlow::start_with_client(capabilities, kind, options, Some(self.0.client().clone()))
-    }
+        if BrowserGrantKeyStore::can_use_delegation().await {
+            let delegated = GrantAuthFlow::start_delegated_with_client(
+                capabilities.clone(),
+                kind.clone(),
+                options.clone(),
+                Some(self.0.client().clone()),
+            )
+            .await;
+            if delegated.is_ok() {
+                return delegated;
+            }
+        }
 
-    /// Start a browser delegated grant-backed pubkyauth flow.
-    ///
-    /// The SDK creates a fresh non-extractable WebCrypto Ed25519 key in
-    /// IndexedDB and uses it for grant Proof-of-Possession signing.
-    ///
-    /// Runtime: delegated grant keys require a secure browser context with
-    /// WebCrypto `crypto.subtle` and IndexedDB. Unsupported runtimes reject
-    /// with `ClientStateError`.
-    #[wasm_bindgen(js_name = "startDelegatedGrantAuthFlow")]
-    pub async fn start_delegated_grant_auth_flow(
-        &self,
-        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
-        kind: AuthFlowKind,
-        options: GrantAuthFlowOptions,
-    ) -> JsResult<GrantAuthFlow> {
-        GrantAuthFlow::start_delegated_with_client(
-            capabilities,
-            kind,
-            options,
-            Some(self.0.client().clone()),
-        )
-        .await
+        GrantAuthFlow::start_with_client(capabilities, kind, options, Some(self.0.client().clone()))
     }
 
     /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.
@@ -232,6 +222,16 @@ impl Pubky {
         PublicStorage(self.0.public_storage())
     }
 
+    /// Browser-backed store for explicitly persisted completed grant sessions.
+    ///
+    /// Use `browserSessionStore.save(session)` after a successful grant auth flow to make
+    /// the session restorable after reload. The store supports multiple accounts
+    /// and multiple grants per account.
+    #[wasm_bindgen(js_name = "browserSessionStore", getter)]
+    pub fn browser_session_store(&self) -> BrowserSessionStore {
+        BrowserSessionStore(self.0.clone())
+    }
+
     /// Resolve the homeserver for a given public key (read-only).
     ///
     /// Uses an internal read-only Pkdns actor.
@@ -277,27 +277,6 @@ impl Pubky {
         } else {
             pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?
         };
-        Ok(Session(session))
-    }
-
-    /// Restore an origin-bound delegated browser grant session.
-    ///
-    /// Runtime: delegated grant keys require a secure browser context with
-    /// WebCrypto `crypto.subtle` and IndexedDB. The saved `keyId` must still
-    /// exist in IndexedDB for the same origin. Unsupported runtimes reject with
-    /// `ClientStateError`.
-    #[wasm_bindgen(js_name = "restoreDelegatedGrantSession")]
-    pub async fn restore_delegated_grant_session(&self, saved_state: String) -> JsResult<Session> {
-        let state = crate::actors::grant_session::decode_delegated_grant_state(&saved_state)?;
-        let stored_public_key = load_delegated_public_key(state.key_id.clone()).await?;
-        if stored_public_key != state.client_pk {
-            return Err(crate::js_error::PubkyError::new(
-                crate::js_error::PubkyErrorName::ClientStateError,
-                "Delegated grant key public key does not match saved state.",
-            ));
-        }
-        let sign = delegated_signer(state.key_id.clone());
-        let session = self.0.restore_delegated_grant_session(state, sign).await?;
         Ok(Session(session))
     }
 

@@ -80,7 +80,7 @@ test("AuthFlow: tryPollOnce after completion reports ClientStateError", async (t
 // GrantAuthFlow should match AuthFlow's repeat-call behavior.
 test("GrantAuthFlow: repeat awaitApproval reports ClientStateError", async (t) => {
   const sdk = Pubky.testnet();
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     "",
     AuthFlowKind.signin(),
     { clientId: "grant-state-repeat.test", relay: DEAD_RELAY },
@@ -105,7 +105,7 @@ test("GrantAuthFlow: repeat awaitApproval reports ClientStateError", async (t) =
 
 test("GrantAuthFlow: awaitApproval blocked while tryPollOnce is in-flight", async (t) => {
   const sdk = Pubky.testnet();
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     "",
     AuthFlowKind.signin(),
     { clientId: "grant-state-in-flight.test", relay: DEAD_RELAY },
@@ -132,7 +132,7 @@ test("GrantAuthFlow: awaitApproval blocked while tryPollOnce is in-flight", asyn
 
 test("GrantAuthFlow: tryPollOnce after completion reports ClientStateError", async (t) => {
   const sdk = Pubky.testnet();
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     "",
     AuthFlowKind.signin(),
     { clientId: "grant-state-completed.test", relay: DEAD_RELAY },
@@ -168,9 +168,8 @@ test("Delegated grant auth: unsupported runtime reports ClientStateError", async
     "delegated grant availability is false without browser key storage",
   );
 
-  const sdk = Pubky.testnet();
   try {
-    await sdk.startDelegatedGrantAuthFlow(
+    await GrantAuthFlow.startDelegated(
       "",
       AuthFlowKind.signin(),
       { clientId: "delegated-unsupported.test", relay: DEAD_RELAY },

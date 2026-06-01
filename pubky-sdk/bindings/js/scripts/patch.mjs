@@ -2,7 +2,7 @@
 //
 // Based on hacks from [this issue](https://github.com/rustwasm/wasm-pack/issues/1334)
 
-import { readFile, writeFile, rename, readdir } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path, { dirname } from "node:path";
 
@@ -23,24 +23,50 @@ const content = await readFile(
 );
 
 const inlineSnippetPattern =
-  /const \{[^}]*__pubkyGrant[^}]*\} = require\(String\.raw`\.\/snippets\/[^`]+\/inline0\.js`\);\n?/;
+  /const \{[^}]*\} = require\(String\.raw`\.\/snippets\/([^`]+\/inline\d+\.js)`\);\n?/g;
 const inlineSnippetModulePattern =
-  /const (import\d+) = require\("\.\/snippets\/[^"]+\/inline0\.js"\);\n?/;
-let delegatedGrantSnippet = "";
-if (inlineSnippetPattern.test(content) || inlineSnippetModulePattern.test(content)) {
-  const snippetDir = path.join(__dirname, "../pkg/nodejs/snippets");
-  const [snippetRoot] = await readdir(snippetDir);
-  delegatedGrantSnippet = await readFile(
-    path.join(snippetDir, snippetRoot, "inline0.js"),
+  /const (import\d+) = require\("\.\/snippets\/([^"]+\/inline\d+\.js)"\);\n?/g;
+const inlineSnippets = new Map();
+async function loadInlineSnippet(snippetPath) {
+  if (inlineSnippets.has(snippetPath)) {
+    return inlineSnippets.get(snippetPath);
+  }
+
+  let snippet = await readFile(
+    path.join(__dirname, "../pkg/nodejs/snippets", snippetPath),
     "utf8",
   );
-  delegatedGrantSnippet = delegatedGrantSnippet.replace(
-    /export async function/g,
-    "async function",
+  snippet = snippet.replace(/export async function/g, "async function");
+  snippet = snippet.replace(/export function/g, "function");
+  inlineSnippets.set(snippetPath, snippet);
+  return snippet;
+}
+
+const inlineSnippetReplacements = new Map();
+for (const match of content.matchAll(inlineSnippetPattern)) {
+  inlineSnippetReplacements.set(match[0], await loadInlineSnippet(match[1]));
+}
+
+const inlineSnippetModuleReplacements = new Map();
+const inlineSnippetModuleObjects = new Map();
+for (const match of content.matchAll(inlineSnippetModulePattern)) {
+  const snippetPath = match[2];
+  const rawSnippet = await readFile(
+    path.join(__dirname, "../pkg/nodejs/snippets", snippetPath),
+    "utf8",
   );
-  delegatedGrantSnippet = delegatedGrantSnippet.replace(
-    /export function/g,
-    "function",
+  const names = [...rawSnippet.matchAll(/export (?:async )?function (\w+)/g)].map(
+    (m) => m[1],
+  );
+  const snippet = await loadInlineSnippet(snippetPath);
+  const object = `const ${match[1]} = {
+${names.map((name) => `  ${name},`).join("\n")}
+};\n`;
+  inlineSnippetModuleObjects.set(match[0], object);
+  inlineSnippetModuleReplacements.set(
+    match[0],
+    `${snippet}
+${object}`,
   );
 }
 
@@ -49,14 +75,21 @@ const needsNamedExport = new Set();
 const hasModuleExports = content.includes("= module.exports");
 
 let patched = content
-  .replace(inlineSnippetPattern, delegatedGrantSnippet)
-  .replace(inlineSnippetModulePattern, (_match, importName) => {
-    return `const ${importName} = {
-  __pubkyGrantDelegatedSign,
-  __pubkyGrantEnsureDelegatedKey,
-  __pubkyGrantIsDelegationAvailable,
-  __pubkyGrantLoadDelegatedPublicKey,
-};\n`;
+  .replace(inlineSnippetPattern, (match, snippetPath) => {
+    const replacement = inlineSnippetReplacements.get(match) ?? match;
+    if (inlineSnippets.get(`emitted:esm:${snippetPath}`)) {
+      return "";
+    }
+    inlineSnippets.set(`emitted:esm:${snippetPath}`, true);
+    return replacement;
+  })
+  .replace(inlineSnippetModulePattern, (match, _importName, snippetPath) => {
+    const replacement = inlineSnippetModuleReplacements.get(match) ?? match;
+    if (inlineSnippets.get(`emitted:esm:${snippetPath}`)) {
+      return inlineSnippetModuleObjects.get(match) ?? "";
+    }
+    inlineSnippets.set(`emitted:esm:${snippetPath}`, true);
+    return replacement;
   })
   // use global TextDecoder TextEncoder
   .replace("require(`util`)", "globalThis")
@@ -160,14 +193,21 @@ const headerContent = await readFile(
 );
 let indexcjsContent = await readFile(indexcjsPath, "utf8");
 indexcjsContent = indexcjsContent
-  .replace(inlineSnippetPattern, delegatedGrantSnippet)
-  .replace(inlineSnippetModulePattern, (_match, importName) => {
-    return `const ${importName} = {
-  __pubkyGrantDelegatedSign,
-  __pubkyGrantEnsureDelegatedKey,
-  __pubkyGrantIsDelegationAvailable,
-  __pubkyGrantLoadDelegatedPublicKey,
-};\n`;
+  .replace(inlineSnippetPattern, (match, snippetPath) => {
+    const replacement = inlineSnippetReplacements.get(match) ?? match;
+    if (inlineSnippets.get(`emitted:cjs:${snippetPath}`)) {
+      return "";
+    }
+    inlineSnippets.set(`emitted:cjs:${snippetPath}`, true);
+    return replacement;
+  })
+  .replace(inlineSnippetModulePattern, (match, _importName, snippetPath) => {
+    const replacement = inlineSnippetModuleReplacements.get(match) ?? match;
+    if (inlineSnippets.get(`emitted:cjs:${snippetPath}`)) {
+      return inlineSnippetModuleObjects.get(match) ?? "";
+    }
+    inlineSnippets.set(`emitted:cjs:${snippetPath}`, true);
+    return replacement;
   });
 
 await writeFile(indexcjsPath, headerContent + "\n" + indexcjsContent, "utf8");

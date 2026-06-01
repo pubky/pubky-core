@@ -65,7 +65,7 @@ impl<'a> GrantSessionView<'a> {
     }
 
     /// Export non-secret delegated restore metadata, if this session uses a
-    /// browser-held delegated PoP key.
+    /// browser-held delegated `PoP` key.
     pub async fn export_delegated_state(&self) -> Option<DelegatedGrantCredentialState> {
         self.credential.export_delegated_state().await
     }

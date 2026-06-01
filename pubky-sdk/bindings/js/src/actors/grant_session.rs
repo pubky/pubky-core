@@ -93,26 +93,10 @@ impl GrantSession {
         if grant.export_delegated_state().await.is_some() {
             return Err(PubkyError::new(
                 PubkyErrorName::ClientStateError,
-                "Delegated grant sessions cannot export raw secret material. Use exportDelegatedState().",
+                "Delegated grant sessions cannot export raw secret material. Use BrowserSessionStore.",
             ));
         }
         Ok(grant.export_secret().await)
-    }
-
-    /// Export non-secret browser delegated restore metadata.
-    ///
-    /// The returned string is origin-bound and only works while the matching
-    /// non-extractable WebCrypto key remains in IndexedDB.
-    #[wasm_bindgen(js_name = "exportDelegatedState")]
-    pub async fn export_delegated_state(&self) -> JsResult<String> {
-        let grant = self.as_grant()?;
-        let state = grant.export_delegated_state().await.ok_or_else(|| {
-            PubkyError::new(
-                PubkyErrorName::ClientStateError,
-                "This grant session is not delegated.",
-            )
-        })?;
-        encode_delegated_grant_state(state)
     }
 }
 

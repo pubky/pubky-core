@@ -54,9 +54,6 @@ type _GrantSessionInfo = Assert<
 type _GrantListGrants = Assert<
   IsExact<ReturnType<GrantSession["listGrants"]>, Promise<GrantInfo[]>>
 >;
-type _GrantExportDelegated = Assert<
-  IsExact<ReturnType<GrantSession["exportDelegatedState"]>, Promise<string>>
->;
 type _CookieExportSecret = Assert<
   IsExact<ReturnType<CookieSession["exportSecret"]>, Promise<string>>
 >;
@@ -236,7 +233,7 @@ test("Session: non-root grant management calls return homeserver 403", async (t)
   const signupToken = await createSignupToken();
   const capabilities = "/pub/pubky.app/:r";
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     capabilities,
     AuthFlowKind.signin(),
     { clientId: "grant-non-root-js.test", relay: TESTNET_HTTP_RELAY },

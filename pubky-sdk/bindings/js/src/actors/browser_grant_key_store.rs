@@ -13,9 +13,12 @@ use wasm_bindgen_futures::JsFuture;
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 
 #[wasm_bindgen(inline_js = r#"
-const DB_NAME = "pubky-grant-keys";
-const DB_VERSION = 1;
-const STORE_NAME = "keys";
+const PUBKY_GRANT_KEYS_DB_NAME = "pubky-auth";
+const PUBKY_GRANT_KEYS_DB_VERSION = 1;
+const PUBKY_GRANT_KEYS_STORE_NAME = "delegatedGrantKeys";
+const PUBKY_GRANT_KEYS_SESSION_STORE_NAME = "storedSessions";
+let canUseDelegationPromise;
+const TEST_CAN_USE_DELEGATION_OVERRIDE = "__pubkyGrantCanUseDelegationOverride";
 
 /**
  * Assert that this runtime can persist non-extractable browser signing keys.
@@ -48,19 +51,60 @@ export function __pubkyGrantIsDelegationAvailable() {
 }
 
 /**
+ * Return whether this runtime can actually create, store, and use browser-held
+ * Ed25519 delegated grant keys.
+ *
+ * Some browser-like runtimes expose secure WebCrypto and IndexedDB but do not
+ * implement Ed25519. Cache the probe because it creates a real CryptoKey and
+ * verifies that IndexedDB can store/delete it.
+ */
+export async function __pubkyGrantCanUseDelegation() {
+  const override = globalThis[TEST_CAN_USE_DELEGATION_OVERRIDE];
+  if (override === true || override === false) return override;
+
+  if (!canUseDelegationPromise) {
+    canUseDelegationPromise = (async () => {
+      try {
+        requireBrowserCrypto();
+        const keyId = `__pubky_probe_${randomKeyId()}`;
+        const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
+        const publicKeyRaw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+        const data = new TextEncoder().encode("pubky-delegated-grant-probe");
+        const signature = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, data));
+        if (publicKeyRaw.length !== 32 || signature.length !== 64) return false;
+        await putRecord({
+          keyId,
+          privateKey: pair.privateKey,
+          publicKeyRaw,
+          createdAt: Date.now(),
+        });
+        await deleteRecord(keyId);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    })();
+  }
+  return await canUseDelegationPromise;
+}
+
+/**
  * Open the IndexedDB database used for delegated grant keys.
  *
  * Records are keyed by the SDK-level key id and contain a non-extractable
  * CryptoKey plus the raw public key bytes needed for grant metadata.
  */
-function openDb() {
+function openGrantKeyDb() {
   requireBrowserCrypto();
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(PUBKY_GRANT_KEYS_DB_NAME, PUBKY_GRANT_KEYS_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "keyId" });
+      if (!db.objectStoreNames.contains(PUBKY_GRANT_KEYS_STORE_NAME)) {
+        db.createObjectStore(PUBKY_GRANT_KEYS_STORE_NAME, { keyPath: "keyId" });
+      }
+      if (!db.objectStoreNames.contains(PUBKY_GRANT_KEYS_SESSION_STORE_NAME)) {
+        db.createObjectStore(PUBKY_GRANT_KEYS_SESSION_STORE_NAME, { keyPath: "id" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -75,12 +119,12 @@ function openDb() {
  * wrapper centralizes transaction lifecycle handling and always closes the DB
  * connection after the operation settles.
  */
-async function withStore(mode, fn) {
-  const db = await openDb();
+async function withGrantKeyStore(mode, fn) {
+  const db = await openGrantKeyDb();
   try {
     return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, mode);
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(PUBKY_GRANT_KEYS_STORE_NAME, mode);
+      const store = tx.objectStore(PUBKY_GRANT_KEYS_STORE_NAME);
       let done = false;
       function finish(value) {
         done = true;
@@ -109,7 +153,7 @@ async function withStore(mode, fn) {
  * should create a new key or surface a restore/signing error.
  */
 async function getRecord(keyId) {
-  return await withStore("readonly", (store, resolve, reject) => {
+  return await withGrantKeyStore("readonly", (store, resolve, reject) => {
     const request = store.get(keyId);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Reading delegated grant key failed."));
@@ -123,10 +167,18 @@ async function getRecord(keyId) {
  * handle rather than raw private key bytes.
  */
 async function putRecord(record) {
-  await withStore("readwrite", (store, resolve, reject) => {
+  await withGrantKeyStore("readwrite", (store, resolve, reject) => {
     const request = store.put(record);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error ?? new Error("Saving delegated grant key failed."));
+  });
+}
+
+async function deleteRecord(keyId) {
+  await withGrantKeyStore("readwrite", (store, resolve, reject) => {
+    const request = store.delete(keyId);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("Deleting delegated grant key failed."));
   });
 }
 
@@ -197,10 +249,24 @@ export async function __pubkyGrantDelegatedSign(keyId, signingInput) {
   const data = new TextEncoder().encode(signingInput);
   return new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, existing.privateKey, data));
 }
+
+/**
+ * Delete a browser-held delegated grant key by id.
+ *
+ * Used when a persisted delegated session record is removed from the SDK
+ * session store. Missing keys are treated as already deleted.
+ */
+export async function __pubkyGrantDeleteDelegatedKey(keyId) {
+  requireBrowserCrypto();
+  await deleteRecord(keyId);
+}
 "#)]
 extern "C" {
     #[wasm_bindgen(js_name = __pubkyGrantIsDelegationAvailable)]
     fn js_is_delegation_available() -> bool;
+
+    #[wasm_bindgen(js_name = __pubkyGrantCanUseDelegation)]
+    fn js_can_use_delegation() -> js_sys::Promise;
 
     #[wasm_bindgen(js_name = __pubkyGrantEnsureDelegatedKey)]
     fn js_ensure_delegated_key(key_id: Option<String>) -> js_sys::Promise;
@@ -210,85 +276,107 @@ extern "C" {
 
     #[wasm_bindgen(js_name = __pubkyGrantDelegatedSign)]
     fn js_delegated_sign(key_id: String, signing_input: String) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = __pubkyGrantDeleteDelegatedKey)]
+    fn js_delete_delegated_key(key_id: String) -> js_sys::Promise;
 }
 
-/// Return whether the current JS runtime supports browser-held delegated grant keys.
-///
-/// This checks for a secure browser context with WebCrypto `crypto.subtle` and
-/// IndexedDB. It does not prove that a later IndexedDB operation will succeed.
-pub(crate) fn is_delegation_available() -> bool {
-    js_is_delegation_available()
-}
+/// Stateless namespace for browser-held delegated grant PoP keys.
+pub(crate) struct BrowserGrantKeyStore;
 
-/// Ensure a browser-held delegated grant key exists and return its key id and public key.
-///
-/// If `key_id` is `Some`, an internal restore/reuse path can reuse an existing
-/// IndexedDB record when present; otherwise a new non-extractable WebCrypto
-/// Ed25519 key is generated and stored.
-pub(crate) async fn ensure_delegated_key(
-    key_id: Option<String>,
-) -> JsResult<(String, NativePublicKey)> {
-    let value = JsFuture::from(js_ensure_delegated_key(key_id))
-        .await
-        .map_err(js_error)?;
-    let key_id = Reflect::get(&value, &JsValue::from_str("keyId"))
-        .map_err(js_error)?
-        .as_string()
-        .ok_or_else(|| {
-            PubkyError::new(
-                PubkyErrorName::ClientStateError,
-                "Delegated grant key store returned an invalid key id.",
-            )
-        })?;
-    let public_key = Reflect::get(&value, &JsValue::from_str("publicKey")).map_err(js_error)?;
-    Ok((key_id, public_key_from_js(public_key)?))
-}
-
-/// Load the public key for an existing browser-held delegated grant key.
-///
-/// Used during delegated restore to verify that saved grant state still points
-/// at the same non-extractable key in IndexedDB.
-pub(crate) async fn load_delegated_public_key(key_id: String) -> JsResult<NativePublicKey> {
-    let value = JsFuture::from(js_load_delegated_public_key(key_id))
-        .await
-        .map_err(js_error)?;
-    public_key_from_js(value)
-}
-
-/// Build the Rust delegated signing callback for a browser-held grant key.
-///
-/// On wasm, the callback forwards each JWS signing input to WebCrypto and
-/// returns raw Ed25519 signature bytes. On non-wasm targets, this returns a
-/// callback that fails with an unsupported-runtime error so native checks still
-/// compile.
-pub(crate) fn delegated_signer(key_id: String) -> pubky::DelegatedSignFn {
-    #[cfg(target_arch = "wasm32")]
-    {
-        return delegated_sign_callback(move |signing_input| {
-            let key_id = key_id.clone();
-            async move {
-                let value = JsFuture::from(js_delegated_sign(key_id, signing_input))
-                    .await
-                    .map_err(|value| {
-                        pubky::Error::Authentication(pubky::errors::AuthError::Validation(
-                            js_error_message(value),
-                        ))
-                    })?;
-                Ok(Uint8Array::new(&value).to_vec())
-            }
-        });
+impl BrowserGrantKeyStore {
+    /// Return whether the current JS runtime supports browser-held delegated grant keys.
+    ///
+    /// This checks for a secure browser context with WebCrypto `crypto.subtle` and
+    /// IndexedDB. It does not prove that a later IndexedDB operation will succeed.
+    pub(crate) fn is_available() -> bool {
+        js_is_delegation_available()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = key_id;
-        return delegated_sign_callback(|_| async {
-            Err(pubky::Error::Authentication(
-                pubky::errors::AuthError::Validation(
-                    "Delegated grant signing is only available in wasm browser builds.".into(),
-                ),
-            ))
-        });
+    /// Return whether this runtime can create, persist, and use browser-held Ed25519 keys.
+    pub(crate) async fn can_use_delegation() -> bool {
+        match JsFuture::from(js_can_use_delegation()).await {
+            Ok(value) => value.as_bool().unwrap_or(false),
+            Err(_) => false,
+        }
+    }
+
+    /// Ensure a browser-held delegated grant key exists and return its key id and public key.
+    ///
+    /// If `key_id` is `Some`, an internal restore/reuse path can reuse an existing
+    /// IndexedDB record when present; otherwise a new non-extractable WebCrypto
+    /// Ed25519 key is generated and stored.
+    pub(crate) async fn ensure_key(key_id: Option<String>) -> JsResult<(String, NativePublicKey)> {
+        let value = JsFuture::from(js_ensure_delegated_key(key_id))
+            .await
+            .map_err(js_error)?;
+        let key_id = Reflect::get(&value, &JsValue::from_str("keyId"))
+            .map_err(js_error)?
+            .as_string()
+            .ok_or_else(|| {
+                PubkyError::new(
+                    PubkyErrorName::ClientStateError,
+                    "Delegated grant key store returned an invalid key id.",
+                )
+            })?;
+        let public_key = Reflect::get(&value, &JsValue::from_str("publicKey")).map_err(js_error)?;
+        Ok((key_id, public_key_from_js(public_key)?))
+    }
+
+    /// Load the public key for an existing browser-held delegated grant key.
+    ///
+    /// Used during delegated restore to verify that saved grant state still points
+    /// at the same non-extractable key in IndexedDB.
+    pub(crate) async fn load_public_key(key_id: String) -> JsResult<NativePublicKey> {
+        let value = JsFuture::from(js_load_delegated_public_key(key_id))
+            .await
+            .map_err(js_error)?;
+        public_key_from_js(value)
+    }
+
+    /// Build the Rust delegated signing callback for a browser-held grant key.
+    ///
+    /// On wasm, the callback forwards each JWS signing input to WebCrypto and
+    /// returns raw Ed25519 signature bytes. On non-wasm targets, this returns a
+    /// callback that fails with an unsupported-runtime error so native checks still
+    /// compile.
+    pub(crate) fn signer(key_id: String) -> pubky::DelegatedSignFn {
+        #[cfg(target_arch = "wasm32")]
+        {
+            delegated_sign_callback(move |signing_input| {
+                let key_id = key_id.clone();
+                async move {
+                    let value = JsFuture::from(js_delegated_sign(key_id, signing_input))
+                        .await
+                        .map_err(|value| {
+                            pubky::Error::Authentication(pubky::errors::AuthError::Validation(
+                                js_error_message(value),
+                            ))
+                        })?;
+                    Ok(Uint8Array::new(&value).to_vec())
+                }
+            })
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = key_id;
+            return delegated_sign_callback(|_| async {
+                Err(pubky::Error::Authentication(
+                    pubky::errors::AuthError::Validation(
+                        "Delegated grant signing is only available in wasm browser builds.".into(),
+                    ),
+                ))
+            });
+        }
+    }
+
+    /// Delete a browser-held delegated grant key. Missing keys are ignored by IndexedDB.
+    pub(crate) async fn delete_key(key_id: String) -> JsResult<()> {
+        JsFuture::from(js_delete_delegated_key(key_id))
+            .await
+            .map_err(js_error)?;
+        Ok(())
     }
 }
 
@@ -310,13 +398,12 @@ fn js_error(value: JsValue) -> PubkyError {
 }
 
 fn js_error_message(value: JsValue) -> String {
-    let message = value
+    value
         .as_string()
         .or_else(|| {
             Reflect::get(&value, &JsValue::from_str("message"))
                 .ok()
                 .and_then(|value| value.as_string())
         })
-        .unwrap_or_else(|| "Delegated grant key operation failed.".to_string());
-    message
+        .unwrap_or_else(|| "Delegated grant key operation failed.".to_string())
 }

@@ -34,12 +34,12 @@ pub type BoxSignFuture = Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'static>
 pub type DelegatedSignFn = Arc<dyn Fn(String) -> BoxSignFuture + Send + Sync + 'static>;
 
 /// Internal signer used for grant Proof-of-Possession JWS values.
-/// Can be either a local keypair or a delegated signer with signing logic implemented outside the SDK, for example in a browser WebCrypto.
+/// Can be either a local keypair or a delegated signer with signing logic implemented outside the SDK, for example in a browser `WebCrypto`.
 #[derive(Clone)]
 pub(crate) enum GrantPopSigner {
     /// Keypair owned by the SDK
     Local(Keypair),
-    /// Delegated signer with signing logic implemented outside the SDK, for example in a browser WebCrypto.
+    /// Delegated signer with signing logic implemented outside the SDK, for example in a browser `WebCrypto`.
     Delegated(DelegatedGrantPopSigner),
 }
 
@@ -73,7 +73,7 @@ impl GrantPopSigner {
         }
     }
 
-    /// Signs the given claims as a JWS with the appropriate signing input format for PoP proofs, and returns the complete JWS string.
+    /// Signs the given claims as a JWS with the appropriate signing input format for `PoP` proofs, and returns the complete JWS string.
     pub(crate) async fn sign_jws<T: Serialize>(&self, typ: &str, claims: &T) -> Result<String> {
         let signing_input = jws_signing_input(typ, claims);
         match self {
@@ -102,10 +102,10 @@ impl GrantPopSigner {
     }
 }
 
-/// Externally held signer state for delegated grant PoP signing, containing the public key and an async signing callback, but not the secret key material.
+/// Externally held signer state for delegated grant `PoP` signing, containing the public key and an async signing callback, but not the secret key material.
 #[derive(Clone)]
 pub struct DelegatedGrantPopSigner {
-    /// IndexedDB key id for the non-extractable private CryptoKey.
+    /// `IndexedDB` key id for the non-extractable private `CryptoKey`.
     pub key_id: String,
     /// Public key bound by the grant `cnf` claim.
     pub public_key: PublicKey,
@@ -117,7 +117,7 @@ impl fmt::Debug for DelegatedGrantPopSigner {
         f.debug_struct("DelegatedGrantPopSigner")
             .field("key_id", &self.key_id)
             .field("public_key", &self.public_key)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

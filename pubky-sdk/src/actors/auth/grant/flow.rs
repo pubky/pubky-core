@@ -90,9 +90,9 @@ pub struct GrantAuthFlowState {
 pub struct DelegatedGrantAuthFlowState {
     /// Original grant authorization URL shown to the signer.
     pub authorization_url: String,
-    /// IndexedDB key id for the non-extractable private CryptoKey.
+    /// `IndexedDB` key id for the non-extractable private `CryptoKey`.
     pub key_id: String,
-    /// Public key for the delegated PoP signer bound by the deep link `cpk`.
+    /// Public key for the delegated `PoP` signer bound by the deep link `cpk`.
     pub client_pk: PublicKey,
 }
 
@@ -190,6 +190,11 @@ impl PubkyGrantAuthFlow {
     /// The returned state is only useful while the relay inbox still exists.
     /// It should be stored temporarily and deleted once the flow completes,
     /// expires, or is abandoned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on a delegated grant flow. Use `save_delegated` for
+    /// delegated flows.
     #[must_use]
     pub fn save_local(&self) -> GrantAuthFlowState {
         GrantAuthFlowState {
