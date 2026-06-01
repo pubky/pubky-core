@@ -309,7 +309,7 @@ impl Pubky {
     /// Accepts both legacy cookie session tokens from
     /// [`CookieSessionView::export_secret`](crate::CookieSessionView::export_secret)
     /// and grant session tokens from
-    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret).
+    /// [`GrantSessionView::export_local_secret`](crate::GrantSessionView::export_local_secret).
     /// Grant restore mints a fresh short-lived bearer; cookie restore revalidates
     /// the stored cookie secret.
     ///

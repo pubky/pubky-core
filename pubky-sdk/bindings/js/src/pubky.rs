@@ -260,11 +260,11 @@ impl Pubky {
 
     /// Restore a session from a previously exported token or snapshot, using this instance's client.
     ///
-    /// Accepts grant secret tokens from `session.exportSecret()` and legacy cookie
+    /// Accepts grant secret tokens from `session.exportLocalSecret()` and legacy cookie
     /// secret tokens. Also accepts legacy cookie metadata snapshots from `session.export()`.
     /// Grant restore mints a fresh short-lived bearer.
     ///
-    /// @param {string} exported A string produced by `session.exportSecret()` or legacy `session.export()`.
+    /// @param {string} exported A string produced by `session.exportLocalSecret()` or legacy `session.export()`.
     /// @returns {Promise<Session>}
     /// A rehydrated session bound to this SDK's HTTP client.
     ///

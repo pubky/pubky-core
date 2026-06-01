@@ -230,27 +230,25 @@ impl GrantCredential {
         self.state.lock().await.bearer.clone()
     }
 
-    /// Export the durable refresh material needed to restore this credential.
+    /// Export the portable local secret material needed to restore this credential.
     ///
-    /// The returned token intentionally does not include the current bearer.
-    /// Restoring uses the grant + `PoP` key to mint a fresh bearer instead.
-    /// Treat it as a bearer-equivalent secret until the grant expires or is
-    /// revoked.
-    pub async fn export_secret(&self) -> String {
+    /// Returns `None` for delegated/browser-held `PoP` signers because their
+    /// private key material is intentionally not extractable.
+    pub async fn export_local_secret(&self) -> Option<String> {
         let state = self.state.lock().await;
-        let Some(client_key_secret) = state.client_signer.local_secret() else {
-            return String::new();
-        };
-        StoredGrantCredential {
-            grant_jws: state.grant_jws.clone(),
-            client_key_secret,
-            homeserver_pk: state.homeserver_pk.clone(),
-        }
-        .encode()
+        let client_key_secret = state.client_signer.local_secret()?;
+        Some(
+            StoredGrantCredential {
+                grant_jws: state.grant_jws.clone(),
+                client_key_secret,
+                homeserver_pk: state.homeserver_pk.clone(),
+            }
+            .encode(),
+        )
     }
 
     /// Export non-secret delegated restore metadata for browser-held keys.
-    pub async fn export_delegated_state(&self) -> Option<DelegatedGrantCredentialState> {
+    pub async fn export_delegated_restore_state(&self) -> Option<DelegatedGrantCredentialState> {
         let state = self.state.lock().await;
         let signer = state.client_signer.delegated_state()?;
         Some(DelegatedGrantCredentialState {
@@ -452,8 +450,8 @@ impl PubkySession {
     ///
     /// This mints a fresh bearer from the token's grant and `PoP` key instead
     /// of replaying an old short-lived bearer. The token should come from
-    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret)
-    /// or [`GrantCredential::export_secret`].
+    /// [`GrantSessionView::export_local_secret`](crate::GrantSessionView::export_local_secret)
+    /// or [`GrantCredential::export_local_secret`].
     ///
     /// # Errors
     /// - See [`GrantCredential::import_secret`].
@@ -614,6 +612,24 @@ mod tests {
         assert!(error.contains("has expired"));
     }
 
+    #[tokio::test]
+    async fn export_local_secret_is_only_available_for_local_signers() {
+        let (stored, claims) = stored_credential(now_unix() + 3600);
+        let local_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
+        let delegated_signer = GrantPopSigner::delegated(
+            "delegated-test-key".into(),
+            claims.cnf.clone(),
+            test_delegated_signer(),
+        );
+
+        let local = test_credential(stored.clone(), claims.clone(), local_signer);
+        let delegated = test_credential(stored, claims, delegated_signer);
+
+        assert!(local.export_local_secret().await.is_some());
+        assert!(delegated.export_local_secret().await.is_none());
+        assert!(delegated.export_delegated_restore_state().await.is_some());
+    }
+
     #[test]
     fn restore_material_rejects_expired_grant() {
         let (stored, _claims) = stored_credential(now_unix().saturating_sub(1));
@@ -652,6 +668,33 @@ mod tests {
             homeserver_pk: homeserver_keypair.public_key(),
         };
         (stored, claims)
+    }
+
+    fn test_credential(
+        stored: StoredGrantCredential,
+        claims: GrantClaims,
+        client_signer: GrantPopSigner,
+    ) -> GrantCredential {
+        let now = now_unix();
+        GrantCredential::from_response(
+            GrantSessionResponse {
+                token: "test-bearer".into(),
+                session: GrantSessionInfo {
+                    homeserver: stored.homeserver_pk.clone(),
+                    pubky: claims.iss.clone(),
+                    client_id: claims.client_id.clone(),
+                    capabilities: claims.caps.clone(),
+                    grant_id: claims.jti.clone(),
+                    token_expires_at: now + 300,
+                    grant_expires_at: claims.exp,
+                    created_at: now,
+                },
+            },
+            stored.grant_jws,
+            claims,
+            client_signer,
+            stored.homeserver_pk,
+        )
     }
 
     fn test_delegated_signer() -> DelegatedSignFn {

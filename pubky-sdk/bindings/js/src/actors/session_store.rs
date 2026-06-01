@@ -256,21 +256,21 @@ impl BrowserSessionStore {
         let grant_id = session_info.grant_id.to_string();
         let public_key = session_info.pubky.z32();
 
-        let (storage_mode, credential) = if let Some(state) = grant.export_delegated_state().await {
-            (
-                MODE_DELEGATED.to_string(),
-                encode_delegated_grant_state(state)?,
-            )
-        } else {
-            let secret = grant.export_secret().await;
-            if secret.is_empty() {
-                return Err(PubkyError::new(
-                    PubkyErrorName::ClientStateError,
-                    "This grant session cannot export restorable local secret material.",
-                ));
-            }
-            (MODE_LOCAL_SECRET.to_string(), secret)
-        };
+        let (storage_mode, credential) =
+            if let Some(state) = grant.export_delegated_restore_state().await {
+                (
+                    MODE_DELEGATED.to_string(),
+                    encode_delegated_grant_state(state)?,
+                )
+            } else {
+                let secret = grant.export_local_secret().await.ok_or_else(|| {
+                    PubkyError::new(
+                        PubkyErrorName::ClientStateError,
+                        "This grant session cannot export restorable local secret material.",
+                    )
+                })?;
+                (MODE_LOCAL_SECRET.to_string(), secret)
+            };
 
         let record = StoredSessionRecord {
             version: STORE_VERSION.to_string(),

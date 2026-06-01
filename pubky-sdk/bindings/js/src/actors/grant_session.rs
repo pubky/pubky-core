@@ -81,22 +81,21 @@ impl GrantSession {
         Ok(())
     }
 
-    /// Export the durable refresh material needed to restore this grant session.
+    /// Export the portable local secret material needed to restore this grant session.
     ///
     /// Treat the returned string as bearer-equivalent secret material until the
     /// grant expires or is revoked.
     ///
     /// @returns {Promise<string>}
-    #[wasm_bindgen(js_name = "exportSecret")]
-    pub async fn export_secret(&self) -> JsResult<String> {
+    #[wasm_bindgen(js_name = "exportLocalSecret")]
+    pub async fn export_local_secret(&self) -> JsResult<String> {
         let grant = self.as_grant()?;
-        if grant.export_delegated_state().await.is_some() {
-            return Err(PubkyError::new(
+        grant.export_local_secret().await.ok_or_else(|| {
+            PubkyError::new(
                 PubkyErrorName::ClientStateError,
                 "Delegated grant sessions cannot export raw secret material. Use BrowserSessionStore.",
-            ));
-        }
-        Ok(grant.export_secret().await)
+            )
+        })
     }
 }
 

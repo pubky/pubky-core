@@ -70,7 +70,7 @@ impl Session {
     /// @returns {string}
     /// A base64 string to store (e.g. in `localStorage`).
     ///
-    /// @deprecated Prefer `exportSecret()` for grant sessions.
+    /// @deprecated Prefer `exportLocalSecret()` for grant sessions.
     #[wasm_bindgen]
     pub fn export(&self) -> String {
         self.0
@@ -79,21 +79,27 @@ impl Session {
             .export()
     }
 
-    /// Export the secret material needed to restore this session.
+    /// Export the local secret material needed to restore this session.
     ///
-    /// For grant sessions this exports the grant JWS and PoP client secret; restoring
-    /// mints a fresh bearer. For legacy cookie sessions this exports the cookie secret
-    /// when the SDK owns it.
+    /// For local grant sessions this exports the grant JWS and PoP client secret;
+    /// restoring mints a fresh bearer. For legacy cookie sessions this exports the
+    /// cookie secret when the SDK owns it. Delegated browser grant sessions cannot
+    /// export raw secret material; use `BrowserSessionStore`.
     ///
     /// Treat the returned string as a bearer-equivalent secret until the grant or
     /// cookie session expires or is revoked.
     ///
     /// @returns {Promise<string>}
     /// A secret token that can be passed to `pubky.restoreSession()`.
-    #[wasm_bindgen(js_name = "exportSecret")]
-    pub async fn export_secret(&self) -> JsResult<String> {
+    #[wasm_bindgen(js_name = "exportLocalSecret")]
+    pub async fn export_local_secret(&self) -> JsResult<String> {
         if let Some(grant) = self.0.as_grant() {
-            return Ok(grant.export_secret().await);
+            return grant.export_local_secret().await.ok_or_else(|| {
+                PubkyError::new(
+                    PubkyErrorName::ClientStateError,
+                    "Delegated grant sessions cannot export raw secret material. Use BrowserSessionStore.",
+                )
+            });
         }
 
         if let Some(cookie) = self.0.as_cookie() {
