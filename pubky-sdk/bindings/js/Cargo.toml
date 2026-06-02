@@ -58,7 +58,7 @@ url.workspace = true
 reqwest = { workspace = true, features = [
     "stream",
 ] }
-wasm-streams = "0.5"
+wasm-streams = "0.6"
 base64 = "0.22"
 
 [dev-dependencies]
