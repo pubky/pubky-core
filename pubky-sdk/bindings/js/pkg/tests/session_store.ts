@@ -34,6 +34,9 @@ type _StoreAvailable = Assert<
 type _StoreList = Assert<
   IsExact<ReturnType<Store["list"]>, Promise<StoredSessionInfo[]>>
 >;
+type _StoreClearAll = Assert<
+  IsExact<ReturnType<Store["clearAll"]>, Promise<void>>
+>;
 type _StoreRestore = Assert<
   IsExact<ReturnType<Store["restore"]>, Promise<Session>>
 >;
@@ -314,6 +317,103 @@ test("BrowserSessionStore: stores and restores multiple accounts", async (t) => 
 
   t.equal(await restoredAlice.storage.getText(alicePath), "alice", "Alice restored session works");
   t.equal(await restoredBob.storage.getText(bobPath), "bob", "Bob restored session works");
+
+  t.end();
+});
+
+test("BrowserSessionStore: clear removes only keys referenced by stored sessions", async (t) => {
+  if (typeof indexedDB === "undefined") {
+    t.comment("browser-only delegated key cleanup test skipped without IndexedDB");
+    t.end();
+    return;
+  }
+
+  const sdk = Pubky.testnet();
+  const store = sdk.browserSessionStore;
+  await store.clear();
+  await assertBrowserDelegationAvailable(t);
+
+  const stored = await grantSessionFor(
+    sdk,
+    "session-store-clear-stored.test",
+    "/pub/stored-clear/:rw",
+  );
+  const storedInfo = await store.save(stored.session);
+
+  const ephemeral = await grantSessionFor(
+    sdk,
+    "session-store-clear-ephemeral.test",
+    "/pub/ephemeral-clear/:rw",
+  );
+  await store.clear();
+
+  try {
+    await store.restore(storedInfo.id);
+    t.fail("cleared stored session should not be restorable");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "cleared stored session is not restorable");
+  }
+
+  await ephemeral.session.storage.putText("/pub/ephemeral-clear/test.txt", "test");
+  let content = await ephemeral.session.storage.getText("/pub/ephemeral-clear/test.txt");
+  t.equal(content, "test", "session not saved to store is still functional after clear");
+
+  t.end();
+});
+
+test("BrowserSessionStore: clearAll removes sessions and all delegated keys", async (t) => {
+  if (typeof indexedDB === "undefined") {
+    t.comment("browser-only full auth store cleanup test skipped without IndexedDB");
+    t.end();
+    return;
+  }
+
+  const sdk = Pubky.testnet();
+  const store = sdk.browserSessionStore;
+  await store.clearAll();
+  await assertBrowserDelegationAvailable(t);
+
+  const stored = await grantSessionFor(
+    sdk,
+    "session-store-clear-all-stored.test",
+    "/pub/stored-clear-all/:rw",
+  );
+  const storedInfo = await store.save(stored.session);
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+
+  const flow = await sdk.startGrantAuthFlow(
+    "/pub/pending-clear-all/:rw",
+    AuthFlowKind.signin(),
+    { clientId: "session-store-clear-all-pending.test", relay: TESTNET_HTTP_RELAY },
+  );
+  const savedUrl = flow.authorizationUrl;
+  const delegatedState = flow.saveDelegated();
+  flow.free();
+
+  await store.clearAll();
+  t.deepEqual(await store.list(), [], "clearAll removes stored session records");
+
+  try {
+    await store.restore(storedInfo.id);
+    t.fail("clearAll should remove the stored delegated session record");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "stored delegated session is not restorable");
+  }
+
+  const resumed = sdk.resumeDelegatedGrantAuthFlow(delegatedState);
+  await signer.approveAuthRequest(savedUrl);
+  try {
+    await resumed.awaitApproval();
+    t.fail("clearAll should remove the pending delegated flow key");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "AuthenticationError", "pending delegated flow cannot sign without key");
+  }
 
   t.end();
 });

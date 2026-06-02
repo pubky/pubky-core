@@ -122,13 +122,48 @@ export async function __pubkySessionStoreDelete(id) {
   });
 }
 
-export async function __pubkySessionStoreClear() {
+export async function __pubkySessionStoreClear(delegatedKeyIds) {
   requireIndexedDb();
-  await withSessionStore("readwrite", (store, resolve, reject) => {
-    const request = store.clear();
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error("Clearing Pubky session store failed."));
-  });
+  const db = await openSessionStoreDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(
+        [PUBKY_SESSIONS_STORE_NAME, PUBKY_SESSIONS_DELEGATED_KEYS_STORE_NAME],
+        "readwrite",
+      );
+      const sessions = tx.objectStore(PUBKY_SESSIONS_STORE_NAME);
+      const keys = tx.objectStore(PUBKY_SESSIONS_DELEGATED_KEYS_STORE_NAME);
+      sessions.clear();
+      for (const keyId of new Set(delegatedKeyIds ?? [])) {
+        keys.delete(keyId);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Clearing Pubky session store failed."));
+      tx.onabort = () => reject(tx.error ?? new Error("Clearing Pubky session store aborted."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function __pubkySessionStoreClearAll() {
+  requireIndexedDb();
+  const db = await openSessionStoreDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(
+        [PUBKY_SESSIONS_STORE_NAME, PUBKY_SESSIONS_DELEGATED_KEYS_STORE_NAME],
+        "readwrite",
+      );
+      tx.objectStore(PUBKY_SESSIONS_STORE_NAME).clear();
+      tx.objectStore(PUBKY_SESSIONS_DELEGATED_KEYS_STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Clearing Pubky auth store failed."));
+      tx.onabort = () => reject(tx.error ?? new Error("Clearing Pubky auth store aborted."));
+    });
+  } finally {
+    db.close();
+  }
 }
 "#)]
 extern "C" {
@@ -148,7 +183,10 @@ extern "C" {
     fn js_store_delete(id: String) -> js_sys::Promise;
 
     #[wasm_bindgen(js_name = __pubkySessionStoreClear)]
-    fn js_store_clear() -> js_sys::Promise;
+    fn js_store_clear(delegated_key_ids: JsValue) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = __pubkySessionStoreClearAll)]
+    fn js_store_clear_all() -> js_sys::Promise;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -305,18 +343,9 @@ impl BrowserSessionStore {
     /// List all locally stored sessions for this origin.
     #[wasm_bindgen]
     pub async fn list(&self) -> JsResult<Vec<StoredSessionInfo>> {
-        let value = JsFuture::from(js_store_list()).await.map_err(store_error)?;
-        let records: Vec<StoredSessionRecord> =
-            serde_wasm_bindgen::from_value(value).map_err(|e| {
-                PubkyError::new(
-                    PubkyErrorName::ClientStateError,
-                    format!("Invalid stored session record: {e}"),
-                )
-            })?;
-        records
-            .into_iter()
-            .map(validate_record)
-            .collect::<JsResult<Vec<_>>>()
+        self.stored_records()
+            .await
+            .map(|records| records.into_iter().map(StoredSessionInfo).collect())
     }
 
     /// Restore a specific stored session by id.
@@ -365,11 +394,33 @@ impl BrowserSessionStore {
 
     /// Clear all local stored session records for this origin.
     ///
-    /// This removes session records. Delegated keys may remain if IndexedDB cleanup
-    /// fails midway; use `remove(id)` for precise delegated key deletion.
+    /// Delegated keys referenced by those stored session records are removed.
+    /// Delegated keys that only belong to pending grant flows are preserved.
     #[wasm_bindgen]
     pub async fn clear(&self) -> JsResult<()> {
-        JsFuture::from(js_store_clear())
+        let records = self.stored_records().await?;
+        let delegated_key_ids = delegated_key_ids_for_records(&records)?;
+        let delegated_key_ids = serde_wasm_bindgen::to_value(&delegated_key_ids).map_err(|e| {
+            PubkyError::new(
+                PubkyErrorName::InternalError,
+                format!("Failed to serialize delegated key ids: {e}"),
+            )
+        })?;
+        JsFuture::from(js_store_clear(delegated_key_ids))
+            .await
+            .map_err(store_error)?;
+        Ok(())
+    }
+
+    /// Clear all browser auth persistence owned by this SDK origin.
+    ///
+    /// This removes all stored session records and all browser-held delegated
+    /// grant keys, including keys for pending delegated grant flows. Saved
+    /// delegated flow state becomes unrestorable. This does not revoke remote
+    /// grants or immediately invalidate already-live in-memory sessions.
+    #[wasm_bindgen(js_name = "clearAll")]
+    pub async fn clear_all(&self) -> JsResult<()> {
+        JsFuture::from(js_store_clear_all())
             .await
             .map_err(store_error)?;
         Ok(())
@@ -377,6 +428,22 @@ impl BrowserSessionStore {
 }
 
 impl BrowserSessionStore {
+    async fn stored_records(&self) -> JsResult<Vec<StoredSessionRecord>> {
+        let value = JsFuture::from(js_store_list()).await.map_err(store_error)?;
+        let records: Vec<StoredSessionRecord> =
+            serde_wasm_bindgen::from_value(value).map_err(|e| {
+                PubkyError::new(
+                    PubkyErrorName::ClientStateError,
+                    format!("Invalid stored session record: {e}"),
+                )
+            })?;
+        records
+            .into_iter()
+            .map(validate_record)
+            .map(|info| info.map(|info| info.0))
+            .collect()
+    }
+
     async fn load_record(&self, id: String) -> JsResult<StoredSessionRecord> {
         let value = JsFuture::from(js_store_get(id.clone()))
             .await
@@ -395,6 +462,14 @@ impl BrowserSessionStore {
         })?;
         validate_record(record).map(|info| info.0)
     }
+}
+
+fn delegated_key_ids_for_records(records: &[StoredSessionRecord]) -> JsResult<Vec<String>> {
+    records
+        .iter()
+        .filter(|record| record.storage_mode == MODE_DELEGATED)
+        .map(|record| decode_delegated_grant_state(&record.credential).map(|state| state.key_id))
+        .collect()
 }
 
 fn validate_record(record: StoredSessionRecord) -> JsResult<StoredSessionInfo> {
