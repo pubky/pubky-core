@@ -57,9 +57,9 @@ use crate::PublicKey;
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::PubkyCookieAuthFlow;
 use crate::{
-    Capabilities, ClientId, EventCursor, EventStreamBuilder, GrantCredential, Pkdns,
-    PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
-    actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
+    Capabilities, ClientId, DelegatedGrantCredentialState, EventCursor, EventStreamBuilder,
+    GrantCredential, Pkdns, PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner,
+    PublicStorage, Result, actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -309,7 +309,7 @@ impl Pubky {
     /// Accepts both legacy cookie session tokens from
     /// [`CookieSessionView::export_secret`](crate::CookieSessionView::export_secret)
     /// and grant session tokens from
-    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret).
+    /// [`GrantSessionView::export_local_secret`](crate::GrantSessionView::export_local_secret).
     /// Grant restore mints a fresh short-lived bearer; cookie restore revalidates
     /// the stored cookie secret.
     ///
@@ -326,6 +326,28 @@ impl Pubky {
         }
 
         PubkySession::import_secret(token, Some(self.client.clone())).await
+    }
+
+    /// Restore an origin-bound delegated browser grant session.
+    ///
+    /// This uses non-secret metadata plus a browser-held non-extractable key.
+    /// It is not a portable restore mechanism.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Authentication`] when the metadata is
+    ///   malformed, expired, or does not match the delegated signer.
+    /// - Propagates transport/server errors while restoring the grant session.
+    #[doc(hidden)]
+    pub async fn restore_delegated_grant_session(
+        &self,
+        state: DelegatedGrantCredentialState,
+        sign: crate::DelegatedSignFn,
+    ) -> Result<PubkySession> {
+        let credential = GrantCredential::import_delegated_state(state, &self.client, sign).await?;
+        Ok(PubkySession::from_grant_credential(
+            self.client.clone(),
+            credential,
+        ))
     }
 
     /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].

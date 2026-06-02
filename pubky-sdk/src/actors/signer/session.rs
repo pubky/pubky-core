@@ -16,6 +16,7 @@ use crate::{
         cookie::CookieCredential,
         grant::constants::DEFAULT_GRANT_LIFETIME_SECS,
         grant::grant_exchange::{credential_from_grant_exchange, signup_account_from_grant},
+        grant::pop_signer::GrantPopSigner,
     },
     cross_log,
     util::check_http_status,
@@ -48,11 +49,12 @@ impl PubkySigner {
 
         let client_keypair = Keypair::random();
         let (grant_jws, grant_claims) = self.signup_grant(&client_keypair)?;
+        let client_signer = GrantPopSigner::local(client_keypair);
         signup_account_from_grant(
             &self.client,
             &grant_jws,
             &grant_claims,
-            &client_keypair,
+            &client_signer,
             homeserver,
             signup_token,
         )
@@ -107,11 +109,12 @@ impl PubkySigner {
         })?;
         let client_keypair = Keypair::random();
         let (grant_jws, grant_claims) = self.session_grant(client_id, &client_keypair);
+        let client_signer = GrantPopSigner::local(client_keypair);
         let credential = credential_from_grant_exchange(
             &self.client,
             grant_jws,
             grant_claims,
-            client_keypair,
+            client_signer,
             homeserver,
         )
         .await?;

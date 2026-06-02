@@ -46,5 +46,8 @@
   },
   "dependencies": {
     "fetch-cookie": "^3.0.1"
+  },
+  "overrides": {
+    "electron": "41.0.2"
   }
 }

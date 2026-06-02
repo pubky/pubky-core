@@ -272,6 +272,7 @@ impl AuthFlow {
 /// The kind of authentication flow to perform.
 /// This can either be a sign in or a sign up flow.
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct AuthFlowKind(pub(crate) pubky::AuthFlowKind);
 
 #[wasm_bindgen]

@@ -1,4 +1,4 @@
-use pubky::{GrantAuthFlowState, PubkyGrantAuthFlow};
+use pubky::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
 use pubky_common::{auth::jws::ClientId, capabilities::Capabilities};
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
@@ -9,14 +9,17 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::{auth_flow::AuthFlowKind, in_flight::InFlightGuard, session::Session};
+use super::{
+    auth_flow::AuthFlowKind, browser_grant_key_store::BrowserGrantKeyStore,
+    in_flight::InFlightGuard, session::Session,
+};
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
     wrappers::capabilities::validate_caps_for_start,
 };
 
 /// Options for starting a grant-backed pubkyauth flow.
-#[derive(Tsify, Serialize, Deserialize, Debug)]
+#[derive(Tsify, Serialize, Deserialize, Debug, Clone)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantAuthFlowOptions {
@@ -43,6 +46,18 @@ pub struct GrantAuthFlow {
 
 #[wasm_bindgen]
 impl GrantAuthFlow {
+    /// Whether delegated grant auth is available in the current JS runtime.
+    ///
+    /// This checks for a secure browser context with WebCrypto `crypto.subtle`
+    /// and IndexedDB. It is a coarse synchronous feature-detection helper only;
+    /// some runtimes expose those primitives without Ed25519 support. Delegated
+    /// start/resume/restore can still fail if Ed25519 is unsupported, storage
+    /// access is denied, or a saved key id no longer exists.
+    #[wasm_bindgen(js_name = "isDelegationAvailable", getter)]
+    pub fn is_delegation_available() -> bool {
+        BrowserGrantKeyStore::is_available()
+    }
+
     /// Start a grant-backed flow (standalone).
     /// Prefer `pubky.startGrantAuthFlow()` to reuse a facade client.
     ///
@@ -94,13 +109,58 @@ impl GrantAuthFlow {
         Ok(flow.into())
     }
 
+    /// Start a browser delegated grant-backed flow.
+    ///
+    /// The SDK creates a fresh non-extractable WebCrypto Ed25519 key in
+    /// IndexedDB and uses that key for grant Proof-of-Possession signing.
+    ///
+    /// Runtime: delegated grant keys require a secure browser context with
+    /// WebCrypto `crypto.subtle` and IndexedDB. Unsupported runtimes reject
+    /// with `ClientStateError`.
+    #[wasm_bindgen(js_name = "startDelegated")]
+    pub async fn start_delegated(
+        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        kind: AuthFlowKind,
+        options: GrantAuthFlowOptions,
+    ) -> JsResult<GrantAuthFlow> {
+        Self::start_delegated_with_client(capabilities, kind, options, None).await
+    }
+
+    pub(crate) async fn start_delegated_with_client(
+        capabilities: String,
+        kind: AuthFlowKind,
+        options: GrantAuthFlowOptions,
+        client: Option<pubky::PubkyHttpClient>,
+    ) -> JsResult<GrantAuthFlow> {
+        let normalized = validate_caps_for_start(capabilities.as_str())?;
+        let caps = Capabilities::try_from(normalized.as_str())?;
+        let client_id = ClientId::new(&options.client_id).map_err(|e| {
+            pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string()))
+        })?;
+        let (key_id, public_key) = BrowserGrantKeyStore::ensure_key(None).await?;
+        let sign = BrowserGrantKeyStore::signer(key_id.clone());
+
+        let mut builder = PubkyGrantAuthFlow::builder(&caps, kind.0, client_id)
+            .delegated_client_signer(key_id, public_key, sign);
+        if let Some(c) = client {
+            builder = builder.client(c);
+        }
+
+        if let Some(r) = options.relay {
+            builder = builder.relay(Url::parse(&r)?);
+        }
+
+        let flow = builder.start()?;
+        Ok(flow.into())
+    }
+
     /// Resume a previously saved pending grant auth flow (standalone).
     /// Prefer `pubky.resumeGrantAuthFlow()` to reuse a facade client.
     ///
     /// **Security:** `savedState` contains the relay secret and PoP client private key.
     /// Store it only temporarily and delete it once the flow completes or is abandoned.
     ///
-    /// @param {string} savedState A string produced by `grantFlow.save()`.
+    /// @param {string} savedState A string produced by `grantFlow.saveLocal()`.
     /// @returns {GrantAuthFlow} A flow reconnected to the original relay channel.
     #[wasm_bindgen(js_name = "resume")]
     pub fn resume(saved_state: String) -> JsResult<GrantAuthFlow> {
@@ -125,23 +185,77 @@ impl GrantAuthFlow {
         Ok(PubkyGrantAuthFlow::restore(state, client)?.into())
     }
 
+    /// Resume a previously saved pending delegated grant auth flow.
+    ///
+    /// Runtime: delegated grant keys require a secure browser context with
+    /// WebCrypto `crypto.subtle` and IndexedDB. The saved `keyId` must still
+    /// exist in IndexedDB for the same origin. Unsupported runtimes reject with
+    /// `ClientStateError`.
+    #[wasm_bindgen(js_name = "resumeDelegated")]
+    pub fn resume_delegated(saved_state: String) -> JsResult<GrantAuthFlow> {
+        Self::resume_delegated_with_client(saved_state, None)
+    }
+
+    pub(crate) fn resume_delegated_with_client(
+        saved_state: String,
+        client: Option<pubky::PubkyHttpClient>,
+    ) -> JsResult<GrantAuthFlow> {
+        let state: DelegatedGrantAuthFlowState =
+            serde_json::from_str(&saved_state).map_err(|e| {
+                PubkyError::new(
+                    PubkyErrorName::InvalidInput,
+                    format!("Invalid delegated grant auth flow state: {e}"),
+                )
+            })?;
+        let client = match client {
+            Some(c) => c,
+            None => pubky::PubkyHttpClient::new()?,
+        };
+        let sign = BrowserGrantKeyStore::signer(state.key_id.clone());
+        Ok(PubkyGrantAuthFlow::restore_delegated(state, client, sign)?.into())
+    }
+
     /// Return the authorization deep link (URL) to show as QR or open on the signer device.
     #[wasm_bindgen(js_name = "authorizationUrl", getter)]
     pub fn authorization_url(&self) -> String {
         self.authorization_url.clone()
     }
 
-    /// Save sensitive state required to resume this pending grant flow.
+    /// Save sensitive state required to resume this pending local grant flow.
     ///
     /// @returns {string} Opaque state for `GrantAuthFlow.resume()` or
     /// `pubky.resumeGrantAuthFlow()`.
-    #[wasm_bindgen]
-    pub fn save(&self) -> JsResult<String> {
+    #[wasm_bindgen(js_name = "saveLocal")]
+    pub fn save_local(&self) -> JsResult<String> {
         let flow = self.borrow_inner()?;
-        serde_json::to_string(&flow.save()).map_err(|e| {
+        let state = flow.save_local().ok_or_else(|| {
+            PubkyError::new(
+                PubkyErrorName::ClientStateError,
+                "Delegated grant auth flows cannot export raw secret state. Use saveDelegated().",
+            )
+        })?;
+        serde_json::to_string(&state).map_err(|e| {
             PubkyError::new(
                 PubkyErrorName::InternalError,
                 format!("Failed to serialize grant auth flow state: {e}"),
+            )
+        })
+    }
+
+    /// Save non-secret state required to resume this delegated pending grant flow.
+    #[wasm_bindgen(js_name = "saveDelegated")]
+    pub fn save_delegated(&self) -> JsResult<String> {
+        let flow = self.borrow_inner()?;
+        let state = flow.save_delegated().ok_or_else(|| {
+            PubkyError::new(
+                PubkyErrorName::ClientStateError,
+                "This grant auth flow is not delegated.",
+            )
+        })?;
+        serde_json::to_string(&state).map_err(|e| {
+            PubkyError::new(
+                PubkyErrorName::InternalError,
+                format!("Failed to serialize delegated grant auth flow state: {e}"),
             )
         })
     }

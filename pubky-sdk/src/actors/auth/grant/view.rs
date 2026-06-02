@@ -11,7 +11,7 @@ use pubky_common::auth::{
 };
 use reqwest::Method;
 
-use super::GrantCredential;
+use super::{DelegatedGrantCredentialState, GrantCredential};
 use crate::actors::session::core::PubkySession;
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
@@ -56,12 +56,20 @@ impl<'a> GrantSessionView<'a> {
         self.credential.state.lock().await.session.clone()
     }
 
-    /// Export the durable refresh material needed to restore this session.
+    /// Export the portable local secret material needed to restore this session.
     ///
     /// The returned token contains the grant JWS and `PoP` client secret. Treat
     /// it as a bearer-equivalent secret until the grant expires or is revoked.
-    pub async fn export_secret(&self) -> String {
-        self.credential.export_secret().await
+    /// Delegated/browser-held `PoP` keys return `None` because the private key
+    /// is intentionally not extractable.
+    pub async fn export_local_secret(&self) -> Option<String> {
+        self.credential.export_local_secret().await
+    }
+
+    /// Export non-secret delegated restore metadata, if this session uses a
+    /// browser-held delegated `PoP` key.
+    pub async fn export_delegated_restore_state(&self) -> Option<DelegatedGrantCredentialState> {
+        self.credential.export_delegated_restore_state().await
     }
 
     /// List all active grants for this user.
