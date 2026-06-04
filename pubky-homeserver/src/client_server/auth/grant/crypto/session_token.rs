@@ -1,6 +1,6 @@
 //! Session bearer token and its storage-side hash.
 //!
-//! The bearer is 32 random bytes from `OsRng`, base64url-encoded on the
+//! The bearer is 32 random bytes from `SysRng`, base64url-encoded on the
 //! wire (~43 chars). The homeserver persists only the SHA-256 hash, so a
 //! database leak cannot yield usable bearers.
 //!
@@ -9,7 +9,7 @@
 //! - [`SessionTokenHash`] — the 32-byte digest stored in `grant_sessions.token_hash`.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::{rngs::OsRng, TryRngCore};
+use rand::{rngs::SysRng, TryRng};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
@@ -33,12 +33,12 @@ const BEARER_WIRE_LEN: usize = 43;
 pub struct SessionBearer(String);
 
 impl SessionBearer {
-    /// Mint a new bearer: 32 random bytes from `OsRng`, base64url-encoded.
+    /// Mint a new bearer: 32 random bytes from `SysRng`, base64url-encoded.
     pub fn generate() -> Self {
         let mut bytes = [0u8; BEARER_RAW_BYTES];
-        OsRng
+        SysRng
             .try_fill_bytes(&mut bytes)
-            .expect("OsRng must not fail");
+            .expect("SysRng must not fail");
         Self(URL_SAFE_NO_PAD.encode(bytes))
     }
 

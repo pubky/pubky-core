@@ -37,25 +37,24 @@ opt-level = 'z'
 
 
 [workspace.dependencies]
-# Setting "default-features = false" because cargo doesn't allow member crates to override the root "default-features" flag, which if not set, is implied to be true.
-# Member crates that need "default-features = false" should leave it out of their dependency specification, as it's inherited from here.
-# Member crates that need "default-features = true" should add a "default" feature to the features list, which is equivalent.
-pkarr = { version = "6.0.1", default-features = false }
-mainline = { version = "6.2.0" }
+anyhow = "1"
+axum = "0.8"
+axum-server = "0.8"
+clap = "4"
+http-relay = "0.7"
+log = "0.4"
+mainline = { version = "6" }
+pkarr = { version = "6", default-features = false }
 pkarr-relay = { version = "0.12" }
-log = "0.4.30"
-url = "2.5.8"
-anyhow = "1.0.101"
-axum = "0.8.8"
-axum-server = "0.8.0"
-reqwest = { version = "0.13.4", default-features = false }
-tracing = "0.1.44"
-tracing-subscriber = "0.3.23"
-tokio = "1.52.3"
-tower-http = "0.6.11"
-thiserror = "2.0.18"
-clap = "4.6.0"
-http-relay = "0.7.0"
 rand = "0.10"
+reqwest = { version = "0.13", default-features = false }
+thiserror = "2"
+# pubky-testnet's docker-postgres feature uses tokio::sync::OnceCell::const_new,
+# which is generally available starting in Tokio 1.30.0 (released 2023-08-09).
+tokio = "1.30"
+tower-http = "0.6"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = "2"
 # Same version as used by reqwest version defined above
 wasm-streams = "0.5"

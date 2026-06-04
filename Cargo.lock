@@ -4148,7 +4148,7 @@ dependencies = [
  "prometheus",
  "pubky-common",
  "pubky_test_utils",
- "rand 0.9.4",
+ "rand 0.10.1",
  "reqwest 0.13.4",
  "sea-query",
  "sea-query-binder",
