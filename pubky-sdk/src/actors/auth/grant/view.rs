@@ -5,17 +5,11 @@
 //! The view borrows the session, so it cannot outlive it; this is what makes
 //! the grant-only API impossible to misuse against a cookie session.
 
-use pubky_common::auth::{
-    grant_session_responses::{GrantInfo, GrantSessionInfo},
-    jws::GrantId,
-};
-use reqwest::Method;
+use pubky_common::auth::{grant_session_responses::GrantSessionInfo, jws::GrantId};
 
 use super::GrantCredential;
 use crate::actors::session::core::PubkySession;
-use crate::actors::storage::resource::resolve_pubky;
-use crate::errors::{RequestError, Result};
-use crate::util::check_http_status;
+use crate::errors::Result;
 
 /// grant-only operations on a [`PubkySession`].
 #[derive(Debug)]
@@ -27,9 +21,9 @@ pub struct GrantSessionView<'a> {
 impl PubkySession {
     /// Returns a [`GrantSessionView`] if this session is grant-backed.
     ///
-    /// grant-only operations (`list_grants`, `revoke_grant`, `current_bearer`,
-    /// `force_refresh`, `grant_id`) live on the view. Cookie-backed sessions
-    /// return `None`.
+    /// grant-only operations (`session_info`, `export_secret`,
+    /// `current_bearer`, `force_refresh`, `grant_id`) live on the view.
+    /// Cookie-backed sessions return `None`.
     #[must_use]
     pub fn as_grant(&self) -> Option<GrantSessionView<'_>> {
         self.try_downcast_credential::<GrantCredential>()
@@ -62,68 +56,6 @@ impl<'a> GrantSessionView<'a> {
     /// it as a bearer-equivalent secret until the grant expires or is revoked.
     pub async fn export_secret(&self) -> String {
         self.credential.export_secret().await
-    }
-
-    /// List all active grants for this user.
-    ///
-    /// Calls `GET /auth/grant/sessions`. Requires the underlying session to
-    /// have the **root** capability — non-root sessions get `403 Forbidden`
-    /// from the homeserver.
-    ///
-    /// # Errors
-    /// - Propagates HTTP errors from the homeserver (`401`/`403` for invalid
-    ///   auth or missing root capability).
-    pub async fn list_grants(&self) -> Result<Vec<GrantInfo>> {
-        let (user, bearer) = {
-            let g = self.credential.state.lock().await;
-            (g.grant_claims.iss.clone(), g.bearer.clone())
-        };
-        let url = format!("pubky://{}/auth/grant/sessions", user.z32());
-        let resolved = resolve_pubky(&url)?;
-        let resp = self
-            .session
-            .client()
-            .cross_request(Method::GET, resolved)
-            .await?
-            .bearer_auth(&bearer)
-            .send()
-            .await?;
-        let resp = check_http_status(resp).await?;
-        let grants: Vec<GrantInfo> = resp.json().await.map_err(|e| RequestError::DecodeJson {
-            message: format!("decoding /auth/grant/sessions response: {e}"),
-        })?;
-        Ok(grants)
-    }
-
-    /// Revoke a specific grant by id, killing all of its sessions.
-    ///
-    /// Calls `DELETE /auth/grant/session/{gid}`. Requires the **root**
-    /// capability on this session.
-    ///
-    /// # Errors
-    /// - Propagates HTTP errors from the homeserver (`401`/`403` for invalid
-    ///   auth or missing root capability).
-    pub async fn revoke_grant(&self, grant_id: &GrantId) -> Result<()> {
-        let (user, bearer) = {
-            let g = self.credential.state.lock().await;
-            (g.grant_claims.iss.clone(), g.bearer.clone())
-        };
-        let url = format!(
-            "pubky://{}/auth/grant/session/{}",
-            user.z32(),
-            grant_id.as_str()
-        );
-        let resolved = resolve_pubky(&url)?;
-        let resp = self
-            .session
-            .client()
-            .cross_request(Method::DELETE, resolved)
-            .await?
-            .bearer_auth(&bearer)
-            .send()
-            .await?;
-        check_http_status(resp).await?;
-        Ok(())
     }
 
     /// Returns the current opaque bearer for this session.

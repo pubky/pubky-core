@@ -81,6 +81,7 @@ Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCe
 - `Pubky` - facade, always start here! Owns the transport and constructs actors.
 - `PubkySigner` - local key holder. Can `signup`, `signin`, approve QR auth, publish PKDNS.
 - `PubkySession` - authenticated “as me” handle. Exposes session-scoped storage.
+- `GrantManager` - account-level grant listing and revocation using an authenticated root session.
 - `PublicStorage` - unauthenticated reads of others’ public data.
 - `Pkdns` - resolve/publish `_pubky` records.
 

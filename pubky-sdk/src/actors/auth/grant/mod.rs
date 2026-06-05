@@ -10,8 +10,10 @@ pub(crate) mod constants;
 pub(crate) mod credential;
 pub(crate) mod flow;
 pub(crate) mod grant_exchange;
+pub mod manager;
 pub mod view;
 
 pub use credential::GrantCredential;
 pub use flow::{GrantAuthFlowState, PubkyGrantAuthFlow};
+pub use manager::GrantManager;
 pub use view::GrantSessionView;

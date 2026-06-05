@@ -45,7 +45,9 @@ pub use actors::SessionInfo;
 #[doc(inline)]
 pub use actors::deep_links;
 #[doc(inline)]
-pub use actors::{CookieCredential, CookieSessionView, GrantCredential, GrantSessionView};
+pub use actors::{
+    CookieCredential, CookieSessionView, GrantCredential, GrantManager, GrantSessionView,
+};
 #[doc(inline)]
 pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
 #[doc(inline)]
