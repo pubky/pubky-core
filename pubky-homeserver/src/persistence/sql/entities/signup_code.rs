@@ -5,6 +5,7 @@ use pubky_common::crypto::random_bytes;
 use pubky_common::crypto::PublicKey;
 use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sqlx::{postgres::PgRow, FromRow, Row};
 
 use crate::shared::user_quota::UserQuota;
@@ -18,7 +19,8 @@ pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 /// Repository that handles all the queries regarding the SignupCodeEntity.
 pub struct SignupCodeRepository;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SignupCodeListState {
     All,
     Used,
@@ -312,6 +314,25 @@ impl FromStr for SignupCode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s.to_string())
+    }
+}
+
+impl Serialize for SignupCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for SignupCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 

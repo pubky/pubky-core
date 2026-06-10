@@ -278,6 +278,33 @@ mod tests {
         assert_eq!(body["next_cursor"], serde_json::Value::Null);
     }
 
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_signup_tokens_query_params_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let response = server
+            .get("/generate_signup_token")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let token = response.text();
+
+        let response = server
+            .get("/signup_tokens?state=unused&limit=1")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token);
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+    }
+
     fn auth_header() -> String {
         // AppState is created with password "" in create_test_server
         let auth = base64::engine::general_purpose::STANDARD.encode("admin:");

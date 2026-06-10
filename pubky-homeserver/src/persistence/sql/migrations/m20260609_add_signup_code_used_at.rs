@@ -12,6 +12,11 @@ impl MigrationTrait for M20260609AddSignupCodeUsedAtMigration {
         sqlx::query("ALTER TABLE signup_codes ADD COLUMN IF NOT EXISTS used_at TIMESTAMP")
             .execute(&mut **tx)
             .await?;
+        sqlx::query(
+            "UPDATE signup_codes SET used_at = created_at WHERE used_by IS NOT NULL AND used_at IS NULL",
+        )
+        .execute(&mut **tx)
+        .await?;
         Ok(())
     }
 

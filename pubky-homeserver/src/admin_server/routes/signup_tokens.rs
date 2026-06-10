@@ -4,7 +4,7 @@ use crate::{
         SignupCode, SignupCodeEntity, SignupCodeListQuery, SignupCodeListState,
         SignupCodeRepository,
     },
-    shared::{HttpError, HttpResult},
+    shared::HttpResult,
 };
 use axum::{
     extract::{Query, State},
@@ -17,45 +17,23 @@ use sqlx::types::chrono::NaiveDateTime;
 #[derive(Deserialize)]
 pub(crate) struct SignupTokensQuery {
     limit: Option<u16>,
-    cursor: Option<String>,
-    state: Option<String>,
+    cursor: Option<SignupCode>,
+    state: Option<SignupCodeListState>,
 }
 
 impl SignupTokensQuery {
-    fn state(&self) -> HttpResult<SignupCodeListState> {
-        match self.state.as_deref().unwrap_or("all") {
-            "all" => Ok(SignupCodeListState::All),
-            "used" => Ok(SignupCodeListState::Used),
-            "unused" => Ok(SignupCodeListState::Unused),
-            _ => Err(HttpError::bad_request("Invalid state")),
-        }
-    }
-
-    fn cursor(&self) -> HttpResult<Option<SignupCode>> {
-        let Some(cursor) = self.cursor.as_deref() else {
-            return Ok(None);
-        };
-        if cursor.is_empty() {
-            return Ok(None);
-        }
-
-        SignupCode::new(cursor.to_string())
-            .map(Some)
-            .map_err(|_| HttpError::bad_request("Invalid cursor"))
-    }
-
-    fn list_query(&self) -> HttpResult<SignupCodeListQuery> {
-        Ok(SignupCodeListQuery {
-            state: self.state()?,
+    fn list_query(self) -> SignupCodeListQuery {
+        SignupCodeListQuery {
+            state: self.state.unwrap_or(SignupCodeListState::All),
             limit: self.limit,
-            cursor: self.cursor()?,
-        })
+            cursor: self.cursor,
+        }
     }
 }
 
 #[derive(Serialize)]
 pub(crate) struct SignupTokenItem {
-    token: String,
+    token: SignupCode,
     created_at: NaiveDateTime,
     used_at: Option<NaiveDateTime>,
     used_by: Option<String>,
@@ -64,7 +42,7 @@ pub(crate) struct SignupTokenItem {
 impl From<SignupCodeEntity> for SignupTokenItem {
     fn from(code: SignupCodeEntity) -> Self {
         Self {
-            token: code.id.to_string(),
+            token: code.id,
             created_at: code.created_at,
             used_at: code.used_at,
             used_by: code.used_by.map(|pubkey| pubkey.z32()),
@@ -75,7 +53,7 @@ impl From<SignupCodeEntity> for SignupTokenItem {
 #[derive(Serialize)]
 pub(crate) struct SignupTokensResponse {
     items: Vec<SignupTokenItem>,
-    next_cursor: Option<String>,
+    next_cursor: Option<SignupCode>,
 }
 
 /// List signup tokens with usage information.
@@ -84,14 +62,14 @@ pub async fn list_signup_tokens(
     Query(params): Query<SignupTokensQuery>,
 ) -> HttpResult<(StatusCode, Json<SignupTokensResponse>)> {
     let page =
-        SignupCodeRepository::list(params.list_query()?, &mut state.sql_db.pool().into()).await?;
+        SignupCodeRepository::list(params.list_query(), &mut state.sql_db.pool().into()).await?;
     let items = page.items.into_iter().map(SignupTokenItem::from).collect();
 
     Ok((
         StatusCode::OK,
         Json(SignupTokensResponse {
             items,
-            next_cursor: page.next_cursor.map(|cursor| cursor.to_string()),
+            next_cursor: page.next_cursor,
         }),
     ))
 }
