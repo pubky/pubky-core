@@ -3,17 +3,48 @@ use std::{fmt::Display, str::FromStr};
 use base32::{decode, encode, Alphabet};
 use pubky_common::crypto::random_bytes;
 use pubky_common::crypto::PublicKey;
-use sea_query::{Expr, Iden, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgRow, FromRow, Row};
 
-use crate::persistence::sql::UnifiedExecutor;
 use crate::shared::user_quota::UserQuota;
+use crate::{
+    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT},
+    persistence::sql::UnifiedExecutor,
+};
 
 pub const SIGNUP_CODE_TABLE: &str = "signup_codes";
 
 /// Repository that handles all the queries regarding the SignupCodeEntity.
 pub struct SignupCodeRepository;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignupCodeListState {
+    All,
+    Used,
+    Unused,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignupCodeListQuery {
+    pub state: SignupCodeListState,
+    pub limit: Option<u16>,
+    pub cursor: Option<SignupCode>,
+}
+
+impl SignupCodeListQuery {
+    fn effective_limit(&self) -> u16 {
+        self.limit
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SignupCodeListPage {
+    pub items: Vec<SignupCodeEntity>,
+    pub next_cursor: Option<SignupCode>,
+}
 
 impl SignupCodeRepository {
     /// Create a new signup code with the given limits for users who redeem it.
@@ -74,6 +105,7 @@ impl SignupCodeRepository {
             .columns([
                 SignupCodeIden::Id,
                 SignupCodeIden::CreatedAt,
+                SignupCodeIden::UsedAt,
                 SignupCodeIden::UsedBy,
                 SignupCodeIden::QuotaStorageMb,
                 SignupCodeIden::QuotaRateRead,
@@ -88,6 +120,65 @@ impl SignupCodeRepository {
         let con = executor.get_con().await?;
         let code: SignupCodeEntity = sqlx::query_as_with(&query, values).fetch_one(con).await?;
         Ok(code)
+    }
+
+    /// List signup codes in token order.
+    /// The executor can either be db.pool() or a transaction.
+    pub async fn list<'a>(
+        list_query: SignupCodeListQuery,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<SignupCodeListPage, sqlx::Error> {
+        let mut statement = Query::select()
+            .from(SIGNUP_CODE_TABLE)
+            .columns([
+                SignupCodeIden::Id,
+                SignupCodeIden::CreatedAt,
+                SignupCodeIden::UsedAt,
+                SignupCodeIden::UsedBy,
+                SignupCodeIden::QuotaStorageMb,
+                SignupCodeIden::QuotaRateRead,
+                SignupCodeIden::QuotaRateWrite,
+                SignupCodeIden::QuotaRateReadBurst,
+                SignupCodeIden::QuotaRateWriteBurst,
+                SignupCodeIden::AllowedWritePaths,
+            ])
+            .order_by(SignupCodeIden::Id, Order::Asc)
+            .to_owned();
+
+        statement = match list_query.state {
+            SignupCodeListState::All => statement,
+            SignupCodeListState::Used => statement
+                .and_where(Expr::col(SignupCodeIden::UsedBy).is_not_null())
+                .to_owned(),
+            SignupCodeListState::Unused => statement
+                .and_where(Expr::col(SignupCodeIden::UsedBy).is_null())
+                .to_owned(),
+        };
+
+        if let Some(cursor) = &list_query.cursor {
+            statement = statement
+                .and_where(Expr::col(SignupCodeIden::Id).gt(cursor.to_string()))
+                .to_owned();
+        }
+
+        let limit = list_query.effective_limit();
+        statement = statement.limit((limit as u64) + 1).to_owned();
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let mut codes: Vec<SignupCodeEntity> =
+            sqlx::query_as_with(&query, values).fetch_all(con).await?;
+        let next_cursor = if codes.len() > limit as usize {
+            codes.truncate(limit as usize);
+            codes.last().map(|code| code.id.clone())
+        } else {
+            None
+        };
+
+        Ok(SignupCodeListPage {
+            items: codes,
+            next_cursor,
+        })
     }
 
     /// Get overview statistics for signup codes.
@@ -133,10 +224,13 @@ impl SignupCodeRepository {
     ) -> Result<SignupCodeEntity, sqlx::Error> {
         let statement = Query::update()
             .table(SIGNUP_CODE_TABLE)
-            .values(vec![(
-                SignupCodeIden::UsedBy,
-                SimpleExpr::Value(used_by.z32().into()),
-            )])
+            .values(vec![
+                (
+                    SignupCodeIden::UsedBy,
+                    SimpleExpr::Value(used_by.z32().into()),
+                ),
+                (SignupCodeIden::UsedAt, Expr::current_timestamp().into()),
+            ])
             .and_where(Expr::col(SignupCodeIden::Id).eq(id.to_string()))
             .and_where(Expr::col(SignupCodeIden::UsedBy).is_null())
             .returning_all()
@@ -156,6 +250,7 @@ impl SignupCodeRepository {
 pub enum SignupCodeIden {
     Id,
     CreatedAt,
+    UsedAt,
     UsedBy,
     QuotaStorageMb,
     QuotaRateRead,
@@ -231,6 +326,7 @@ pub struct SignupCodeOverview {
 pub struct SignupCodeEntity {
     pub id: SignupCode,
     pub created_at: sqlx::types::chrono::NaiveDateTime,
+    pub used_at: Option<sqlx::types::chrono::NaiveDateTime>,
     pub used_by: Option<PublicKey>,
     /// Per-user storage quota in MB. `None` = Default (resolved from system config at enforcement time).
     pub quota_storage_mb: Option<i32>,
@@ -271,6 +367,8 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
         })?;
         let created_at: sqlx::types::chrono::NaiveDateTime =
             row.try_get(SignupCodeIden::CreatedAt.to_string().as_str())?;
+        let used_at: Option<sqlx::types::chrono::NaiveDateTime> =
+            row.try_get(SignupCodeIden::UsedAt.to_string().as_str())?;
         let used_by_raw: Option<String> =
             row.try_get(SignupCodeIden::UsedBy.to_string().as_str())?;
         let used_by = used_by_raw
@@ -295,6 +393,7 @@ impl FromRow<'_, PgRow> for SignupCodeEntity {
         Ok(SignupCodeEntity {
             id,
             created_at,
+            used_at,
             used_by,
             quota_storage_mb,
             quota_rate_read,
@@ -313,6 +412,13 @@ mod tests {
 
     use super::*;
 
+    async fn current_db_timestamp(db: &SqlDb) -> sqlx::types::chrono::NaiveDateTime {
+        sqlx::query_scalar("SELECT CURRENT_TIMESTAMP::timestamp")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_get_signup_code() {
@@ -328,6 +434,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(code.id, signup_code_id);
+        assert_eq!(code.used_at, None);
         assert_eq!(code.used_by, None);
         // All-default quota: all fields should be Default
         assert_eq!(code.quota(), UserQuota::default());
@@ -337,6 +444,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(code.id, signup_code_id);
+        assert_eq!(code.used_at, None);
         assert_eq!(code.used_by, None);
         assert_eq!(code.quota(), UserQuota::default());
     }
@@ -385,14 +493,27 @@ mod tests {
 
         let user_pubkey = Keypair::random().public_key();
 
-        SignupCodeRepository::mark_as_used(&signup_code_id, &user_pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        let before = current_db_timestamp(&db).await;
+        let marked_code = SignupCodeRepository::mark_as_used(
+            &signup_code_id,
+            &user_pubkey,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let after = current_db_timestamp(&db).await;
+        let used_at = marked_code.used_at.expect("used_at should be set");
+        assert!(
+            used_at >= before && used_at <= after,
+            "used_at {used_at} should be between DB timestamps {before} and {after}"
+        );
+
         let updated_code = SignupCodeRepository::get(&signup_code_id, &mut db.pool().into())
             .await
             .unwrap();
         assert_eq!(updated_code.id, signup_code_id);
         assert_eq!(updated_code.used_by, Some(user_pubkey));
+        assert_eq!(updated_code.used_at, Some(used_at));
     }
 
     #[tokio::test]
