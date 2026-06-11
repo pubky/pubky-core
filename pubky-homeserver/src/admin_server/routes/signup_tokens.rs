@@ -1,3 +1,5 @@
+use std::num::NonZeroU16;
+
 use super::super::app_state::AppState;
 use crate::{
     persistence::sql::signup_code::{
@@ -16,7 +18,7 @@ use sqlx::types::chrono::NaiveDateTime;
 
 #[derive(Deserialize)]
 pub(crate) struct SignupTokensQuery {
-    limit: Option<u16>,
+    limit: Option<NonZeroU16>,
     cursor: Option<SignupCode>,
     state: Option<SignupCodeListState>,
 }
@@ -25,7 +27,7 @@ impl SignupTokensQuery {
     fn list_query(self) -> SignupCodeListQuery {
         SignupCodeListQuery {
             state: self.state.unwrap_or(SignupCodeListState::All),
-            limit: self.limit,
+            limit: self.limit.map(NonZeroU16::get),
             cursor: self.cursor,
         }
     }
@@ -256,6 +258,13 @@ mod tests {
 
         let response = server
             .get("/signup_tokens?cursor=invalid")
+            .add_header("X-Admin-Password", "test")
+            .expect_failure()
+            .await;
+        response.assert_status_bad_request();
+
+        let response = server
+            .get("/signup_tokens?limit=0")
             .add_header("X-Admin-Password", "test")
             .expect_failure()
             .await;
