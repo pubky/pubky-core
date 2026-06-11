@@ -1,7 +1,7 @@
 [package]
 name = "pubky-homeserver"
 description = "Pubky core's homeserver."
-version = "0.9.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -23,19 +23,19 @@ axum-extra = { version = "0.10", features = [
     "typed-header",
     "async-read-body",
 ] }
-base32 = "0.5"
-base64 = "0.22"
-bytes = "1"
+base32.workspace = true
+base64.workspace = true
+bytes.workspace = true
 clap = { workspace = true, features = ["derive"] }
 flume = "0.11"
 futures-lite = "2"
-futures-util = "0.3"
+futures-util.workspace = true
 hex = "0.4"
-httpdate = "1"
+httpdate.workspace = true
 pkarr = { workspace = true, features = ["default", "dht", "tls"] }
-pubky-common = { path = "../pubky-common", version = "0.9" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+pubky-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio = { workspace = true, features = ["full"] }
 toml = "0.8"
 tower-cookies = "0.11"
@@ -46,10 +46,10 @@ url = { workspace = true, features = ["serde"] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
 tower = "0.5"
 thiserror.workspace = true
-dirs = "6"
+dirs.workspace = true
 hostname-validator = "1"
 axum-test = "17"
-tempfile = "3"
+tempfile.workspace = true
 dyn-clone = "1"
 reqwest = { workspace = true, features = [
     "rustls",
@@ -79,11 +79,11 @@ sqlx = { version = "0.8", features = [
     "json",
 ] }
 dashmap = "6"
-async-trait = "0.1"
+async-trait.workspace = true
 async-dropper = { version = "0.3", features = ["tokio", "simple"] }
 async-stream = "0.3"
 uuid = { version = "1", features = ["v4"] }
-pubky_test_utils = { path = "../test_utils/pubky_test", version = "0.1" }
+pubky_test_utils.workspace = true
 opentelemetry = "0.29"
 opentelemetry_sdk = { version = "0.29", features = ["rt-tokio", "metrics"] }
 opentelemetry-prometheus = "0.29"

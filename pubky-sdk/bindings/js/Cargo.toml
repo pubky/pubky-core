@@ -1,6 +1,6 @@
 [package]
 name = "pubky-wasm"
-version = "0.9.0"
+version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 description = "Pubky-Core Client WASM bindings"
@@ -25,21 +25,23 @@ name = "bundle_npm"
 path = "scripts/bundle_npm.rs"
 
 [dependencies]
-wasm-bindgen = "0.2"
+base64.workspace = true
 console_log = { version = "1", features = ["color"] }
+futures-util.workspace = true
+js-sys.workspace = true
 log.workspace = true
-js-sys = "0.3"
-wasm-bindgen-futures = "0.4"
-futures-util = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde-wasm-bindgen = "0.6"
-tsify = "0.5"
-pubky = { path = "../../../pubky-sdk", default-features = false, features = [
-    "json",
-] , version = "0.9" }
-pubky-common = { path = "../../../pubky-common", version = "0.9" }
 pkarr = { workspace = true, default-features = false }
+pubky = { workspace = true, features = [ "json" ] }
+pubky-common.workspace = true
+reqwest = { workspace = true, features = [ "stream" ] }
+serde.workspace = true
+serde-wasm-bindgen = "0.6"
+serde_json.workspace = true
+tsify = "0.5"
+url.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures.workspace = true
+wasm-streams.workspace = true
 # ReadableStream is not available in early 0.3.x web-sys releases.
 web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
@@ -51,12 +53,6 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }
-url.workspace = true
-reqwest = { workspace = true, features = [
-    "stream",
-] }
-wasm-streams.workspace = true
-base64 = "0.22"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
