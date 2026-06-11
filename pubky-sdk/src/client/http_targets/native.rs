@@ -37,42 +37,42 @@ impl TransportResolver {
         }
     }
 
-    /// Look up the transport for `pk`, resolving via PKARR on cache miss.
-    pub(crate) async fn resolve(&self, pk: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
-        if let Some(t) = self.cached(pk) {
+    /// Look up the transport for `qname`, resolving via PKARR on cache miss.
+    pub(crate) async fn resolve(&self, qname: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
+        if let Some(t) = self.cached(qname) {
             return t;
         }
-        self.resolve_and_cache(pk, pkarr).await
+        self.resolve_and_cache(qname, pkarr).await
     }
 
     /// Fast path: return a cached, non-expired transport decision.
-    fn cached(&self, pk: &str) -> Option<ResolvedTransport> {
+    fn cached(&self, qname: &str) -> Option<ResolvedTransport> {
         let cache = self.cache.read().unwrap_or_else(PoisonError::into_inner);
         cache
-            .get(pk)
+            .get(qname)
             .filter(|(ts, _)| ts.elapsed() < TRANSPORT_CACHE_TTL)
             .map(|(_, t)| t.clone())
     }
 
-    /// Slow path: acquire a per-key guard, double-check the cache, resolve,
+    /// Slow path: acquire a per-qname guard, double-check the cache, resolve,
     /// and store the result.
-    async fn resolve_and_cache(&self, pk: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
+    async fn resolve_and_cache(&self, qname: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
         let guard = {
             let mut guards = self.guards.lock().unwrap_or_else(PoisonError::into_inner);
-            Arc::clone(guards.entry(pk.to_string()).or_default())
+            Arc::clone(guards.entry(qname.to_string()).or_default())
         };
         let _lock = guard.lock().await;
 
         // Another task may have resolved while we waited for the guard.
-        if let Some(t) = self.cached(pk) {
+        if let Some(t) = self.cached(qname) {
             return t;
         }
 
-        let t = Self::resolve_from_pkarr(pkarr, pk).await;
+        let t = Self::resolve_from_pkarr(pkarr, qname).await;
         self.cache
             .write()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(pk.to_string(), (Instant::now(), t.clone()));
+            .insert(qname.to_string(), (Instant::now(), t.clone()));
         t
     }
 
@@ -157,7 +157,7 @@ impl PubkyHttpClient {
     /// - When both a direct (IP:PORT) and an ICANN (domain) endpoint exist, TCP-probing
     ///   the direct endpoint and falling back to ICANN if unreachable.
     ///
-    /// Transport decisions are cached per public key with a short TTL.
+    /// Transport decisions are cached per host with a short TTL.
     ///
     /// Returns a [`Result`] containing the prepared `RequestBuilder`, or a URL/transport
     /// parsing error if the supplied `url` is invalid.
@@ -169,7 +169,11 @@ impl PubkyHttpClient {
         let Some(pk) = self.prepare_request(&mut url).await? else {
             return Ok(self.request(method, &url));
         };
-        let transport = self.transport.resolve(&pk, &self.pkarr).await;
+        // Resolve the transport with the full host: for `_pubky.<pk>` hosts the
+        // endpoints live under that qname, not the bare key apex. `pk` is only
+        // the `pubky-host` header value.
+        let qname = url.host_str().unwrap_or(&pk).to_string();
+        let transport = self.transport.resolve(&qname, &self.pkarr).await;
         self.build_pubky_request(method, &url, &pk, &transport)
     }
 
@@ -371,6 +375,59 @@ mod tests {
         if let ResolvedTransport::Icann { domain, .. } = t {
             assert_eq!(domain, "example.com");
         }
+    }
+
+    /// Regression test: requests to `https://_pubky.<user>/...` must apply the
+    /// ICANN fallback. The user's endpoints are published under the
+    /// `_pubky.<user>` qname (an alias to the homeserver key), so the
+    /// transport must be resolved with the full host, not the bare key.
+    #[tokio::test]
+    async fn cross_request_pubky_host_falls_back_to_icann_when_direct_unreachable() {
+        // Homeserver apex: unreachable direct endpoint + reachable ICANN domain.
+        let homeserver = Keypair::random();
+        let mut direct = SVCB::new(1, ".".try_into().unwrap());
+        direct.set_port(6287);
+        let icann = SVCB::new(10, "example.com".try_into().unwrap());
+        let homeserver_packet = SignedPacket::builder()
+            .https(".".try_into().unwrap(), direct, 3600)
+            .https(".".try_into().unwrap(), icann, 3600)
+            .address(".".try_into().unwrap(), "192.0.2.1".parse().unwrap(), 3600)
+            .sign(&homeserver)
+            .unwrap();
+
+        // User `_pubky` record aliasing to the homeserver key, mirroring
+        // `Pkdns::build_homeserver_packet`.
+        let user = Keypair::random();
+        let homeserver_z32 = homeserver.public_key().to_string();
+        let alias = SVCB::new(0, homeserver_z32.as_str().try_into().unwrap());
+        let user_packet = SignedPacket::builder()
+            .https("_pubky".try_into().unwrap(), alias, 3600)
+            .sign(&user)
+            .unwrap();
+
+        let mut builder = PubkyHttpClient::builder();
+        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        let client = builder.build().unwrap();
+        let cache = client.pkarr.cache().unwrap();
+        cache.put(&homeserver.public_key().into(), &homeserver_packet);
+        cache.put(&user.public_key().into(), &user_packet);
+
+        let user_z32 = user.public_key().to_string();
+        let url = Url::parse(&format!("https://_pubky.{user_z32}/session")).unwrap();
+        let req = client
+            .cross_request(Method::POST, url)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            req.url().host_str(),
+            Some("example.com"),
+            "expected ICANN fallback for _pubky host, got {}",
+            req.url()
+        );
+        assert_eq!(req.headers().get("pubky-host").unwrap(), &user_z32);
     }
 
     #[tokio::test]
