@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root, user_quota,
+    generate_signup_token, info, root, signup_tokens, user_quota,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -28,6 +28,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
                 .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
+        .route("/signup_tokens", get(signup_tokens::list_signup_tokens))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
@@ -239,15 +240,69 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_generate_signup_token_success() {
+    async fn test_list_signup_tokens_fail() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
+
+        let response = server.get("/signup_tokens").expect_failure().await;
+        response.assert_status_unauthorized();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_create_and_list_signup_token_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
         let response = server
             .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
+        let token = response.text();
+
+        let response = server
+            .get("/signup_tokens")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
         response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token);
+        assert!(items[0]["created_at"].as_str().is_some());
+        assert_eq!(items[0]["used_at"], serde_json::Value::Null);
+        assert_eq!(items[0]["used_by"], serde_json::Value::Null);
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_signup_tokens_query_params_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let response = server
+            .get("/generate_signup_token")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        let token = response.text();
+
+        let response = server
+            .get("/signup_tokens?state=unused&limit=1")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token);
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
     }
 
     fn auth_header() -> String {
