@@ -147,6 +147,9 @@ Path rules:
 
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
+- A storage path cannot be both an exact file and an implicit folder prefix. For example: 
+  - if `/pub/app/foo` exists, writing `/pub/app/foo/bar.json` returns `409 Conflict`. 
+  - if descendants under `/pub/app/foo/` exist, writing `/pub/app/foo` returns `409 Conflict`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
 
