@@ -146,6 +146,7 @@ mod tests {
         shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;
+    use std::time::Duration;
 
     use super::*;
 
@@ -348,6 +349,339 @@ mod tests {
                 .used_bytes,
             test_data2.len() as u64 + FILE_METADATA_SIZE
         );
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_rejects_descendant_write_without_target_artifacts() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path = EntryPath::new(
+            pubkey.clone(),
+            WebDavPath::new("/pub/app/foo/bar.json").unwrap(),
+        );
+
+        file_service
+            .write(&exact_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&descendant_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected descendant should not create metadata");
+        file_service
+            .get(&descendant_path)
+            .await
+            .expect_err("Rejected descendant should not create a blob");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_rejects_exact_write_without_target_artifacts() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        file_service
+            .write(&descendant_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&exact_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("exact-file write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&exact_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected exact file should not create metadata");
+        file_service
+            .get(&exact_path)
+            .await
+            .expect_err("Rejected exact file should not create a blob");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_rejects_descendant_while_exact_write_is_open() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        let mut exact_writer = file_service
+            .opendal
+            .operator
+            .writer(exact_path.as_str())
+            .await
+            .unwrap();
+        exact_writer.write(Buffer::from(vec![1; 10])).await.unwrap();
+
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected while exact file is reserved");
+        assert!(matches!(err, FileIoError::PathCollision));
+
+        exact_writer.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_rejects_exact_while_descendant_write_is_open() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        let mut descendant_writer = file_service
+            .opendal
+            .operator
+            .writer(descendant_path.as_str())
+            .await
+            .unwrap();
+        descendant_writer
+            .write(Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+
+        let err = file_service
+            .write(&exact_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("exact-file write should be rejected while descendant is reserved");
+        assert!(matches!(err, FileIoError::PathCollision));
+
+        descendant_writer.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_abort_releases_reservation() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        let mut exact_writer = file_service
+            .opendal
+            .operator
+            .writer(exact_path.as_str())
+            .await
+            .unwrap();
+        exact_writer.write(Buffer::from(vec![1; 10])).await.unwrap();
+
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected while exact file is reserved");
+        assert!(matches!(err, FileIoError::PathCollision));
+
+        exact_writer.abort().await.unwrap();
+        file_service
+            .write(&descendant_path, Buffer::from(vec![3; 10]))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_drop_releases_reservation() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        let mut exact_writer = file_service
+            .opendal
+            .operator
+            .writer(exact_path.as_str())
+            .await
+            .unwrap();
+        exact_writer.write(Buffer::from(vec![1; 10])).await.unwrap();
+
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected while exact file is reserved");
+        assert!(matches!(err, FileIoError::PathCollision));
+
+        drop(exact_writer);
+
+        for _ in 0..20 {
+            match file_service
+                .write(&descendant_path, Buffer::from(vec![3; 10]))
+                .await
+            {
+                Ok(_) => return,
+                Err(FileIoError::PathCollision) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(e) => panic!("unexpected write error after dropped writer: {e}"),
+            }
+        }
+
+        panic!("dropped writer should release reservation promptly");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_does_not_serialize_cross_user_writes() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey_a = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey_a, &mut db.pool().into())
+            .await
+            .unwrap();
+        let pubkey_b = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey_b, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let path_a = EntryPath::new(pubkey_a, WebDavPath::new("/pub/app/foo").unwrap());
+        let path_b = EntryPath::new(pubkey_b, WebDavPath::new("/pub/app/foo").unwrap());
+
+        let mut writer_a = file_service
+            .opendal
+            .operator
+            .writer(path_a.as_str())
+            .await
+            .unwrap();
+        writer_a.write(Buffer::from(vec![1; 10])).await.unwrap();
+
+        let concurrent_service = file_service.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let concurrent_write = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            concurrent_service
+                .write(&path_b, Buffer::from(vec![2; 10]))
+                .await
+        });
+        started_rx.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), concurrent_write)
+            .await
+            .expect("cross-user write should not wait for the first user's open writer")
+            .unwrap()
+            .unwrap();
+
+        writer_a.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_path_collision_same_user_burst_does_not_block_unrelated_user() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey_a = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey_a, &mut db.pool().into())
+            .await
+            .unwrap();
+        let pubkey_b = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey_b, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path_a =
+            EntryPath::new(pubkey_a.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path_a =
+            EntryPath::new(pubkey_a, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+        let path_b = EntryPath::new(pubkey_b, WebDavPath::new("/pub/app/foo").unwrap());
+
+        let mut writer_a = file_service
+            .opendal
+            .operator
+            .writer(exact_path_a.as_str())
+            .await
+            .unwrap();
+        writer_a.write(Buffer::from(vec![1; 10])).await.unwrap();
+
+        let mut conflicting_writes = Vec::new();
+        for _ in 0..20 {
+            let concurrent_service = file_service.clone();
+            let path = descendant_path_a.clone();
+            conflicting_writes.push(tokio::spawn(async move {
+                concurrent_service
+                    .write(&path, Buffer::from(vec![2; 10]))
+                    .await
+            }));
+        }
+
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            file_service.write(&path_b, Buffer::from(vec![3; 10])),
+        )
+        .await
+        .expect("unrelated user write should not wait behind same-user conflicts")
+        .unwrap();
+
+        for write in conflicting_writes {
+            let err = write
+                .await
+                .unwrap()
+                .expect_err("same-user conflicting write should fail fast");
+            assert!(matches!(err, FileIoError::PathCollision));
+        }
+
+        writer_a.abort().await.unwrap();
     }
 
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.

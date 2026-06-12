@@ -4,8 +4,10 @@
 //! query/mutation methods:
 //! - [`user`]: User accounts keyed by Ed25519 public key, with quota tracking.
 //! - [`entry`]: File metadata (path, content hash, MIME type, timestamps).
+//! - [`path_write_reservation`]: In-flight app-facing write reservations.
 //! - [`signup_code`]: Token-gated registration codes.
 
 pub mod entry;
+pub mod path_write_reservation;
 pub mod signup_code;
 pub mod user;

@@ -326,7 +326,7 @@ test("list shallow under /pub/", async (t) => {
     put("/pub/example.com/c.txt" as Path),
     put("/pub/example.com/d.txt" as Path),
     put("/pub/example.con/d.txt" as Path),
-    put("/pub/example.con" as Path),
+    put("/pub/example.con-file" as Path),
     put("/pub/file" as Path),
     put("/pub/file2" as Path),
     put("/pub/z.com/a.txt" as Path),
@@ -347,7 +347,7 @@ test("list shallow under /pub/", async (t) => {
       [
         `pubky://${pubky}/pub/a.com/`,
         `pubky://${pubky}/pub/example.com/`,
-        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con-file`,
         `pubky://${pubky}/pub/example.con/`,
         `pubky://${pubky}/pub/file`,
         `pubky://${pubky}/pub/file2`,
@@ -364,7 +364,7 @@ test("list shallow under /pub/", async (t) => {
       [
         `pubky://${pubky}/pub/a.com/`,
         `pubky://${pubky}/pub/example.com/`,
-        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con-file`,
       ],
       "shallow forward list with limit",
     );
@@ -372,7 +372,7 @@ test("list shallow under /pub/", async (t) => {
   {
     const list = await session.storage.list(
       dirPath,
-      `${pubky}/pub/example.con`,
+      `${pubky}/pub/example.con-file`,
       false,
       undefined,
       true,
@@ -404,7 +404,7 @@ test("list shallow under /pub/", async (t) => {
         `pubky://${pubky}/pub/file2`,
         `pubky://${pubky}/pub/file`,
         `pubky://${pubky}/pub/example.con/`,
-        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con-file`,
         `pubky://${pubky}/pub/example.com/`,
         `pubky://${pubky}/pub/a.com/`,
       ],
@@ -419,7 +419,7 @@ test("list shallow under /pub/", async (t) => {
       [
         `pubky://${pubky}/pub/file`,
         `pubky://${pubky}/pub/example.con/`,
-        `pubky://${pubky}/pub/example.con`,
+        `pubky://${pubky}/pub/example.con-file`,
       ],
       "shallow reverse list with limit and cursor",
     );
