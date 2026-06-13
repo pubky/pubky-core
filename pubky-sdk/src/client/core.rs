@@ -216,8 +216,28 @@ impl PubkyHttpClientBuilder {
         #[cfg(target_arch = "wasm32")]
         let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
+        // ICANN domains use standard X.509 TLS. Pin bundled webpki roots with an explicit
+        // `ring` crypto provider instead of letting reqwest fall back to rustls-platform-verifier:
+        // the platform verifier panics on targets where it isn't initialised (e.g. Android/iOS
+        // without the native component), and relying on a process-default crypto provider is
+        // ambiguous when both `ring` and `aws-lc-rs` are in the dependency tree.
         #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
+        let icann_tls_config = {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .expect("ring provider supports the default protocol versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut icann_http_builder = reqwest::Client::builder()
+            .user_agent(user_agent.as_ref())
+            .use_preconfigured_tls(icann_tls_config);
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
