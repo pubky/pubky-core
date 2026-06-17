@@ -188,9 +188,12 @@ mod tests {
     use axum::http::Method;
     use axum_test::TestServer;
     use base64::Engine;
+    use pubky_common::crypto::Keypair;
 
     use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
+    use crate::persistence::sql::signup_code::{SignupCode, SignupCodeRepository};
+    use crate::shared::user_quota::UserQuota;
 
     use super::*;
 
@@ -284,13 +287,28 @@ mod tests {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        let response = server
-            .get("/generate_signup_token")
-            .add_header("X-Admin-Password", "test")
-            .expect_success()
-            .await;
-        let token = response.text();
+        let token1 = SignupCode::new("0000-0000-0001".to_string()).unwrap();
+        let token2 = SignupCode::new("0000-0000-0002".to_string()).unwrap();
+        let token3 = SignupCode::new("0000-0000-0003".to_string()).unwrap();
+        let token4 = SignupCode::new("0000-0000-0004".to_string()).unwrap();
 
+        for token in [&token1, &token2, &token3, &token4] {
+            SignupCodeRepository::create(
+                token,
+                &UserQuota::default(),
+                &mut context.sql_db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let used_by = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&token1, &used_by, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        // With three unused tokens, limit=1 proves the page size is applied and
+        // returns the last item in the page as the cursor.
         let response = server
             .get("/signup_tokens?state=unused&limit=1")
             .add_header("X-Admin-Password", "test")
@@ -301,7 +319,55 @@ mod tests {
         let body: serde_json::Value = response.json();
         let items = body["items"].as_array().unwrap();
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["token"], token);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(body["next_cursor"], token2.to_string());
+
+        // Increasing the limit changes the page size and advances the cursor.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=2")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(body["next_cursor"], token3.to_string());
+
+        // When the limit reaches all remaining unused tokens, there is no next page.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=3")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(items[2]["token"], token4.to_string());
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+
+        // The cursor starts after the token it names, while keeping the unused filter.
+        let response = server
+            .get(&format!(
+                "/signup_tokens?state=unused&limit=2&cursor={token2}"
+            ))
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token3.to_string());
+        assert_eq!(items[1]["token"], token4.to_string());
         assert_eq!(body["next_cursor"], serde_json::Value::Null);
     }
 
