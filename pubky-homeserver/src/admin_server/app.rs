@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::routes::{
     dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root, user_quota,
+    generate_signup_token, info, root, signup_tokens, user_quota,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -28,6 +28,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
                 .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
+        .route("/signup_tokens", get(signup_tokens::list_signup_tokens))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
@@ -187,9 +188,12 @@ mod tests {
     use axum::http::Method;
     use axum_test::TestServer;
     use base64::Engine;
+    use pubky_common::crypto::Keypair;
 
     use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
+    use crate::persistence::sql::signup_code::{SignupCode, SignupCodeRepository};
+    use crate::shared::user_quota::UserQuota;
 
     use super::*;
 
@@ -239,15 +243,132 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_generate_signup_token_success() {
+    async fn test_list_signup_tokens_fail() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
+
+        let response = server.get("/signup_tokens").expect_failure().await;
+        response.assert_status_unauthorized();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_create_and_list_signup_token_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
         let response = server
             .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
+        let token = response.text();
+
+        let response = server
+            .get("/signup_tokens")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
         response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token);
+        assert!(items[0]["created_at"].as_str().is_some());
+        assert_eq!(items[0]["used_at"], serde_json::Value::Null);
+        assert_eq!(items[0]["used_by"], serde_json::Value::Null);
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_signup_tokens_query_params_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let token1 = SignupCode::new("0000-0000-0001".to_string()).unwrap();
+        let token2 = SignupCode::new("0000-0000-0002".to_string()).unwrap();
+        let token3 = SignupCode::new("0000-0000-0003".to_string()).unwrap();
+        let token4 = SignupCode::new("0000-0000-0004".to_string()).unwrap();
+
+        for token in [&token1, &token2, &token3, &token4] {
+            SignupCodeRepository::create(
+                token,
+                &UserQuota::default(),
+                &mut context.sql_db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let used_by = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&token1, &used_by, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        // With three unused tokens, limit=1 proves the page size is applied and
+        // returns the last item in the page as the cursor.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=1")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(body["next_cursor"], token2.to_string());
+
+        // Increasing the limit changes the page size and advances the cursor.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=2")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(body["next_cursor"], token3.to_string());
+
+        // When the limit reaches all remaining unused tokens, there is no next page.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=3")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(items[2]["token"], token4.to_string());
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+
+        // The cursor starts after the token it names, while keeping the unused filter.
+        let response = server
+            .get(&format!(
+                "/signup_tokens?state=unused&limit=2&cursor={token2}"
+            ))
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token3.to_string());
+        assert_eq!(items[1]["token"], token4.to_string());
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
     }
 
     fn auth_header() -> String {
