@@ -8,9 +8,10 @@ use super::stats::ResourceStats;
 use crate::js_error::JsResult;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_PATH: &'static str = r#"export type Path = `/pub/${string}`;"#;
+const TS_PATH: &'static str =
+    r#"export type Path = `/pub/${string}` | `/priv/${string}`;"#;
 
-/// Read/write storage scoped to **your** session (absolute paths: `/pub/...`).
+/// Read/write storage scoped to **your** session (absolute paths: `/pub/...` or `/priv/...`).
 #[wasm_bindgen]
 pub struct SessionStorage(pub(crate) pubky::SessionStorage);
 

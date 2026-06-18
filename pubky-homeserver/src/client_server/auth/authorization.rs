@@ -18,16 +18,22 @@ use crate::client_server::middleware::pubky_host::PubkyHost;
 use crate::shared::webdav::WebDavPath;
 use crate::shared::HttpError;
 
+/// Storage roots a write may target.
+/// `/pub/` is public readable
+/// `/priv/` is private storage
+const WRITABLE_ROOTS: [&str; 2] = ["/pub/", "/priv/"];
+
 /// Authorize a write to `path` for `session` on tenant `pubky`.
 ///
-/// Returns `Ok(())` when the path is under `/pub/`, the session targets the
-/// same tenant, and the session holds a capability whose scope covers `path`
-/// with [`Action::Write`]. Returns a 403 `HttpError` otherwise.
+/// Returns `Ok(())` when the path is under one of [`WRITABLE_ROOTS`], the
+/// session targets the same tenant, and the session holds a capability whose
+/// scope covers `path` with [`Action::Write`]. Returns a 403 `HttpError`
+/// otherwise.
 ///
-/// The `/pub/` requirement is enforced here (not at the path extractor) so
-/// that violations produce a 403 with a meaningful message — the SDK contract
-/// expects `"Writing to directories other than '/pub/' is forbidden"` rather
-/// than axum's default 400 for a deserialization failure.
+/// The writable root requirement is enforced here (not at the path extractor)
+/// so that violations produce a 403 with a meaningful message — the SDK
+/// contract expects `"Writing to directories other than '/pub/' and '/priv/'
+/// is forbidden"` rather than axum's default 400 for a deserialization failure.
 pub fn has_write_permission(
     session: &AuthSession,
     pubky: &PubkyHost,
@@ -35,9 +41,9 @@ pub fn has_write_permission(
 ) -> Result<(), HttpError> {
     let path_str = path.as_str();
 
-    if !path_str.starts_with("/pub/") {
+    if !WRITABLE_ROOTS.iter().any(|root| path_str.starts_with(root)) {
         return Err(HttpError::forbidden_with_message(
-            "Writing to directories other than '/pub/' is forbidden",
+            "Writing to directories other than '/pub/' and '/priv/' is forbidden",
         ));
     }
 
@@ -183,14 +189,35 @@ mod tests {
     }
 
     #[test]
-    fn write_outside_pub_is_rejected() {
-        // SDK contract: writes to non-`/pub/` paths must return 403 with a
-        // message containing `"Writing to directories other than '/pub/'"`
-        // (asserted by `pubky-sdk/bindings/js/pkg/tests/storage.ts` →
-        // "forbidden: writing outside /pub returns 403"). The HTTP shape is
+    fn write_outside_writable_roots_is_rejected() {
+        // SDK contract: writes to roots other than `/pub/` and `/priv/` must
+        // return 403 with a message containing `"Writing to directories other
+        // than '/pub/' and '/priv/'"`. The HTTP shape is
         // covered end-to-end by that SDK test; here we just verify the
         // predicate rejects the path before any tenant/capability check.
         let (session, pubky) = session_with_caps(root_caps());
-        assert!(has_write_permission(&session, &pubky, &web_path("/priv/example.com/x")).is_err());
+        assert!(has_write_permission(&session, &pubky, &web_path("/foo/example.com/x")).is_err());
+    }
+
+    #[test]
+    fn root_capability_grants_access_to_any_priv_path() {
+        let (session, pubky) = session_with_caps(root_caps());
+        assert!(has_write_permission(&session, &pubky, &web_path("/priv/anything")).is_ok());
+    }
+
+    #[test]
+    fn priv_path_with_covering_cap_is_allowed() {
+        // A write cap scoped to `/priv/app/` authorizes writes beneath it,
+        // exactly as it does under `/pub/`.
+        let (session, pubky) = session_with_caps(scoped_caps("/priv/app/"));
+        assert!(has_write_permission(&session, &pubky, &web_path("/priv/app/x")).is_ok());
+    }
+
+    #[test]
+    fn priv_path_with_only_pub_caps_is_denied() {
+        // A `/pub/`-scoped cap does not cover a `/priv/` write. Uses a scoped
+        // cap rather than root, since a root `/` cap would cover `/priv/` too.
+        let (session, pubky) = session_with_caps(scoped_caps("/pub/app/"));
+        assert!(has_write_permission(&session, &pubky, &web_path("/priv/app/x")).is_err());
     }
 }
