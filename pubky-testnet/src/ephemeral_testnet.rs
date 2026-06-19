@@ -28,7 +28,7 @@ use crate::docker_postgres::DockerPostgres;
 /// ```
 ///
 /// # Configuration Defaults
-/// - [`EphemeralTestnet::builder().build()`] uses [`ConfigToml::minimal_test_config()`] (admin/metrics **disabled**)
+/// - `EphemeralTestnet::builder().build()` uses [`ConfigToml::minimal_test_config()`] (admin/metrics **disabled**)
 /// - Deprecated [`EphemeralTestnet::start()`] uses [`ConfigToml::default_test_config()`] (admin **enabled**)
 pub struct EphemeralTestnet {
     /// Inner flexible testnet.

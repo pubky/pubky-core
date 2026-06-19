@@ -19,11 +19,10 @@ enum PollError {
 
 /// An HTTP relay inbox channel for store-and-forward messaging.
 ///
-/// Unlike [`super::http_relay_link_channel::HttpRelayLinkChannel`] (synchronous
-/// producer/consumer pairing), the inbox channel persists messages server-side
-/// for up to 5 minutes. The consumer retrieves via long-poll GET, acknowledges
-/// via DELETE, and the producer can verify delivery via the `/ack` and `/await`
-/// sub-endpoints.
+/// Unlike `HttpRelayLinkChannel` (synchronous producer/consumer pairing), the
+/// inbox channel persists messages server-side for up to 5 minutes. The consumer
+/// retrieves via long-poll GET, acknowledges via DELETE, and the producer can
+/// verify delivery via the `/ack` and `/await` sub-endpoints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRelayInboxChannel {
     /// The base URL of the relay inbox endpoint.

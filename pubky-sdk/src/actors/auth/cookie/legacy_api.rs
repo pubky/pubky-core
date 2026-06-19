@@ -27,7 +27,7 @@ impl PubkySession {
 
     /// Restore a session from an `export()` string.
     ///
-    /// Delegates to [`super::secret::import_session`].
+    /// Delegates to `super::secret::import_session`.
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] if the export string is malformed.
@@ -38,7 +38,7 @@ impl PubkySession {
 
     /// Rehydrate a session from a compact secret token `<pubkey>:<cookie_secret>`.
     ///
-    /// Delegates to [`super::secret::import_session_secret`].
+    /// Delegates to `super::secret::import_session_secret`.
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] if the token is malformed.
@@ -49,7 +49,7 @@ impl PubkySession {
 
     /// Restore a session from a secret token stored in a file.
     ///
-    /// Delegates to [`super::secret::session_from_secret_file`].
+    /// Delegates to `super::secret::session_from_secret_file`.
     ///
     /// # Errors
     /// - Returns [`crate::errors::RequestError::Validation`] when the file extension is not `.sess`.

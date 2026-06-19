@@ -27,9 +27,9 @@ use crate::{PubkyHttpClient, Result, SessionStorage, cross_log};
 /// [`Self::as_cookie`].
 ///
 /// Credential-specific factory functions live alongside each auth flow:
-/// - Cookie: [`crate::actors::auth::cookie`] — `CookieCredential::from_auth_token`
+/// - Cookie: `crate::actors::auth::cookie` — `CookieCredential::from_auth_token`
 ///   and the `secret` module for rehydration helpers.
-/// - Grant: [`crate::actors::auth::grant::grant_exchange`] —
+/// - Grant: `crate::actors::auth::grant::grant_exchange` —
 ///   `credential_from_grant_exchange`.
 ///
 /// Thin delegations on `PubkySession` (`export`, `import`, `import_secret`,
@@ -46,8 +46,8 @@ pub struct PubkySession {
 
 impl PubkySession {
     /// Build a session from a fully-formed credential. Used by the grant-mode
-    /// constructors in [`crate::actors::auth::grant::grant_exchange`] and the
-    /// cookie constructors in [`crate::actors::auth::cookie`].
+    /// constructors in `crate::actors::auth::grant::grant_exchange` and the
+    /// cookie constructors in `crate::actors::auth::cookie`.
     pub(crate) fn from_credential(
         client: PubkyHttpClient,
         credential: Arc<dyn SessionCredential>,
