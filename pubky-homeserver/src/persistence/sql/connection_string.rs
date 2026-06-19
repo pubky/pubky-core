@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 /// A connection string for a  postgres database.
-/// See https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
+/// See <https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS>
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectionString(url::Url);
 
