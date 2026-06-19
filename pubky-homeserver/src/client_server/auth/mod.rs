@@ -7,7 +7,7 @@
 //! Shared types:
 //! - **session**: [`AuthSession`] enum bridging both auth methods
 //! - **middleware**: Authentication layer (Bearer/Cookie) and `AuthSession` extractor
-//! - **authorization**: [`has_write_permission`] predicate for write handlers
+//! - **authorization**: [`has_write_permission`] / [`has_read_permission`] predicates for handlers
 //! - **router**: Pre-configured axum routers for base and tenant routes
 //! - **state**: Auth-specific sub-state extracted via `FromRef`
 
@@ -21,7 +21,7 @@ mod signup_service;
 mod state;
 mod user_error_mapping;
 
-pub use authorization::has_write_permission;
+pub use authorization::{has_read_permission, has_write_permission};
 pub use middleware::authentication::AuthenticationLayer;
 
 pub use grant::service::GrantAuthService;

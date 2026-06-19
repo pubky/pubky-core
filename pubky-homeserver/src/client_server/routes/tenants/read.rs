@@ -1,8 +1,13 @@
 use crate::persistence::sql::entry::{EntryEntity, EntryRepository};
 use crate::shared::{HttpError, HttpResult};
 use crate::{
-    client_server::{middleware::pubky_host::PubkyHost, query_params::ListQueryParams, AppState},
-    shared::webdav::{EntryPath, WebDavPathPubAxum},
+    client_server::{
+        auth::{has_read_permission, AuthSession},
+        middleware::pubky_host::PubkyHost,
+        query_params::ListQueryParams,
+        AppState,
+    },
+    shared::webdav::{EntryPath, WebDavPathAxum},
 };
 use axum::{
     body::Body,
@@ -17,9 +22,12 @@ use std::time::SystemTime;
 
 pub async fn head(
     State(state): State<AppState>,
+    session: Option<AuthSession>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
+    has_read_permission(session.as_ref(), &pubky, &path.0)?;
+
     state
         .user_service
         .get_or_http_error(pubky.public_key(), false)
@@ -39,13 +47,15 @@ pub async fn head(
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
+    session: Option<AuthSession>,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathPubAxum>,
+    Path(path): Path<WebDavPathAxum>,
     params: ListQueryParams,
 ) -> HttpResult<impl IntoResponse> {
+    has_read_permission(session.as_ref(), &pubky, &path.0)?;
+
     let public_key = pubky.public_key().clone();
-    let dav_path = path.0;
-    let entry_path = EntryPath::new(public_key.clone(), dav_path.inner().clone());
+    let entry_path = EntryPath::new(public_key.clone(), path.inner().clone());
     if entry_path.path().is_directory() {
         return list(state, &entry_path, params).await;
     }
@@ -231,7 +241,7 @@ impl EntryEntity {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{header, StatusCode};
+    use axum::http::{header, Method, StatusCode};
     use axum::Router;
     use axum_test::TestServer;
     use pubky_common::{
@@ -438,5 +448,163 @@ mod tests {
             .add_header(header::IF_MODIFIED_SINCE, lm_v1)
             .await;
         r.assert_status(StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn pub_get_stays_anonymous_after_dual_root_switch() {
+        // Regression: switching the read extractor to the dual-root one must
+        // not break anonymous `/pub/` reads.
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        server
+            .put("/pub/foo.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .bytes(Vec::from("public").into())
+            .expect_success()
+            .await;
+
+        // No cookie → still 200.
+        server
+            .get("/pub/foo.txt")
+            .add_header("host", public_key.z32())
+            .expect_success()
+            .await;
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn priv_get_requires_authentication() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        // Owner writes a private file.
+        server
+            .put("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("top secret").into())
+            .expect_success()
+            .await;
+
+        // Anonymous read → 401.
+        server
+            .get("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+
+        // Owner read → 200 with the body.
+        let resp = server
+            .get("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .expect_success()
+            .await;
+        assert_eq!(resp.text(), "top secret");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn priv_get_is_not_an_existence_oracle() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        // One private file exists; another path is absent.
+        server
+            .put("/priv/exists.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("data").into())
+            .expect_success()
+            .await;
+
+        // Anonymous: existing and absent must return the SAME status (401), so
+        // the response cant be used to probe which private paths exist.
+        server
+            .get("/priv/exists.txt")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+        server
+            .get("/priv/absent.txt")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+
+        // Authorized: 404 for the absent file.
+        server
+            .get("/priv/absent.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .await
+            .assert_status(StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn priv_head_mirrors_get() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        server
+            .put("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("hello").into())
+            .expect_success()
+            .await;
+
+        // Anonymous HEAD → 401.
+        server
+            .method(Method::HEAD, "/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+
+        // Owner HEAD on the existing file → 200.
+        server
+            .method(Method::HEAD, "/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie.clone())
+            .await
+            .assert_status(StatusCode::OK);
+
+        // Owner HEAD on an absent file → 404.
+        server
+            .method(Method::HEAD, "/priv/absent.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .await
+            .assert_status(StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn priv_conditional_get_is_authorized_first() {
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        server
+            .put("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie.clone())
+            .bytes(Vec::from("v1").into())
+            .expect_success()
+            .await;
+
+        // Capture the real ETag as the owner.
+        let owned = server
+            .get("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .expect_success()
+            .await;
+        let etag = owned.headers().get(header::ETAG).unwrap().clone();
+
+        // Anonymous GET with the real ETag → still 401, not 304.
+        server
+            .get("/priv/secret.txt")
+            .add_header("host", public_key.z32())
+            .add_header(header::IF_NONE_MATCH, etag)
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
     }
 }

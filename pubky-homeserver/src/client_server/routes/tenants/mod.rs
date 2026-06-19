@@ -5,8 +5,9 @@
 //!
 //! Session management routes are provided by the auth module via
 //! [`crate::client_server::auth::tenant_router`].
-//! Write handlers call [`crate::client_server::auth::has_write_permission`]
-//! to enforce capability-based write access control.
+//! Write handlers call [`crate::client_server::auth::has_write_permission`] and
+//! read handlers call [`crate::client_server::auth::has_read_permission`] to
+//! enforce capability-based access control.
 
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
@@ -16,8 +17,9 @@ pub mod read;
 pub mod write;
 
 pub fn router() -> Router<AppState> {
-    // Data routes — public reads need no auth; write handlers gate on
-    // `has_write_permission` after extracting the session.
+    // Data routes — `/pub/` reads need no auth; `/priv/` reads gate on
+    // `has_read_permission` and writes gate on `has_write_permission`, each
+    // after extracting the session.
     Router::new()
         .route(
             "/{*path}",

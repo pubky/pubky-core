@@ -1,4 +1,4 @@
-//! Authorization checks for write requests.
+//! Authorization checks for storage requests.
 //!
 //! [`has_write_permission`] is a pure predicate — it answers "may this session
 //! write this path on this tenant?" without touching axum, request extensions,
@@ -18,10 +18,13 @@ use crate::client_server::middleware::pubky_host::PubkyHost;
 use crate::shared::webdav::WebDavPath;
 use crate::shared::HttpError;
 
+/// `/pub/` is public-readable storage, anonymous reads are allowed.
+const PUBLIC_ROOT: &str = "/pub/";
+/// `/priv/` is private storage, reads and writes require auth.
+const PRIVATE_ROOT: &str = "/priv/";
+
 /// Storage roots a write may target.
-/// `/pub/` is public readable
-/// `/priv/` is private storage
-const WRITABLE_ROOTS: [&str; 2] = ["/pub/", "/priv/"];
+const WRITABLE_ROOTS: [&str; 2] = [PUBLIC_ROOT, PRIVATE_ROOT];
 
 /// Authorize a write to `path` for `session` on tenant `pubky`.
 ///
@@ -67,10 +70,68 @@ pub fn has_write_permission(
     }
 }
 
+/// Authorize a read of `path` for an optional `session` on tenant `pubky`.
+///
+/// Read access has two tiers:
+/// - [`PUBLIC_ROOT`] (`/pub/`) is world-readable — returns `Ok(())` for any
+///   caller, authenticated or not.
+/// - [`PRIVATE_ROOT`] (`/priv/`) is private — requires a `session` whose user
+///   matches the tenant and that holds a capability whose scope covers `path`
+///   with [`Action::Read`].
+///
+/// Returns a 401 `HttpError` for an anonymous `/priv/` read (no session) and a
+/// 403 for a wrong-tenant or under-scoped one. Paths outside both roots get a
+/// 403, mirroring [`has_write_permission`].
+pub fn has_read_permission(
+    session: Option<&AuthSession>,
+    pubky: &PubkyHost,
+    path: &WebDavPath,
+) -> Result<(), HttpError> {
+    let path_str = path.as_str();
+
+    // `/pub/` is world-readable, anonymous reads are allowed.
+    if path_str.starts_with(PUBLIC_ROOT) {
+        return Ok(());
+    }
+
+    // Only `/priv/` is otherwise a valid read root.
+    if !path_str.starts_with(PRIVATE_ROOT) {
+        return Err(HttpError::forbidden_with_message(
+            "Reading from directories other than '/pub/' and '/priv/' is forbidden",
+        ));
+    }
+
+    // Authentication: a private read requires a session.
+    let session = session.ok_or_else(|| {
+        HttpError::unauthorized_with_message("Authentication required to read private storage")
+    })?;
+
+    if session.user_key() != pubky.public_key() {
+        return Err(HttpError::forbidden_with_message(
+            "Session user does not match target tenant",
+        ));
+    }
+
+    let granted = session
+        .capabilities()
+        .iter()
+        .any(|cap| cap.scope_covers_path(path_str) && cap.actions.contains(&Action::Read));
+
+    if granted {
+        Ok(())
+    } else {
+        Err(HttpError::forbidden_with_message(
+            "Session does not have read access to path",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::client_server::auth::grant::session::GrantSession;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
     use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
     use pubky_common::crypto::{Keypair, PublicKey};
@@ -219,5 +280,98 @@ mod tests {
         // cap rather than root, since a root `/` cap would cover `/priv/` too.
         let (session, pubky) = session_with_caps(scoped_caps("/pub/app/"));
         assert!(has_write_permission(&session, &pubky, &web_path("/priv/app/x")).is_err());
+    }
+
+    fn read_scoped_caps(scope: &str) -> Capabilities {
+        Capabilities::from(vec![Capability::read(scope)])
+    }
+
+    fn read_rejection_status(result: Result<(), HttpError>) -> StatusCode {
+        result
+            .expect_err("expected the read to be rejected")
+            .into_response()
+            .status()
+    }
+
+    #[test]
+    fn pub_read_is_allowed_anonymously() {
+        // no session required.
+        let pubky = PubkyHost(dummy_pk());
+        assert!(has_read_permission(None, &pubky, &web_path("/pub/anything")).is_ok());
+    }
+
+    #[test]
+    fn pub_read_is_allowed_with_session() {
+        let (session, pubky) = session_with_caps(root_caps());
+        assert!(has_read_permission(Some(&session), &pubky, &web_path("/pub/x")).is_ok());
+    }
+
+    #[test]
+    fn priv_read_without_session_is_unauthorized() {
+        // No session → 401.
+        let pubky = PubkyHost(dummy_pk());
+        let status = read_rejection_status(has_read_permission(None, &pubky, &web_path("/priv/x")));
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn priv_read_cross_tenant_is_forbidden() {
+        // Session owned by user A, target tenant is user B → 403.
+        let session = session_with_key(dummy_pk(), root_caps());
+        let pubky = PubkyHost(dummy_pk());
+        let status = read_rejection_status(has_read_permission(
+            Some(&session),
+            &pubky,
+            &web_path("/priv/x"),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn priv_read_with_only_write_cap_is_forbidden() {
+        // A write-only cap covering the path does not grant reads → 403.
+        let (session, pubky) = session_with_caps(scoped_caps("/priv/app/"));
+        let status = read_rejection_status(has_read_permission(
+            Some(&session),
+            &pubky,
+            &web_path("/priv/app/x"),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn priv_read_with_covering_read_cap_is_allowed() {
+        let (session, pubky) = session_with_caps(read_scoped_caps("/priv/app/"));
+        assert!(has_read_permission(Some(&session), &pubky, &web_path("/priv/app/x")).is_ok());
+    }
+
+    #[test]
+    fn priv_read_with_root_cap_is_allowed() {
+        let (session, pubky) = session_with_caps(root_caps());
+        assert!(has_read_permission(Some(&session), &pubky, &web_path("/priv/anything")).is_ok());
+    }
+
+    #[test]
+    fn priv_read_cap_does_not_cover_sibling() {
+        // A read cap scoped to `/priv/app/` must not cover `/priv/other/` → 403.
+        let (session, pubky) = session_with_caps(read_scoped_caps("/priv/app/"));
+        let status = read_rejection_status(has_read_permission(
+            Some(&session),
+            &pubky,
+            &web_path("/priv/other/x"),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn read_outside_writable_roots_is_forbidden() {
+        // Anything outside `/pub/` and `/priv/` → 403, mirroring writes.
+        let (session, pubky) = session_with_caps(root_caps());
+        let status = read_rejection_status(has_read_permission(
+            Some(&session),
+            &pubky,
+            &web_path("/foo/x"),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 }
