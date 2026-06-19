@@ -69,3 +69,32 @@ async fn unauthorized_put_delete() {
         .unwrap();
     assert_eq!(body, bytes::Bytes::from(vec![0, 1, 2, 3, 4]));
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn priv_writes_are_accepted() {
+    // `/priv/` writes are authorized exactly like `/pub/` writes
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let owner = pubky.signer(Keypair::random());
+    let owner_session = owner
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    let path = "/priv/foo.txt";
+
+    // Owner writes to /priv successfully
+    let resp = owner_session
+        .storage()
+        .put(path, vec![0, 1, 2, 3, 4])
+        .await
+        .unwrap();
+    assert!(resp.status().is_success());
+
+    // Owner deletes the /priv file successfully.
+    let resp = owner_session.storage().delete(path).await.unwrap();
+    assert!(resp.status().is_success());
+}

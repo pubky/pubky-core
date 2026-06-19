@@ -163,7 +163,7 @@ test("session: putBytes/getBytes/delete, public: getBytes", async (t) => {
   t.end();
 });
 
-test("forbidden: writing outside /pub returns 403", async (t) => {
+test("forbidden: writing outside /pub and /priv returns 403", async (t) => {
   const sdk = Pubky.testnet();
 
   const signer = sdk.signer(Keypair.random());
@@ -171,21 +171,43 @@ test("forbidden: writing outside /pub returns 403", async (t) => {
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   const session = await signer.signin("storage.test");
 
-  const forbiddenPath = "/priv/example.com/arbitrary";
+  const forbiddenPath = "/foo/example.com/arbitrary";
   try {
     await session.storage.putText(forbiddenPath as unknown as Path, "Hello");
-    t.fail("putText to /priv should fail with 403");
+    t.fail("putText to /foo should fail with 403");
   } catch (error) {
     assertPubkyError(t, error);
     t.equal(error.name, "RequestError", "mapped error name");
     t.equal(getStatusCode(error), 403, "status code 403");
     t.ok(
       String(error.message || "").includes(
-        "Writing to directories other than '/pub/'",
+        "Writing to directories other than '/pub/' and '/priv/'",
       ),
-      "error message mentions /pub restriction",
+      "error message mentions /pub and /priv restriction",
     );
   }
+
+  t.end();
+});
+
+test("session: putText/delete under /priv (write-only; reads not yet enabled)", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  // signin grants a root-capability session, which covers /priv/ writes.
+  const session = await signer.signin("storage.test");
+
+  const path: Path = "/priv/example.com/secret.txt";
+
+  // Write under /priv succeeds
+  await session.storage.putText(path, "top secret");
+  t.pass("putText under /priv succeeded");
+
+  // Deleting under /priv also goes through the write authorizer.
+  await session.storage.delete(path);
+  t.pass("delete under /priv succeeded");
 
   t.end();
 });
