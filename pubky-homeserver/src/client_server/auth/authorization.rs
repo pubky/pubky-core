@@ -24,7 +24,7 @@ const PUBLIC_ROOT: &str = "/pub/";
 const PRIVATE_ROOT: &str = "/priv/";
 
 /// Storage roots a write may target.
-const WRITABLE_ROOTS: [&str; 2] = [PUBLIC_ROOT, PRIVATE_ROOT];
+const STORAGE_ROOTS: [&str; 2] = [PUBLIC_ROOT, PRIVATE_ROOT];
 
 /// Authorize a write to `path` for `session` on tenant `pubky`.
 ///
