@@ -1,13 +1,18 @@
 //! Authorization checks for storage requests.
 //!
-//! [`has_write_permission`] is a pure predicate — it answers "may this session
-//! write this path on this tenant?" without touching axum, request extensions,
-//! or any framework concern. Authentication (does a session exist?) is the
-//! [`AuthenticationLayer`]'s job; this module only does authorization, so a
-//! failure here is always a 403, never a 401.
+//! [`has_write_permission`] and [`has_read_permission`] are pure predicates —
+//! they answer "may this session write/read this path on this tenant?" without
+//! touching axum, request extensions, or any framework concern.
 //!
-//! Handlers extract [`AuthSession`] and [`PubkyHost`] as normal arguments and
-//! call this function explicitly before performing the write.
+//! Writes always require a session, so the [`AuthSession`] extractor returns the
+//! 401 for "no session" and [`has_write_permission`] only does authorization (a
+//! failure is always a 403). Reads have two tiers — `/pub/` is world-readable
+//! while `/priv/` requires auth — so read handlers take `Option<AuthSession>`
+//! and [`has_read_permission`] decides authentication too: 401 for an anonymous
+//! `/priv/` read, 403 for a wrong-tenant or under-scoped one.
+//!
+//! Handlers extract the session and [`PubkyHost`] as normal arguments and call
+//! the relevant predicate explicitly before touching storage.
 //!
 //! [`AuthenticationLayer`]: super::AuthenticationLayer
 
@@ -50,24 +55,7 @@ pub fn has_write_permission(
         ));
     }
 
-    if session.user_key() != pubky.public_key() {
-        return Err(HttpError::forbidden_with_message(
-            "Session user does not match target tenant",
-        ));
-    }
-
-    let granted = session
-        .capabilities()
-        .iter()
-        .any(|cap| cap.scope_covers_path(path_str) && cap.actions.contains(&Action::Write));
-
-    if granted {
-        Ok(())
-    } else {
-        Err(HttpError::forbidden_with_message(
-            "Session does not have write access to path",
-        ))
-    }
+    session_has_action(session, pubky, path_str, Action::Write)
 }
 
 /// Authorize a read of `path` for an optional `session` on tenant `pubky`.
@@ -106,6 +94,17 @@ pub fn has_read_permission(
         HttpError::unauthorized_with_message("Authentication required to read private storage")
     })?;
 
+    session_has_action(session, pubky, path_str, Action::Read)
+}
+
+/// Whether `session` targets tenant `pubky` and holds a capability whose scope
+/// covers `path` with `action`.
+fn session_has_action(
+    session: &AuthSession,
+    pubky: &PubkyHost,
+    path: &str,
+    action: Action,
+) -> Result<(), HttpError> {
     if session.user_key() != pubky.public_key() {
         return Err(HttpError::forbidden_with_message(
             "Session user does not match target tenant",
@@ -115,15 +114,19 @@ pub fn has_read_permission(
     let granted = session
         .capabilities()
         .iter()
-        .any(|cap| cap.scope_covers_path(path_str) && cap.actions.contains(&Action::Read));
-
+        .any(|cap| cap.scope_covers_path(path) && cap.actions.contains(&action));
     if granted {
-        Ok(())
-    } else {
-        Err(HttpError::forbidden_with_message(
-            "Session does not have read access to path",
-        ))
+        return Ok(());
     }
+
+    let what = match action {
+        Action::Read => "read access",
+        Action::Write => "write access",
+        Action::Unknown(_) => "access",
+    };
+    Err(HttpError::forbidden_with_message(format!(
+        "Session does not have {what} to path"
+    )))
 }
 
 #[cfg(test)]
@@ -169,6 +172,17 @@ mod tests {
 
     fn read_only_caps() -> Capabilities {
         Capabilities::from(vec![Capability::read("/")])
+    }
+
+    fn read_scoped_caps(scope: &str) -> Capabilities {
+        Capabilities::from(vec![Capability::read(scope)])
+    }
+
+    fn read_rejection_status(result: Result<(), HttpError>) -> StatusCode {
+        result
+            .expect_err("expected the read to be rejected")
+            .into_response()
+            .status()
     }
 
     #[test]
@@ -280,17 +294,6 @@ mod tests {
         // cap rather than root, since a root `/` cap would cover `/priv/` too.
         let (session, pubky) = session_with_caps(scoped_caps("/pub/app/"));
         assert!(has_write_permission(&session, &pubky, &web_path("/priv/app/x")).is_err());
-    }
-
-    fn read_scoped_caps(scope: &str) -> Capabilities {
-        Capabilities::from(vec![Capability::read(scope)])
-    }
-
-    fn read_rejection_status(result: Result<(), HttpError>) -> StatusCode {
-        result
-            .expect_err("expected the read to be rejected")
-            .into_response()
-            .status()
     }
 
     #[test]
