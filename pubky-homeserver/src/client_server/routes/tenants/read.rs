@@ -103,7 +103,7 @@ pub async fn get(
     Ok(response)
 }
 
-pub async fn list(
+async fn list(
     state: AppState,
     entry_path: &EntryPath,
     params: ListQueryParams,
