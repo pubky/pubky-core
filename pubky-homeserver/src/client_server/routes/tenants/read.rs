@@ -607,4 +607,53 @@ mod tests {
             .await
             .assert_status(StatusCode::UNAUTHORIZED);
     }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn priv_directory_listing_requires_auth() {
+        // listing a `/priv/` directory is gated exactly like a file read.
+        // Anonymous callers can't enumerate private paths, the owner can.
+        let (_, _, server, public_key, cookie) = create_environment().await.unwrap();
+
+        // Owner writes two files under a private directory.
+        for name in ["a.txt", "b.txt"] {
+            server
+                .put(&format!("/priv/app/{name}"))
+                .add_header("host", public_key.z32())
+                .add_header(header::COOKIE, cookie.clone())
+                .bytes(Vec::from("x").into())
+                .expect_success()
+                .await;
+        }
+
+        // Anonymous listing of the private directory → 401 (no enumeration), and
+        // the same for a nonexistent directory.
+        server
+            .get("/priv/app/")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+        server
+            .get("/priv/nope/")
+            .add_header("host", public_key.z32())
+            .await
+            .assert_status(StatusCode::UNAUTHORIZED);
+
+        // Owner lists the directory → 200 with both entries.
+        let resp = server
+            .get("/priv/app/")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .expect_success()
+            .await;
+        let body = resp.text();
+        assert!(
+            body.contains("/priv/app/a.txt"),
+            "listing should include a.txt, got: {body}"
+        );
+        assert!(
+            body.contains("/priv/app/b.txt"),
+            "listing should include b.txt, got: {body}"
+        );
+    }
 }

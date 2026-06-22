@@ -374,4 +374,17 @@ mod tests {
         ));
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
+
+    #[test]
+    fn priv_read_cap_does_not_cover_parent_dir() {
+        // a read cap on `/priv/app/` must not authorize listing the
+        // parent `/priv/`
+        let (session, pubky) = session_with_caps(read_scoped_caps("/priv/app/"));
+        let status = read_rejection_status(has_read_permission(
+            Some(&session),
+            &pubky,
+            &web_path("/priv/"),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
 }
