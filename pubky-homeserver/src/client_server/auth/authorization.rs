@@ -28,7 +28,7 @@ const STORAGE_ROOTS: [&str; 2] = [PUBLIC_ROOT, PRIVATE_ROOT];
 
 /// Authorize a write to `path` for `session` on tenant `pubky`.
 ///
-/// Returns `Ok(())` when the path is under one of [`WRITABLE_ROOTS`], the
+/// Returns `Ok(())` when the path is under one of [`STORAGE_ROOTS`], the
 /// session targets the same tenant, and the session holds a capability whose
 /// scope covers `path` with [`Action::Write`]. Returns a 403 `HttpError`
 /// otherwise.
@@ -44,7 +44,7 @@ pub fn has_write_permission(
 ) -> Result<(), HttpError> {
     let path_str = path.as_str();
 
-    if !WRITABLE_ROOTS.iter().any(|root| path_str.starts_with(root)) {
+    if !STORAGE_ROOTS.iter().any(|root| path_str.starts_with(root)) {
         return Err(HttpError::forbidden_with_message(
             "Writing to directories other than '/pub/' and '/priv/' is forbidden",
         ));
