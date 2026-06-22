@@ -238,7 +238,14 @@ impl EntryRepository {
         } else {
             format!("{path_str}/")
         };
-        let ancestor_paths = Self::ancestor_file_paths(path_str);
+        let mut ancestor_paths = Self::ancestor_file_paths(path_str);
+        // If the path ends with a trailing slash (a directory-style path),
+        // also reject.
+        if let Some(without_trailing_slash) = path_str.strip_suffix('/') {
+            if !without_trailing_slash.is_empty() {
+                ancestor_paths.push(without_trailing_slash.to_string());
+            }
+        }
 
         // Reject both collision directions for the same user:
         // - existing descendants under `path/`
@@ -271,20 +278,20 @@ impl EntryRepository {
     }
 
     fn ancestor_file_paths(path: &str) -> Vec<String> {
-        let path = path.trim_end_matches('/');
-        if path.is_empty() || path == "/" {
+        let mut path = path.trim_end_matches('/');
+        if path.is_empty() {
             return Vec::new();
         }
 
-        path.char_indices()
-            .filter_map(|(idx, ch)| {
-                if ch == '/' && idx > 0 {
-                    Some(path[..idx].to_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
+        let mut paths = Vec::new();
+        while let Some((parent, _)) = path.rsplit_once('/') {
+            if parent.is_empty() {
+                break;
+            }
+            paths.push(parent.to_string());
+            path = parent;
+        }
+        paths
     }
 
     /// List shallow files + folders.
@@ -573,6 +580,26 @@ mod tests {
         create_entry_for_path(&db, user.id, "/test/sub1").await;
 
         let target = EntryPath::new(user_pubkey, WebDavPath::new("/test/sub1/1.txt").unwrap());
+        let has_collision =
+            EntryRepository::has_file_folder_collision(&target, &mut db.pool().into())
+                .await
+                .unwrap();
+
+        assert!(has_collision);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_file_folder_collision_when_writing_directory_over_existing_file() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+        create_entry_for_path(&db, user.id, "/test/sub1").await;
+
+        // Directory-style target (trailing slash) over an existing exact file.
+        let target = EntryPath::new(user_pubkey, WebDavPath::new("/test/sub1/").unwrap());
         let has_collision =
             EntryRepository::has_file_folder_collision(&target, &mut db.pool().into())
                 .await

@@ -73,6 +73,7 @@ impl<A: Access> LayeredAccess for PathCollisionAccessor<A> {
     }
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
+        self.check_no_path_collision(path).await?;
         self.inner.create_dir(path, args).await
     }
 
