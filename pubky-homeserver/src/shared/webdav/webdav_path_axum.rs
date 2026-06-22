@@ -9,9 +9,9 @@ use super::WebDavPath;
 /// When using `.route("/{*path}", your_handler)` in axum, the path is passed without the leading slash.
 /// This struct adds the leading slash back and therefore allows direct validation of the path.
 ///
-/// Unlike [`super::WebDavPathPubAxum`] this does **not** require the `/pub/` prefix — use it
-/// when the `/pub/` requirement is an authorization concern enforced separately (so violations
-/// can return 403 with a meaningful message instead of axum's default 400).
+/// This does **not** require any particular root prefix — use it when the storage-root
+/// (`/pub/`, `/priv/`) requirement is an authorization concern enforced separately (so
+/// violations can return 403 with a meaningful message instead of axum's default 400).
 ///
 /// Usage in handler:
 ///
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn accepts_non_pub_paths() {
-        // Unlike WebDavPathPubAxum, the /pub/ requirement does not apply here.
+        // The storage-root requirement does not apply here, it is enforced in authz.
         WebDavPathAxum::from_str("priv/file.txt").expect("Should be valid");
         WebDavPathAxum::from_str("pub/file.txt").expect("Should be valid");
     }

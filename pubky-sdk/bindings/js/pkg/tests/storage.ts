@@ -190,20 +190,28 @@ test("forbidden: writing outside /pub and /priv returns 403", async (t) => {
   t.end();
 });
 
-test("session: putText/delete under /priv (write-only; reads not yet enabled)", async (t) => {
+test("session: putText/getText/delete round-trip under /priv", async (t) => {
   const sdk = Pubky.testnet();
 
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-  // signin grants a root-capability session, which covers /priv/ writes.
+  // signin grants a root-capability session, which covers /priv/ reads + writes.
   const session = await signer.signin("storage.test");
 
   const path: Path = "/priv/example.com/secret.txt";
 
-  // Write under /priv succeeds
+  // Write under /priv succeeds.
   await session.storage.putText(path, "top secret");
   t.pass("putText under /priv succeeded");
+
+  // The owner reads their own /priv data back (authenticated read, #433).
+  const readBack = await session.storage.getText(path);
+  t.equal(
+    readBack,
+    "top secret",
+    "getText under /priv returns the written content",
+  );
 
   // Deleting under /priv also goes through the write authorizer.
   await session.storage.delete(path);
