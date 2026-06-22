@@ -779,6 +779,50 @@ paths:
         "422":
           description: Invalid quota format
 
+  /admin/signup_tokens:
+    get:
+      tags: [Admin]
+      summary: List signup tokens
+      description: |
+        Paginated list of signup tokens with usage information.
+        Supports filtering by state (`all`, `used`, `unused`).
+      operationId: listSignupTokens
+      servers:
+        - url: http://localhost:6288
+      security:
+        - adminPassword: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of tokens to return per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+        - name: cursor
+          in: query
+          description: Pagination cursor (token string from `next_cursor` of a previous response).
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: Filter by token state.
+          schema:
+            type: string
+            enum: [all, used, unused]
+            default: all
+      responses:
+        "200":
+          description: Paginated list of signup tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupTokensResponse"
+        "400":
+          description: Invalid query parameters (bad cursor format, unknown state, limit=0)
+        "401":
+          description: Missing or invalid admin password
+
   /admin/webdav/{entry_path}:
     delete:
       tags: [Admin]
@@ -1174,6 +1218,37 @@ components:
           type: string
           format: date-time
           description: ISO 8601 timestamp.
+
+    SignupTokensResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SignupTokenItem"
+        next_cursor:
+          type: ["string", "null"]
+          description: Cursor for the next page, or `null` if this is the last page.
+
+    SignupTokenItem:
+      type: object
+      required: [token, created_at, used_at, used_by]
+      properties:
+        token:
+          type: string
+          description: The signup token string.
+        created_at:
+          type: string
+          format: date-time
+          description: When the token was created.
+        used_at:
+          type: ["string", "null"]
+          format: date-time
+          description: When the token was used, or `null` if unused.
+        used_by:
+          type: ["string", "null"]
+          description: z-base-32 public key of the user who used the token, or `null` if unused.
 
     # ── Admin ───────────────────────────────────────────────────────────
 
