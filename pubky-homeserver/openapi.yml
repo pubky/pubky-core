@@ -59,10 +59,7 @@ tags:
   - name: Admin
     description: |
       Admin server endpoints (password-protected). These run on a **separate server**
-      (`localhost:6288` by default). Paths use an `/admin` prefix to avoid collisions
-      with client server paths in this spec (e.g. both servers have `GET /`).
-      The actual admin server paths omit this prefix
-      (e.g. `/admin/info` → `GET /info` on the admin port).
+      (`localhost:6288` by default).
 
 paths:
   # ──────────────────────────────────────────────────────────────────────
@@ -689,23 +686,7 @@ paths:
   # ──────────────────────────────────────────────────────────────────────
   # Admin Server
   # ──────────────────────────────────────────────────────────────────────
-  /admin:
-    get:
-      tags: [Admin]
-      summary: Admin server info
-      operationId: getAdminRoot
-      servers:
-        - url: http://localhost:6288
-      responses:
-        "200":
-          description: Admin server identification
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Homeserver - Admin Endpoint
-
-  /admin/info:
+  /info:
     get:
       tags: [Admin]
       summary: Server statistics
@@ -724,7 +705,7 @@ paths:
         "401":
           description: Missing or invalid admin password
 
-  /admin/generate_signup_token:
+  /generate_signup_token:
     get:
       tags: [Admin]
       summary: Generate signup token (default limits)
@@ -779,7 +760,7 @@ paths:
         "422":
           description: Invalid quota format
 
-  /admin/signup_tokens:
+  /signup_tokens:
     get:
       tags: [Admin]
       summary: List signup tokens
@@ -823,7 +804,7 @@ paths:
         "401":
           description: Missing or invalid admin password
 
-  /admin/webdav/{entry_path}:
+  /webdav/{entry_path}:
     delete:
       tags: [Admin]
       summary: Delete entry via admin
@@ -849,7 +830,7 @@ paths:
         "404":
           description: Entry not found
 
-  /admin/dav/{path}:
+  /dav/{path}:
     description: |
       Full WebDAV endpoint. In addition to GET/PUT/DELETE shown here, this route
       accepts any HTTP method (via `any()` handler) including PROPFIND, MKCOL, etc.
@@ -914,7 +895,7 @@ paths:
         "204":
           description: File deleted
 
-  /admin/users/{pubkey}/disable:
+  /users/{pubkey}/disable:
     post:
       tags: [Admin]
       summary: Disable user account
@@ -940,7 +921,7 @@ paths:
         "404":
           description: User not found
 
-  /admin/users/{pubkey}/enable:
+  /users/{pubkey}/enable:
     post:
       tags: [Admin]
       summary: Enable user account
@@ -966,7 +947,7 @@ paths:
         "404":
           description: User not found
 
-  /admin/users/{pubkey}/quota:
+  /users/{pubkey}/quota:
     get:
       tags: [Admin]
       summary: Get user quota
