@@ -28,10 +28,8 @@ base32.workspace = true
 base64.workspace = true
 bytes.workspace = true
 clap = { workspace = true, features = ["derive"] }
-flume = "0.11"
 futures-lite = "2"
 futures-util.workspace = true
-hex = "0.4"
 httpdate.workspace = true
 pkarr = { workspace = true, features = ["default", "dht", "tls"] }
 pubky-common.workspace = true
@@ -47,9 +45,8 @@ url = { workspace = true, features = ["serde"] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
 tower = "0.5"
 thiserror.workspace = true
-dirs.workspace = true
+dirs = "6"
 hostname-validator = "1"
-axum-test = "17"
 tempfile.workspace = true
 dyn-clone = "1"
 reqwest = { workspace = true, features = [
@@ -81,7 +78,6 @@ sqlx = { version = "0.8", features = [
 ] }
 dashmap = "6"
 async-trait.workspace = true
-async-dropper = { version = "0.3", features = ["tokio", "simple"] }
 async-stream = "0.3"
 uuid = { version = "1", features = ["v4"] }
 pubky_test_utils.workspace = true
@@ -95,8 +91,9 @@ sha2 = "0.10"
 rand.workspace = true
 
 [dev-dependencies]
-# The async_closure feature is not available in early 0.3.x releases.
-temp-env = { version = "0.3.6", features = ["async_closure"] }
+async-dropper = { version = "0.3", features = ["tokio", "simple"] }
+axum-test = "17"
+hex = "0.4"
 
 [features]
 default = ["storage-gcs"]
