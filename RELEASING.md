@@ -54,7 +54,7 @@ This triggers the release workflow. That's it -- CI handles the rest.
 
 When a `v*` tag is pushed, the [release workflow](.github/workflows/release.yml):
 
-1. **Validates** the tag is on `main`, is valid semver, and matches the version in `Cargo.toml`
+1. **Validates** the tag is valid semver, and matches the version in `Cargo.toml`
 2. **Builds artifacts** for all platforms (linux-arm64, linux-amd64, windows-amd64, osx-arm64, osx-amd64)
 3. **Creates a GitHub Release** with auto-generated release notes and attached artifacts
 4. **Publishes all crates to crates.io** via `cargo ws publish`
@@ -75,6 +75,41 @@ Follow [Semantic Versioning](https://semver.org/):
 - **Patch** (0.7.x): bug fixes, no API changes
 - **Minor** (0.x.0): new features, backwards-compatible
 - **Major** (x.0.0): breaking API changes
+
+## Hotfix Releases
+
+For urgent patches that need to ship without merging into `main` first (e.g. when `main` has unreleased breaking changes):
+
+### 1. Create a hotfix branch from the latest release tag
+
+```bash
+git checkout -b hot_fix_v0.8.1 v0.8.0
+```
+
+### 2. Apply the fix and bump versions
+
+Merge all fixes into the hotfix branch, then run the version bump script:
+
+```bash
+./.scripts/set-version.sh 0.8.1
+```
+
+### 3. Tag and push
+
+```bash
+git push origin hot_fix_v0.8.1
+git tag v0.8.1
+git push origin v0.8.1
+```
+
+### 4. Back-port to main
+
+After the release, cherry-pick or merge the fix into `main` so it isn't lost:
+
+```bash
+git checkout main
+git cherry-pick <commit-sha>
+```
 
 ## Troubleshooting
 
