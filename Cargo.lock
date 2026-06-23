@@ -4054,6 +4054,7 @@ dependencies = [
  "pubky-common",
  "pubky-testnet",
  "reqwest 0.13.4",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4062,6 +4063,7 @@ dependencies = [
  "url",
  "wasm-bindgen-futures",
  "web-time",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]

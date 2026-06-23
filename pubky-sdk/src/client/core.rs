@@ -216,8 +216,12 @@ impl PubkyHttpClientBuilder {
         #[cfg(target_arch = "wasm32")]
         let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
+        // The ICANN client validates TLS against the webpki/Mozilla root bundle WITHOUT
+        // certificate revocation checking (see `icann_tls_config`).
         #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
+        let mut icann_http_builder = reqwest::Client::builder()
+            .user_agent(user_agent.as_ref())
+            .use_preconfigured_tls(icann_tls_config());
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
@@ -240,6 +244,31 @@ impl PubkyHttpClientBuilder {
             testnet_host: self.testnet_host.clone(),
         })
     }
+}
+
+/// rustls config for the ICANN HTTP client: validate against the webpki/Mozilla root
+/// bundle WITHOUT certificate revocation checking.
+///
+/// reqwest's default rustls config uses rustls-platform-verifier, which on Android
+/// performs hard-fail revocation checking. With Let's Encrypt's newer sharded-CRL
+/// hierarchy this falsely rejects valid certificates on some devices ("invalid peer
+/// certificate: Revoked"), breaking the relay and ICANN homeserver fallback even though
+/// the cert is not actually revoked. Browsers soft-fail revocation; this matches that
+/// behavior. Only the ICANN client is affected — the homeserver raw-public-key client
+/// (`http`) keeps its pkarr-derived TLS unchanged.
+#[cfg(not(target_arch = "wasm32"))]
+fn icann_tls_config() -> rustls::ClientConfig {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let mut tls_config = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("aws-lc-rs provides safe default protocol versions")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    tls_config
 }
 
 /// Transport client for Pubky homeserver APIs and generic HTTP, with PKARR-aware
