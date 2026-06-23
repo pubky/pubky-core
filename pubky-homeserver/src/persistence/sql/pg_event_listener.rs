@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::constants::DEFAULT_MAX_LIST_LIMIT;
 use crate::persistence::files::events::{
-    EventCursor, EventRepository, EventsService, PG_NOTIFY_CHANNEL,
+    EventCursor, EventRepository, EventVisibility, EventsService, PG_NOTIFY_CHANNEL,
 };
 use crate::persistence::sql::UnifiedExecutor;
 
@@ -184,6 +184,7 @@ impl PgEventListener {
             let events = EventRepository::get_by_cursor(
                 Some(cursor),
                 Some(Self::BATCH_SIZE),
+                EventVisibility::All,
                 &mut UnifiedExecutor::from(pool),
             )
             .await?;

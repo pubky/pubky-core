@@ -1,5 +1,5 @@
 use crate::persistence::{
-    files::events::{EventCursor, EventEntity, EventRepository, EventType},
+    files::events::{EventCursor, EventEntity, EventRepository, EventType, EventVisibility},
     sql::UnifiedExecutor,
 };
 use crate::shared::webdav::EntryPath;
@@ -107,19 +107,19 @@ impl EventsService {
         EventRepository::parse_cursor(cursor, executor).await
     }
 
-    /// Get a list of events starting from a cursor position.
-    /// This is used by the `/events/` endpoint.
+    /// Get a list of public (`/pub/...`) events starting from a cursor position.
+    /// Private events are served only through the authenticated event stream.
     ///
     /// ## Parameters
     /// - `cursor`: Starting position (None = from beginning)
     /// - `limit`: Maximum number of events to return (None = default limit)
-    pub async fn get_by_cursor<'a>(
+    pub async fn get_public_by_cursor<'a>(
         &self,
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        EventRepository::get_by_cursor(cursor, limit, executor).await
+        EventRepository::get_by_cursor(cursor, limit, EventVisibility::Public, executor).await
     }
 
     /// Get events for multiple users with individual cursor positions.
@@ -189,7 +189,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_events_service_get_by_cursor() {
+    async fn test_events_service_get_public_by_cursor() {
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
 
@@ -198,12 +198,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Create multiple events
-        for i in 0..5 {
-            let path = EntryPath::new(
-                user_pubkey.clone(),
-                WebDavPath::new(&format!("/test{}.txt", i)).unwrap(),
-            );
+        // Interleave public and private events: ids 1=/pub/a, 2=/priv/x,
+        // 3=/pub/b, 4=/priv/y, 5=/pub/c.
+        let paths = ["/pub/a", "/priv/x", "/pub/b", "/priv/y", "/pub/c"];
+        for p in paths {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
             events_service
                 .create_event(
                     user.id,
@@ -217,15 +216,30 @@ mod tests {
                 .unwrap();
         }
 
-        // Get events from cursor
+        // From the beginning, only public events come back, in id order.
         let events = events_service
-            .get_by_cursor(Some(EventCursor::new(2)), Some(3), &mut db.pool().into())
+            .get_public_by_cursor(None, None, &mut db.pool().into())
             .await
             .unwrap();
+        let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(returned, vec!["/pub/a", "/pub/b", "/pub/c"]);
 
-        assert_eq!(events.len(), 3);
-        assert_eq!(events[0].id, 3);
-        assert_eq!(events[1].id, 4);
-        assert_eq!(events[2].id, 5);
+        // A limited page returns a FULL page of public events despite the
+        // interleaved private ones, and the next cursor resumes correctly.
+        let page = events_service
+            .get_public_by_cursor(None, Some(2), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(page.len(), 2);
+        assert_eq!(page[0].id, 1); // /pub/a
+        assert_eq!(page[1].id, 3); // /pub/b (skips /priv/x at id 2)
+
+        let next_cursor = page.last().unwrap().cursor();
+        let page = events_service
+            .get_public_by_cursor(Some(next_cursor), Some(2), &mut db.pool().into())
+            .await
+            .unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].id, 5); // /pub/c (skips /priv/y at id 4)
     }
 }

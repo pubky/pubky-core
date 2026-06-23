@@ -20,13 +20,9 @@ use pubky_common::capabilities::Action;
 
 use crate::client_server::auth::AuthSession;
 use crate::client_server::middleware::pubky_host::PubkyHost;
+use crate::constants::{PRIVATE_ROOT, PUBLIC_ROOT};
 use crate::shared::webdav::WebDavPath;
 use crate::shared::HttpError;
-
-/// `/pub/` is public-readable storage, anonymous reads are allowed.
-const PUBLIC_ROOT: &str = "/pub/";
-/// `/priv/` is private storage, reads and writes require auth.
-const PRIVATE_ROOT: &str = "/priv/";
 
 /// Storage roots a write may target.
 const STORAGE_ROOTS: [&str; 2] = [PUBLIC_ROOT, PRIVATE_ROOT];
