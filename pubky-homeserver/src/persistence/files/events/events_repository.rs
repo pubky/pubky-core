@@ -9,7 +9,7 @@ use sqlx::{
 };
 
 use crate::{
-    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT},
+    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT, PUBLIC_ROOT},
     persistence::{
         files::events::EventEntity,
         sql::{
@@ -21,6 +21,15 @@ use crate::{
 };
 
 pub const EVENT_TABLE: &str = "events";
+
+/// Selects which events a cursor query returns, by storage-root visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventVisibility {
+    /// Only public (`/pub/...`) events.
+    Public,
+    /// All events, includes `/priv/...` events.
+    All,
+}
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository;
@@ -257,17 +266,19 @@ impl EventRepository {
 
     /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
+    /// `visibility` selects which storage roots are returned (see [`EventVisibility`]).
     /// The executor can either be db.pool() or a transaction.
     pub async fn get_by_cursor<'a>(
         cursor: Option<EventCursor>,
         limit: Option<u16>,
+        visibility: EventVisibility,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         let cursor = cursor.unwrap_or(EventCursor::new(0));
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
-        let statement = Query::select()
+        let mut statement = Query::select()
             .columns([
                 (EVENT_TABLE, EventIden::Id),
                 (EVENT_TABLE, EventIden::User),
@@ -286,6 +297,16 @@ impl EventRepository {
             .order_by((EVENT_TABLE, EventIden::Id), Order::Asc)
             .limit(limit as u64)
             .to_owned();
+
+        // `All` adds no predicate; `Public` restricts to the public root.
+        if let EventVisibility::Public = visibility {
+            statement = statement
+                .and_where(
+                    Expr::col((EVENT_TABLE, EventIden::Path)).like(format!("{PUBLIC_ROOT}%")),
+                )
+                .to_owned();
+        }
+
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
@@ -345,6 +366,7 @@ mod tests {
         let events = EventRepository::get_by_cursor(
             Some(EventCursor::new(5)),
             Some(4),
+            EventVisibility::All,
             &mut db.pool().into(),
         )
         .await
@@ -357,6 +379,83 @@ mod tests {
             EntryPath::new(user_pubkey, WebDavPath::new("/test").unwrap())
         );
         assert!(matches!(events[0].event_type, EventType::Put { .. }));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_cursor_public_visibility_excludes_private() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Interleave public, private, and look-alike roots that must NOT match
+        // the `/pub/` prefix (`/public/...` and `/pub` without a trailing slash).
+        let paths = [
+            "/pub/a",       // 1: public
+            "/priv/x",      // 2: private  -> excluded
+            "/pub/b",       // 3: public
+            "/public/evil", // 4: not the public root -> excluded
+            "/priv/y",      // 5: private  -> excluded
+            "/pub/c",       // 6: public
+            "/pub",         // 7: bare root, not under `/pub/` -> excluded
+        ];
+        for p in paths {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
+            EventRepository::create(
+                user.id,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
+                &path,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Public-only view: only the three `/pub/<scope>/...` events.
+        let public = EventRepository::get_by_cursor(
+            None,
+            None,
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let public_paths: Vec<&str> = public.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(public_paths, vec!["/pub/a", "/pub/b", "/pub/c"]);
+
+        // The internal all-events view is unchanged (regression guard for the
+        // broadcaster / quota / admin callers).
+        let all =
+            EventRepository::get_by_cursor(None, None, EventVisibility::All, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(all.len(), 7);
+
+        // Pagination stays correct across filtered-out private events: a limit of
+        // 2 returns a full page (ids 1 and 3) and the next cursor resumes after it.
+        let page = EventRepository::get_by_cursor(
+            None,
+            Some(2),
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.iter().map(|e| e.id).collect::<Vec<_>>(), vec![1, 3]);
+        let next = page.last().unwrap().cursor();
+        let page = EventRepository::get_by_cursor(
+            Some(next),
+            Some(2),
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.iter().map(|e| e.id).collect::<Vec<_>>(), vec![6]);
     }
 
     #[tokio::test]
@@ -458,10 +557,14 @@ mod tests {
                 .await
                 .unwrap();
 
-            let events_after =
-                EventRepository::get_by_cursor(Some(cursor_id), None, &mut db.pool().into())
-                    .await
-                    .unwrap();
+            let events_after = EventRepository::get_by_cursor(
+                Some(cursor_id),
+                None,
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
 
             // Should get events after the cursor (events[3] and events[4])
             assert_eq!(
