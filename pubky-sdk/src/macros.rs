@@ -26,3 +26,6 @@ macro_rules! cross_log {
         println!("[{}] {}", stringify!($level), format_args!($($arg)*));
     };
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+use tracing as _; // Not used in test code.

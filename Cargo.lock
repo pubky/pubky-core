@@ -1598,15 +1598,11 @@ dependencies = [
  "bytes",
  "eventsource-stream",
  "futures",
- "pkarr",
- "pubky-common",
  "pubky-testnet",
  "rand 0.10.1",
  "serde",
  "serde_json",
  "tokio",
- "tracing-subscriber",
- "url",
 ]
 
 [[package]]
@@ -1815,7 +1811,6 @@ checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
 dependencies = [
  "futures-core",
  "futures-sink",
- "nanorand",
  "spin 0.9.8",
 ]
 
@@ -3221,15 +3216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nanorand"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
-dependencies = [
- "getrandom 0.2.17",
-]
-
-[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4069,14 +4055,10 @@ name = "pubky-common"
 version = "0.9.0"
 dependencies = [
  "argon2",
- "base32",
  "base64 0.22.1",
  "blake3",
  "crypto_secretbox",
  "ed25519-dalek",
- "getrandom 0.3.4",
- "js-sys",
- "once_cell",
  "pkarr",
  "postcard",
  "pubky-timestamp",
@@ -4129,7 +4111,6 @@ dependencies = [
  "dirs",
  "dyn-clone",
  "fast-glob",
- "flume 0.11.1",
  "futures-lite",
  "futures-util",
  "governor",
@@ -4157,7 +4138,6 @@ dependencies = [
  "serde_valid",
  "sha2 0.10.9",
  "sqlx",
- "temp-env",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -4178,11 +4158,8 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "clap",
- "dirs",
  "http-relay",
  "libc",
- "mainline",
- "once_cell",
  "pkarr",
  "pkarr-relay",
  "pubky",
@@ -5762,16 +5739,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "temp-env"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
-dependencies = [
- "futures",
- "parking_lot",
 ]
 
 [[package]]
