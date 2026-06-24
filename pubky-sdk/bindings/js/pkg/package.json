@@ -2,7 +2,7 @@
   "name": "@synonymdev/pubky",
   "type": "module",
   "description": "Pubky client",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "license": "MIT",
   "repository": {
     "type": "git",
