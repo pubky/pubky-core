@@ -386,5 +386,4 @@ mod tests {
         ));
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
-
 }
