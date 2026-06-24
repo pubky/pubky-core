@@ -4,6 +4,8 @@ A local test network for developing Pubky Core or applications depending on it.
 
 All resources are ephemeral, including the database, and all servers are cleaned up when the testnet is dropped.
 
+For running a long-lived local testnet as a separate process, see the [local development guide](../docs/LOCAL_DEVELOPMENT.md). This README focuses on the `pubky-testnet` crate API.
+
 ## Quickstart
 
 ### Option 1: Docker PostgreSQL (No External DB Required)
@@ -46,7 +48,7 @@ If you prefer to use an external Postgres instance:
 docker run --name postgres \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=pubky_homeserver \
+  -e POSTGRES_DB=postgres \
   -p 127.0.0.1:5432:5432 \
   -d postgres:18-alpine
 ```
@@ -189,6 +191,10 @@ Once cached locally, subsequent test runs won't pull again.
 ## Binary (Static Testnet)
 
 If you need to run the testnet in a separate process (e.g., to test Pubky Core in browsers), run the binary which creates these components with hardcoded configurations:
+
+```bash
+cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
+```
 
 1. A local DHT with bootstrapping nodes: `&["localhost:6881"]`
 2. A Pkarr Relay running on port [15411](pubky_common::constants::testnet_ports::PKARR_RELAY)
