@@ -217,7 +217,9 @@ impl PubkyHttpClientBuilder {
         let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
         #[cfg(not(target_arch = "wasm32"))]
-        let mut icann_http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
+        let mut icann_http_builder = reqwest::Client::builder()
+            .user_agent(user_agent.as_ref())
+            .tls_backend_preconfigured(icann_tls_config_without_revocation_check());
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
@@ -240,6 +242,28 @@ impl PubkyHttpClientBuilder {
             testnet_host: self.testnet_host.clone(),
         })
     }
+}
+
+/// TLS config for the ICANN HTTP client: webpki/Mozilla roots, certificate revocation
+/// checking disabled.
+///
+/// Revocation is disabled because reqwest's default verifier (rustls-platform-verifier)
+/// hard-fails revocation on Android, where Let's Encrypt's sharded-CRL hierarchy makes it
+/// falsely reject valid certificates ("invalid peer certificate: Revoked"). Only the ICANN
+/// client uses this; the homeserver raw-public-key client keeps its pkarr-derived TLS.
+#[cfg(not(target_arch = "wasm32"))]
+fn icann_tls_config_without_revocation_check() -> rustls::ClientConfig {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let mut tls_config = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("aws-lc-rs provides safe default protocol versions")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    tls_config
 }
 
 /// Transport client for Pubky homeserver APIs and generic HTTP, with PKARR-aware
