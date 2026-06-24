@@ -1,6 +1,7 @@
 mod feed;
 mod stream_filter;
 mod stream_modes;
+mod stream_private;
 mod stream_multi_user;
 mod stream_sdk;
 mod stream_validation;

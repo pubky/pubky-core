@@ -33,7 +33,7 @@ pub async fn delete(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    has_write_permission(&session, &pubky, &path.0)?;
+    has_write_permission(&session, pubky.public_key(), &path.0)?;
 
     let public_key = pubky.public_key();
     state
@@ -54,7 +54,7 @@ pub async fn put(
     headers: HeaderMap,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
-    has_write_permission(&session, &pubky, &path.0)?;
+    has_write_permission(&session, pubky.public_key(), &path.0)?;
 
     let public_key = pubky.public_key();
     let user = state

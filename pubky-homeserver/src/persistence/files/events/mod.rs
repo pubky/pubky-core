@@ -8,12 +8,14 @@
 
 mod events_entity;
 mod events_layer;
+mod path_filter;
 pub(crate) mod events_repository;
 mod events_service;
 
 pub use events_entity::EventEntity;
 pub use events_layer::EventsLayer;
 pub use events_repository::{EventIden, EventRepository, EventVisibility};
+pub use path_filter::PathFilter;
 pub(crate) use events_service::PG_NOTIFY_CHANNEL;
 pub use events_service::{EventsService, MAX_EVENT_STREAM_USERS};
 
