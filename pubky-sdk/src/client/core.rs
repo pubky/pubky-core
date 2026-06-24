@@ -221,7 +221,7 @@ impl PubkyHttpClientBuilder {
         #[cfg(not(target_arch = "wasm32"))]
         let mut icann_http_builder = reqwest::Client::builder()
             .user_agent(user_agent.as_ref())
-            .use_preconfigured_tls(icann_tls_config());
+            .tls_backend_preconfigured(icann_tls_config());
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
