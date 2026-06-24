@@ -267,7 +267,7 @@ fn icann_tls_config() -> rustls::ClientConfig {
     .expect("aws-lc-rs provides safe default protocol versions")
     .with_root_certificates(root_store)
     .with_no_client_auth();
-    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
     tls_config
 }
 
