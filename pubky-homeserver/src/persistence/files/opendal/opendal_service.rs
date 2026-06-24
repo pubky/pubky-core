@@ -7,6 +7,7 @@ use crate::{
         files::{
             entry::entry_layer::EntryLayer,
             events::{EventsLayer, EventsService},
+            path_collision_layer::PathCollisionLayer,
             user_quota_layer::UserQuotaLayer,
             write_path_layer::WritePathLayer,
         },
@@ -43,9 +44,9 @@ pub fn build_storage_operators(
     let events_layer = EventsLayer::new(db.clone(), events_service);
     // Note: Layers ordering is important:
     // Layers are applied last-to-first: write_path_layer (outermost) runs first,
-    // rejecting disallowed writes before they reach quota/entry/event layers.
-    // events_layer runs after entry_layer.close() completes, guaranteeing the
-    // file is written before the Event is created.
+    // then path_collision_layer rejects file/folder collisions
+    // before they reach storage. events_layer runs after entry_layer.close()
+    // completes, guaranteeing the file is written before the Event is created.
     let admin_operator = match &storage_config.backend {
         StorageConfigToml::FileSystem => {
             let files_dir = match data_directory.join("data/files").to_str() {
@@ -91,6 +92,7 @@ pub fn build_storage_operators(
 
     let operator = admin_operator
         .clone()
+        .layer(PathCollisionLayer::new(db.clone()))
         .layer(WritePathLayer::new(user_service));
     Ok((operator, admin_operator))
 }
