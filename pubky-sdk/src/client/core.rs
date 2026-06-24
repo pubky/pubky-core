@@ -216,12 +216,10 @@ impl PubkyHttpClientBuilder {
         #[cfg(target_arch = "wasm32")]
         let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
-        // The ICANN client validates TLS against the webpki/Mozilla root bundle WITHOUT
-        // certificate revocation checking (see `icann_tls_config`).
         #[cfg(not(target_arch = "wasm32"))]
         let mut icann_http_builder = reqwest::Client::builder()
             .user_agent(user_agent.as_ref())
-            .tls_backend_preconfigured(icann_tls_config());
+            .tls_backend_preconfigured(icann_tls_config_without_revocation_check());
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
@@ -246,18 +244,15 @@ impl PubkyHttpClientBuilder {
     }
 }
 
-/// rustls config for the ICANN HTTP client: validate against the webpki/Mozilla root
-/// bundle WITHOUT certificate revocation checking.
+/// TLS config for the ICANN HTTP client: webpki/Mozilla roots, certificate revocation
+/// checking disabled.
 ///
-/// reqwest's default rustls config uses rustls-platform-verifier, which on Android
-/// performs hard-fail revocation checking. With Let's Encrypt's newer sharded-CRL
-/// hierarchy this falsely rejects valid certificates on some devices ("invalid peer
-/// certificate: Revoked"), breaking the relay and ICANN homeserver fallback even though
-/// the cert is not actually revoked. Browsers soft-fail revocation; this matches that
-/// behavior. Only the ICANN client is affected — the homeserver raw-public-key client
-/// (`http`) keeps its pkarr-derived TLS unchanged.
+/// Revocation is disabled because reqwest's default verifier (rustls-platform-verifier)
+/// hard-fails revocation on Android, where Let's Encrypt's sharded-CRL hierarchy makes it
+/// falsely reject valid certificates ("invalid peer certificate: Revoked"). Only the ICANN
+/// client uses this; the homeserver raw-public-key client keeps its pkarr-derived TLS.
 #[cfg(not(target_arch = "wasm32"))]
-fn icann_tls_config() -> rustls::ClientConfig {
+fn icann_tls_config_without_revocation_check() -> rustls::ClientConfig {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let mut tls_config = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
