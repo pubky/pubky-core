@@ -521,7 +521,9 @@ fn authorized_path_filters(
 ) -> Result<Vec<PathFilter>, HttpError> {
     // No path requested: default to public-only.
     if paths.is_empty() {
-        return Ok(vec![PathFilter::Dir(PUBLIC_ROOT.to_string())]);
+        return Ok(vec![
+            WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
+        ]);
     }
 
     let has_private = paths.iter().any(|p| p.as_str().starts_with(PRIVATE_ROOT));
@@ -545,7 +547,7 @@ fn authorized_path_filters(
     let mut filters = Vec::with_capacity(paths.len());
     for path in paths {
         has_read_permission(session, tenant, path)?;
-        filters.push(PathFilter::from_path(path));
+        filters.push(path.clone().into());
     }
     Ok(filters)
 }
@@ -612,6 +614,10 @@ mod tests {
 
     fn wd(s: &str) -> WebDavPath {
         WebDavPath::new(s).expect("valid test path")
+    }
+
+    fn pf(s: &str) -> PathFilter {
+        wd(s).into()
     }
 
     fn grant_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
@@ -748,7 +754,7 @@ mod tests {
     fn no_path_defaults_to_public_dir_filter() {
         let u = pk();
         let filters = authorized_path_filters(&[], &cursors(&[&u]), None).unwrap();
-        assert_eq!(filters, vec![PathFilter::Dir("/pub/".to_string())]);
+        assert_eq!(filters, vec![pf("/pub/")]);
     }
 
     #[test]
@@ -803,19 +809,13 @@ mod tests {
             Some(&session),
         )
         .unwrap();
-        assert_eq!(
-            filters,
-            vec![
-                PathFilter::Dir("/pub/".into()),
-                PathFilter::Dir("/priv/app/".into()),
-            ]
-        );
+        assert_eq!(filters, vec![pf("/pub/"), pf("/priv/app/")]);
     }
 
     #[test]
     fn public_paths_with_multiple_users_are_authorized() {
         let (a, b) = (pk(), pk());
         let filters = authorized_path_filters(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
-        assert_eq!(filters, vec![PathFilter::Dir("/pub/".into())]);
+        assert_eq!(filters, vec![pf("/pub/")]);
     }
 }

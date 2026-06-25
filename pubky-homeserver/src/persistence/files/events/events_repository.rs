@@ -335,6 +335,10 @@ mod tests {
     use super::*;
     use std::ops::Add;
 
+    fn pf(s: &str) -> PathFilter {
+        WebDavPath::new(s).unwrap().into()
+    }
+
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_create_list_event() {
@@ -620,10 +624,7 @@ mod tests {
         // Union of `/pub/` (dir) and `/priv/app/` (dir): pub/a, priv/app/x,
         // pub/b. The dir filter must NOT match the parent file `/priv/app` nor
         // the sibling `/priv/app-evil/y`, and `/priv/other/z` is out of scope.
-        let filters = vec![
-            PathFilter::Dir("/pub/".into()),
-            PathFilter::Dir("/priv/app/".into()),
-        ];
+        let filters = vec![pf("/pub/"), pf("/priv/app/")];
         let events = EventRepository::get_by_user_cursors(
             vec![(user.id, None)],
             false,
@@ -636,7 +637,7 @@ mod tests {
         assert_eq!(got, vec!["/pub/a", "/priv/app/x", "/pub/b"]);
 
         // A file filter matches only the exact file, not its would-be children.
-        let filters = vec![PathFilter::File("/priv/app".into())];
+        let filters = vec![pf("/priv/app")];
         let events = EventRepository::get_by_user_cursors(
             vec![(user.id, None)],
             false,
@@ -649,7 +650,7 @@ mod tests {
         assert_eq!(got, vec!["/priv/app"]);
 
         // Reverse ordering over the `/pub/` filter.
-        let filters = vec![PathFilter::Dir("/pub/".into())];
+        let filters = vec![pf("/pub/")];
         let events = EventRepository::get_by_user_cursors(
             vec![(user.id, None)],
             true,
@@ -686,7 +687,7 @@ mod tests {
         }
 
         // `_` must be matched literally: `/priv/a_b/` matches `a_b` but not `axb`.
-        let filters = vec![PathFilter::Dir("/priv/a_b/".into())];
+        let filters = vec![pf("/priv/a_b/")];
         let events = EventRepository::get_by_user_cursors(
             vec![(user.id, None)],
             false,
@@ -699,7 +700,7 @@ mod tests {
         assert_eq!(got, vec!["/priv/a_b/x"]);
 
         // `%` must be matched literally: `/priv/a%/` matches `a%` but not `apct`.
-        let filters = vec![PathFilter::Dir("/priv/a%/".into())];
+        let filters = vec![pf("/priv/a%/")];
         let events = EventRepository::get_by_user_cursors(
             vec![(user.id, None)],
             false,
@@ -743,7 +744,7 @@ mod tests {
 
         // Public filter across two users returns both users' `/pub/x` and
         // never their `/priv/secret`.
-        let filters = vec![PathFilter::Dir("/pub/".into())];
+        let filters = vec![pf("/pub/")];
         let events = EventRepository::get_by_user_cursors(
             vec![(ua.id, None), (ub.id, None)],
             false,
