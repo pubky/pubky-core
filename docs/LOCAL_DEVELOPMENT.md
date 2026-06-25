@@ -1,14 +1,64 @@
 # Local Development
 
-This guide is for app developers and contributors who need a local Pubky network to connect browsers, SDK examples, and integration tests to. For a standalone homeserver deployment, see [Install and Run Pubky Homeserver](./INSTALL.md).
+This guide helps you set up a local Pubky network for development, whether you're building an app on top of Pubky, contributing to the homeserver, or working on other crates in this repo.
 
-## Run the Local Testnet
+There are two local development options:
 
-The easiest local setup is the long-lived testnet with embedded PostgreSQL:
+- **Ephemeral testnet** — starts a full local network from source with disposable data. Data is cleaned up when the process exits. Good for quick iteration and testing.
+- **Persistent testnet (coming soon)** — a Docker Compose setup that persists data across restarts. Good for longer-lived development and app integration.
+
+For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./INSTALL.md). For running Rust tests and CI, see [Testing](./TESTING.md).
+
+## Contents
+
+- [Persistent Testnet (coming soon)](#persistent-testnet-coming-soon)
+- [Ephemeral Testnet](#ephemeral-testnet)
+  - [Set Up PostgreSQL](#set-up-postgresql)
+  - [Run the Testnet](#run-the-testnet)
+- [Run Examples](#run-examples)
+- [Custom Homeserver Config](#custom-homeserver-config)
+- [Troubleshooting](#troubleshooting)
+
+## Persistent Testnet (coming soon)
+
+A `docker-compose.yml` that runs the full local network (homeserver, PostgreSQL, DHT, relays) with persistent storage is planned. This will be the easiest way to develop against a stable local environment that survives restarts.
+
+## Ephemeral Testnet
+
+The ephemeral testnet starts a full local Pubky network from source: Homeserver, local DHT and relays. Data is cleaned up when the process exits.
+
+### Set Up PostgreSQL
+
+The testnet requires a running PostgreSQL instance. The quickest option is Docker:
 
 ```bash
-cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
+docker run --name pubky-postgres \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_DB=postgres \
+  -p 127.0.0.1:5432:5432 \
+  -d postgres:17
 ```
+
+The testnet creates ephemeral `pubky_test_*` databases automatically, you don't need to create a database manually.
+
+See [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql) for native install or if you have an existing Postgres instance already.
+
+### Run the Testnet
+
+Start the testnet with the default connection string (`postgres://localhost:5432/postgres?pubky-test=true`):
+
+```bash
+cargo run -p pubky-testnet
+```
+
+Or point it at a custom PostgreSQL instance:
+
+```bash
+TEST_PUBKY_CONNECTION_STRING='postgres://<USER>:<PASSWORD>@<HOST>:5432/postgres?pubky-test=true' \
+  cargo run -p pubky-testnet
+```
+
+The `?pubky-test=true` parameter tells the testnet to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance. The database is cleaned up when the testnet exits.
 
 It starts:
 
@@ -21,45 +71,15 @@ It starts:
 | Homeserver Pubky TLS API | `127.0.0.1:6287` |
 | Homeserver admin API | `http://127.0.0.1:6288` |
 
-The static testnet homeserver uses this public key:
+The testnet homeserver uses this public key:
 
 ```text
 pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo
 ```
 
-This mode is intended for local development only. It uses test configuration, local ports, and disposable test data.
+## Run Examples
 
-## Embedded PostgreSQL
-
-The first run downloads PostgreSQL binaries and caches them for later runs. The embedded database is stopped when the testnet process exits.
-
-Use this mode when you want the fewest local dependencies and do not need to inspect a persistent database.
-
-## External PostgreSQL
-
-If you want to use your own PostgreSQL instance, omit `--embedded-postgres` and set `TEST_PUBKY_CONNECTION_STRING` when needed:
-
-```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
-  cargo run -p pubky-testnet
-```
-
-The `?pubky-test=true` parameter tells the homeserver test configuration to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance.
-
-For a local Docker PostgreSQL instance:
-
-```bash
-docker run --name pubky-postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=postgres \
-  -p 127.0.0.1:5432:5432 \
-  -d postgres:18-alpine
-```
-
-## Run Examples Against the Testnet
-
-With the long-lived testnet running, use the examples in a separate terminal.
+With the testnet running, use the examples in a separate terminal.
 
 Rust examples are in [`examples/rust`](../examples/rust):
 
@@ -91,27 +111,16 @@ Use this when you need to test a specific homeserver configuration while still u
 
 ### Examples Cannot Connect
 
-Make sure the long-lived testnet is still running and that the expected ports are not blocked or already used by another process.
+Make sure the testnet is still running and that the expected ports are not blocked or already used by another process.
 
 ### Port Already In Use
 
-Stop the process using the conflicting port or use a custom homeserver config for the homeserver ports. The static DHT and relay ports are fixed for the long-lived testnet.
+Stop the process using the conflicting port or use a custom homeserver config for the homeserver ports. The static DHT and relay ports are fixed for the testnet.
 
-### Embedded PostgreSQL Download Fails
+### PostgreSQL Connection Refused
 
-The embedded PostgreSQL binary is downloaded from GitHub releases. If you hit API rate limits, set a GitHub token and retry:
-
-```bash
-export GITHUB_TOKEN=ghp_your_personal_access_token
-cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
-```
-
-The token does not need repository permissions.
-
-### Reset Embedded PostgreSQL Cache
-
-If the cached PostgreSQL download appears corrupt, remove the cache and rerun the command:
+Make sure PostgreSQL is running and listening on the expected host and port. For the Docker example above:
 
 ```bash
-rm -rf ~/.cache/pubky-testnet/postgresql
+docker ps --filter name=pubky-postgres
 ```
