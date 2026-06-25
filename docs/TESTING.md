@@ -1,28 +1,19 @@
 # Testing
 
-This guide is for contributors running Rust tests, integration tests, or CI jobs. For local app development with a long-lived testnet, see [Local Development](./LOCAL_DEVELOPMENT.md). For standalone homeserver operation, see [Install and Run Pubky Homeserver](./INSTALL.md).
+This guide is for contributors running Rust tests, integration tests, or CI jobs. For local app development with a testnet, see [Local Development](./LOCAL_DEVELOPMENT.md). For standalone homeserver operation, see [Install and Run Pubky Homeserver](./INSTALL.md).
 
 ## PostgreSQL for Tests
 
-Many homeserver and testnet tests need PostgreSQL. The easiest external database setup is Docker:
+Many homeserver and testnet tests need PostgreSQL. See [Local Development - Set Up PostgreSQL](./LOCAL_DEVELOPMENT.md#set-up-postgresql) for setup options.
+
+Run tests with a test connection string:
 
 ```bash
-docker run --name pubky-postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=postgres \
-  -p 127.0.0.1:5432:5432 \
-  -d postgres:18-alpine
-```
-
-Then run tests with a test connection string:
-
-```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
   cargo test -p pubky-homeserver --all-features
 ```
 
-The `?pubky-test=true` parameter marks the URL as a test database URL. The test helpers create an ephemeral database named `pubky_test_*` inside the configured PostgreSQL instance.
+The `?pubky-test=true` parameter tells the test helpers to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance. Databases are cleaned up after each test.
 
 ## Test Database Cleanup
 
@@ -38,16 +29,20 @@ async fn my_test() {
 
 The macro ensures registered test databases are dropped after the test completes or panics.
 
-## Embedded PostgreSQL in Tests
+## Docker PostgreSQL in Tests
 
-Enable the `embedded-postgres` feature when you want tests to run without a separate PostgreSQL installation:
+The `docker-postgres` feature lets tests automatically start a PostgreSQL container via Docker, removing the need for an external postgres instance. It's used by the [Rust examples](../examples/rust) (enabled by default) and the pubky-testnet integration tests. It's a good option for self-contained tests or CI environments where you don't want to manage a separate database.
+
+Enable it in your crate:
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.7", features = ["embedded-postgres"] }
+pubky-testnet = { version = "0.9", features = ["docker-postgres"] }
 ```
 
-Then build testnets with embedded PostgreSQL:
+### Per-test container
+
+Each `.with_docker_postgres()` call starts a separate PostgreSQL container. Simple but expensive for large test suites:
 
 ```rust
 use pubky_testnet::EphemeralTestnet;
@@ -55,7 +50,7 @@ use pubky_testnet::EphemeralTestnet;
 #[tokio::test]
 async fn my_test() {
     let testnet = EphemeralTestnet::builder()
-        .with_embedded_postgres()
+        .with_docker_postgres()
         .build()
         .await
         .unwrap();
@@ -64,32 +59,17 @@ async fn my_test() {
 }
 ```
 
-Each call to `.with_embedded_postgres()` starts a separate PostgreSQL server. That is convenient for a small number of tests but expensive for large suites.
+### Shared container
 
-## Share Embedded PostgreSQL Across Tests
-
-For many tests, start one embedded PostgreSQL instance and pass its connection string to each testnet. Each testnet still creates its own ephemeral database, so test data remains isolated.
+For many tests, share one Docker PostgreSQL instance with `DockerPostgres::shared()`. Each testnet still creates its own ephemeral database, so test data remains isolated:
 
 ```rust
-use pubky_testnet::embedded_postgres::EmbeddedPostgres;
+use pubky_testnet::docker_postgres::DockerPostgres;
 use pubky_testnet::EphemeralTestnet;
-use tokio::sync::OnceCell;
-
-static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
-
-async fn shared_postgres() -> &'static EmbeddedPostgres {
-    SHARED_PG
-        .get_or_init(|| async {
-            EmbeddedPostgres::start()
-                .await
-                .expect("Failed to start embedded postgres")
-        })
-        .await
-}
 
 #[tokio::test]
 async fn test_one() {
-    let pg = shared_postgres().await;
+    let pg = DockerPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -105,20 +85,20 @@ async fn test_one() {
 Run the homeserver tests against external PostgreSQL:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
   cargo test -p pubky-homeserver --all-features
 ```
 
-Run the testnet tests with embedded PostgreSQL enabled:
+Run the testnet tests with Docker PostgreSQL:
 
 ```bash
-cargo test -p pubky-testnet --features embedded-postgres
+cargo test -p pubky-testnet --features docker-postgres
 ```
 
 Run the full workspace test suite:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
   cargo test --workspace --all-features
 ```
 
@@ -126,33 +106,8 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 
 ### PostgreSQL Connection Refused
 
-Make sure PostgreSQL is running and listening on the host and port in `TEST_PUBKY_CONNECTION_STRING`.
-
-For Docker:
-
-```bash
-docker ps --filter name=pubky-postgres
-```
+Make sure PostgreSQL is running and listening on the host and port in `TEST_PUBKY_CONNECTION_STRING`. See [Local Development - Troubleshooting](./LOCAL_DEVELOPMENT.md#postgresql-connection-refused).
 
 ### Stale Test Databases
 
 Test databases are named `pubky_test_*`. If a test process is killed before cleanup, drop stale databases manually with your PostgreSQL tooling.
-
-### Embedded PostgreSQL Download Rate Limited
-
-The embedded PostgreSQL binary is downloaded from GitHub releases. If you hit API limits, set a GitHub token:
-
-```bash
-export GITHUB_TOKEN=ghp_your_personal_access_token
-cargo test -p pubky-testnet --features embedded-postgres
-```
-
-The token does not need repository permissions.
-
-### Corrupt Embedded PostgreSQL Cache
-
-Remove the embedded PostgreSQL cache and rerun the tests:
-
-```bash
-rm -rf ~/.cache/pubky-testnet/postgresql
-```
