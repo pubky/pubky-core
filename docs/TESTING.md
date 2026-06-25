@@ -37,7 +37,7 @@ Enable it in your crate:
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.9", features = ["docker-postgres"] }
+pubky-testnet = { version = "0.x", features = ["docker-postgres"] }
 ```
 
 ### Per-test container

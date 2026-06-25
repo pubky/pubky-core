@@ -60,7 +60,7 @@ Rust:
 
 ```toml
 [dependencies]
-pubky = "0.9"
+pubky = "0.x"
 ```
 
 JavaScript and TypeScript:

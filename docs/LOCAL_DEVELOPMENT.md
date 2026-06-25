@@ -36,7 +36,7 @@ docker run --name pubky-postgres \
   -e POSTGRES_HOST_AUTH_METHOD=trust \
   -e POSTGRES_DB=postgres \
   -p 127.0.0.1:5432:5432 \
-  -d postgres:17
+  -d postgres:18
 ```
 
 The testnet creates ephemeral `pubky_test_*` databases automatically, you don't need to create a database manually.

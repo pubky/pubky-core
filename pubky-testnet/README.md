@@ -4,7 +4,7 @@ A local test network for developing Pubky Core or applications depending on it.
 
 All resources are ephemeral, including the database, and all servers are cleaned up when the testnet is dropped.
 
-For running a long-lived local testnet as a separate process, see the [local development guide](../docs/LOCAL_DEVELOPMENT.md). This README focuses on the `pubky-testnet` crate API.
+For running the testnet as a separate process, see the [Local Development guide](../docs/LOCAL_DEVELOPMENT.md). For test database setup and patterns, see [Testing](../docs/TESTING.md). This README focuses on the `pubky-testnet` crate API.
 
 ## Quickstart
 
@@ -14,7 +14,7 @@ For testing without a separate Postgres installation, enable the `docker-postgre
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.9", features = ["docker-postgres"] }
+pubky-testnet = { version = "0.x", features = ["docker-postgres"] }
 ```
 
 ```rust,no_run
@@ -44,19 +44,24 @@ Docker must be running on the host. The container is automatically cleaned up on
 If you prefer to use an external Postgres instance:
 
 ```bash
-# Example local Postgres with password auth
 docker run --name postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
   -e POSTGRES_DB=postgres \
   -p 127.0.0.1:5432:5432 \
-  -d postgres:18-alpine
+  -d postgres:18
 ```
 
 Then run the testnet binary:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' cargo run -p pubky-testnet
+cargo run -p pubky-testnet
+```
+
+Or with a custom connection string:
+
+```bash
+TEST_PUBKY_CONNECTION_STRING='postgres://<USER>:<PASSWORD>@<HOST>:5432/postgres?pubky-test=true' \
+  cargo run -p pubky-testnet
 ```
 
 ## Usage
@@ -172,6 +177,16 @@ async fn test_two() {
 
 Each testnet still gets its own ephemeral database within the shared PostgreSQL instance, so tests remain isolated.
 
+## Binary (Static Testnet)
+
+The testnet binary starts a full local network with hardcoded ports for use as a standalone process (e.g., to test Pubky apps in browsers):
+
+```bash
+cargo run -p pubky-testnet
+```
+
+See the [Local Development guide](../docs/LOCAL_DEVELOPMENT.md) for full details on the components and ports.
+
 ## Troubleshooting
 
 ### Docker not running
@@ -183,20 +198,7 @@ The `docker-postgres` feature requires Docker. If you see `"Is Docker running?"`
 The Postgres image is pulled from Docker Hub. Anonymous pulls are limited to 100 per 6 hours. If you hit this, either `docker login` or pre-pull the image:
 
 ```bash
-docker pull postgres
+docker pull postgres:18
 ```
 
 Once cached locally, subsequent test runs won't pull again.
-
-## Binary (Static Testnet)
-
-If you need to run the testnet in a separate process (e.g., to test Pubky Core in browsers), run the binary which creates these components with hardcoded configurations:
-
-```bash
-cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
-```
-
-1. A local DHT with bootstrapping nodes: `&["localhost:6881"]`
-2. A Pkarr Relay running on port [15411](pubky_common::constants::testnet_ports::PKARR_RELAY)
-3. A Homeserver with address `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
-4. An HTTP relay running on port [15412](pubky_common::constants::testnet_ports::HTTP_RELAY)
