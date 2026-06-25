@@ -210,11 +210,14 @@ const session = await flow.awaitApproval();
 await pubky.browserSessionStore.save(session);
 ```
 
-For advanced/manual storage, grant sessions still expose `exportSecret()` and
-`pubky.restoreSession(secret)`. Treat that string like a bearer token.
+For advanced/manual storage, local grant sessions still expose
+`exportLocalSecret()` and `pubky.restoreSession(secret)`. Treat that string
+like a bearer token. Delegated browser grant sessions should use
+`browserSessionStore` because their PoP keys are non-extractable.
 
 > `session.export()` is still available for legacy cookie sessions, but new
-> applications should use grant auth plus `browserSessionStore` or `exportSecret()`.
+> applications should use grant auth plus `browserSessionStore` or
+> `exportLocalSecret()`.
 
 **Approve a pubkyauth request URL**
 
