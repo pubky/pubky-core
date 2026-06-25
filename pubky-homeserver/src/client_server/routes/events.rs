@@ -526,28 +526,21 @@ fn authorized_path_filters(
 
     let has_private = paths.iter().any(|p| p.as_str().starts_with(PRIVATE_ROOT));
 
-    if has_private {
-        // Check session presence first so an anonymous private request is a 401.
-        if session.is_none() {
-            return Err(HttpError::unauthorized_with_message(
-                "Authentication required to subscribe to private events",
-            ));
-        }
-        // A private subscription must be scoped to exactly one user.
-        if user_cursors.len() != 1 {
-            return Err(HttpError::forbidden_with_message(
-                "A subscription with a private path must request exactly one user",
-            ));
-        }
+    // A private path needs a session. Surface that as a 401 up front so an
+    // anonymous private request fails the same way regardless of how the
+    // requested paths are ordered.
+    if has_private && session.is_none() {
+        return Err(HttpError::unauthorized_with_message(
+            "Authentication required to subscribe to private events",
+        ));
     }
 
-    // Tenant to authorize against. For a private subscription this is the only
-    // user (enforced above) and the predicate further requires it to equal the
-    // session user.
-    let tenant = &user_cursors
-        .first()
-        .ok_or_else(|| HttpError::bad_request("user parameter is required"))?
-        .0;
+    // The tenant to authorize each path against. A private read is single-tenant,
+    // so a tenant only exists when the subscription names exactly one user.
+    let tenant = match user_cursors {
+        [(pubkey, _)] => Some(pubkey),
+        _ => None,
+    };
 
     let mut filters = Vec::with_capacity(paths.len());
     for path in paths {
@@ -817,5 +810,12 @@ mod tests {
                 PathFilter::Dir("/priv/app/".into()),
             ]
         );
+    }
+
+    #[test]
+    fn public_paths_with_multiple_users_are_authorized() {
+        let (a, b) = (pk(), pk());
+        let filters = authorized_path_filters(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
+        assert_eq!(filters, vec![PathFilter::Dir("/pub/".into())]);
     }
 }
