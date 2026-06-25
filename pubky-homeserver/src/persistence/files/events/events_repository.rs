@@ -168,7 +168,7 @@ impl EventRepository {
     pub async fn get_by_user_cursors<'a>(
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
-        path_filters: &[PathFilter],
+        allowed_paths: &[PathFilter],
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         if user_cursors.is_empty() {
@@ -205,14 +205,14 @@ impl EventRepository {
                 .and_where(Expr::col((EVENT_TABLE, EventIden::User)).eq(user_id))
                 .to_owned();
 
-            // Restrict to the authorized path filters, ORed together so an event
-            // matching any one of them is returned. The list is non-empty in
-            // practice (the route defaults to `/pub/`), an empty list applies no
-            // path restriction. Paths are stored without the user pubkey prefix
+            // Restrict results to events whose path matches at least one
+            // authorized path. The list is non-empty in practice (the route
+            // defaults to `/pub/`), an empty list applies no path restriction.
+            // Paths are stored without the user pubkey prefix
             // (e.g. "/pub/files/doc.txt").
-            if !path_filters.is_empty() {
+            if !allowed_paths.is_empty() {
                 let mut path_condition = Condition::any();
-                for filter in path_filters {
+                for filter in allowed_paths {
                     path_condition = path_condition.add(filter.to_condition());
                 }
                 statement = statement.cond_where(path_condition).to_owned();

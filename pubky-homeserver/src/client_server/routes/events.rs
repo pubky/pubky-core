@@ -27,7 +27,7 @@ use crate::{
         query_params::ListQueryParams,
         AppState,
     },
-    constants::{PRIVATE_ROOT, PUBLIC_ROOT},
+    constants::PUBLIC_ROOT,
     metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{
@@ -333,8 +333,7 @@ pub async fn feed_stream(
     // Authorize the requested path filters before doing any work. Public paths
     // need no session; any `/priv/` path requires a session whose single user
     // matches and that holds a covering read capability.
-    let path_filters =
-        authorized_path_filters(&params.paths, &params.user_cursors, session.as_ref())?;
+    let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
 
     let mut user_cursor_map =
         resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
@@ -364,7 +363,7 @@ pub async fn feed_stream(
                 .get_by_user_cursors(
                     current_user_cursors,
                     params.reverse,
-                    &path_filters,
+                    &allowed_paths,
                     &mut state.sql_db.pool().into(),
                 )
                 .await
@@ -425,7 +424,7 @@ pub async fn feed_stream(
                             state.metrics.record_broadcast_half_full();
                         }
                         // Filter events based on user_ids, cursors, and path
-                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, &path_filters) {
+                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, &allowed_paths) {
                             continue;
                         }
 
@@ -503,8 +502,8 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
-/// Authorize the requested `path` filters and return the filter set to apply to
-/// both the historical replay and the live phase.
+/// Authorize the requested `path`s and return the allow-list to apply to both
+/// the historical replay and the live phase.
 ///
 /// - No requested path → implicit public-only (`/pub/`), no session needed.
 /// - Public (`/pub/...`) paths need no capability.
@@ -514,7 +513,7 @@ async fn resolve_user_cursors(
 ///
 /// If any requested private path is unauthorized the whole subscription is
 /// rejected.
-fn authorized_path_filters(
+fn authorized_paths(
     paths: &[WebDavPath],
     user_cursors: &[(PublicKey, Option<String>)],
     session: Option<&AuthSession>,
@@ -526,17 +525,6 @@ fn authorized_path_filters(
         ]);
     }
 
-    let has_private = paths.iter().any(|p| p.as_str().starts_with(PRIVATE_ROOT));
-
-    // A private path needs a session. Surface that as a 401 up front so an
-    // anonymous private request fails the same way regardless of how the
-    // requested paths are ordered.
-    if has_private && session.is_none() {
-        return Err(HttpError::unauthorized_with_message(
-            "Authentication required to subscribe to private events",
-        ));
-    }
-
     // The tenant to authorize each path against. A private read is single-tenant,
     // so a tenant only exists when the subscription names exactly one user.
     let tenant = match user_cursors {
@@ -544,21 +532,21 @@ fn authorized_path_filters(
         _ => None,
     };
 
-    let mut filters = Vec::with_capacity(paths.len());
+    let mut allowed = Vec::with_capacity(paths.len());
     for path in paths {
         has_read_permission(session, tenant, path)?;
-        filters.push(path.clone().into());
+        allowed.push(path.clone().into());
     }
-    Ok(filters)
+    Ok(allowed)
 }
 
 /// Filter events in live mode based on user IDs, cursors, and the authorized
-/// path filters.
+/// paths.
 fn should_include_live_event(
     event: &EventEntity,
     user_ids: &[i32],
     user_cursor_map: &HashMap<i32, Option<EventCursor>>,
-    path_filters: &[PathFilter],
+    allowed_paths: &[PathFilter],
 ) -> bool {
     if !user_ids.contains(&event.user_id) {
         return false;
@@ -573,7 +561,7 @@ fn should_include_live_event(
 
     // Apply the authorized filter set.
     let path = event.path.path().as_str();
-    path_filters.iter().any(|filter| filter.matches(path))
+    allowed_paths.iter().any(|filter| filter.matches(path))
 }
 
 /// Guard to ensure connection cleanup on any exit path
@@ -753,18 +741,14 @@ mod tests {
     #[test]
     fn no_path_defaults_to_public_dir_filter() {
         let u = pk();
-        let filters = authorized_path_filters(&[], &cursors(&[&u]), None).unwrap();
+        let filters = authorized_paths(&[], &cursors(&[&u]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 
     #[test]
     fn anonymous_private_path_is_unauthorized() {
         let u = pk();
-        let status = reject_status(authorized_path_filters(
-            &[wd("/priv/app/")],
-            &cursors(&[&u]),
-            None,
-        ));
+        let status = reject_status(authorized_paths(&[wd("/priv/app/")], &cursors(&[&u]), None));
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
@@ -772,7 +756,7 @@ mod tests {
     fn private_path_with_multiple_users_is_forbidden() {
         let (a, b) = (pk(), pk());
         let session = grant_session(a.clone(), Capabilities::from(vec![Capability::root()]));
-        let status = reject_status(authorized_path_filters(
+        let status = reject_status(authorized_paths(
             &[wd("/priv/app/")],
             &cursors(&[&a, &b]),
             Some(&session),
@@ -788,7 +772,7 @@ mod tests {
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
         // A sibling scope not covered by the read cap.
-        let status = reject_status(authorized_path_filters(
+        let status = reject_status(authorized_paths(
             &[wd("/priv/other/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -803,7 +787,7 @@ mod tests {
             owner.clone(),
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        let filters = authorized_path_filters(
+        let filters = authorized_paths(
             &[wd("/pub/"), wd("/priv/app/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -815,7 +799,7 @@ mod tests {
     #[test]
     fn public_paths_with_multiple_users_are_authorized() {
         let (a, b) = (pk(), pk());
-        let filters = authorized_path_filters(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
+        let filters = authorized_paths(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 }

@@ -129,17 +129,17 @@ impl EventsService {
     /// ## Parameters
     /// - `user_cursors`: Vec of (user_id, optional_cursor) pairs
     /// - `reverse`: If true, return newest events first
-    /// - `path_filters`: Authorized path filters, an event is returned only if
+    /// - `allowed_paths`: Authorized paths, an event is returned only if
     ///   it matches at least one (see [`PathFilter`]). Expected non-empty, the
     ///   route defaults to `/pub/`.
     pub async fn get_by_user_cursors<'a>(
         &self,
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
-        path_filters: &[PathFilter],
+        allowed_paths: &[PathFilter],
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        EventRepository::get_by_user_cursors(user_cursors, reverse, path_filters, executor).await
+        EventRepository::get_by_user_cursors(user_cursors, reverse, allowed_paths, executor).await
     }
 }
 
