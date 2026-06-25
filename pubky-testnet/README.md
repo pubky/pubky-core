@@ -139,6 +139,8 @@ Use `DockerPostgres::shared()` to start **one** container and share its connecti
 Docker handles cleanup automatically when the process exits.
 
 ```rust
+# #[cfg(feature = "docker-postgres")]
+# mod docker_postgres_example {
 use pubky_testnet::EphemeralTestnet;
 use pubky_testnet::docker_postgres::DockerPostgres;
 
@@ -163,6 +165,7 @@ async fn test_two() {
         .unwrap();
     // ... test code
 }
+# }
 ```
 
 Each testnet still gets its own ephemeral database within the shared PostgreSQL instance, so tests remain isolated.
