@@ -380,7 +380,7 @@ test("Grant auth: resume signin flow from saved state", async (t) => {
   await signer.approveAuthRequest(savedUrl);
 
   const resumedFlow = delegated
-    ? sdk.resumeDelegatedGrantAuthFlow(savedState)
+    ? await sdk.resumeDelegatedGrantAuthFlow(savedState)
     : sdk.resumeGrantAuthFlow(savedState);
   t.equal(
     resumedFlow.authorizationUrl,

@@ -191,8 +191,11 @@ impl Pubky {
     /// exist in IndexedDB for the same origin. Unsupported runtimes reject with
     /// `ClientStateError`.
     #[wasm_bindgen(js_name = "resumeDelegatedGrantAuthFlow")]
-    pub fn resume_delegated_grant_auth_flow(&self, saved_state: String) -> JsResult<GrantAuthFlow> {
-        GrantAuthFlow::resume_delegated_with_client(saved_state, Some(self.0.client().clone()))
+    pub async fn resume_delegated_grant_auth_flow(
+        &self,
+        saved_state: String,
+    ) -> JsResult<GrantAuthFlow> {
+        GrantAuthFlow::resume_delegated_with_client(saved_state, Some(self.0.client().clone())).await
     }
 
     /// Create a `Signer` from an existing `Keypair`.

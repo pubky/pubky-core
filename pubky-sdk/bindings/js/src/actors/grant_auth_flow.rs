@@ -192,11 +192,11 @@ impl GrantAuthFlow {
     /// exist in IndexedDB for the same origin. Unsupported runtimes reject with
     /// `ClientStateError`.
     #[wasm_bindgen(js_name = "resumeDelegated")]
-    pub fn resume_delegated(saved_state: String) -> JsResult<GrantAuthFlow> {
-        Self::resume_delegated_with_client(saved_state, None)
+    pub async fn resume_delegated(saved_state: String) -> JsResult<GrantAuthFlow> {
+        Self::resume_delegated_with_client(saved_state, None).await
     }
 
-    pub(crate) fn resume_delegated_with_client(
+    pub(crate) async fn resume_delegated_with_client(
         saved_state: String,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<GrantAuthFlow> {
@@ -207,6 +207,13 @@ impl GrantAuthFlow {
                     format!("Invalid delegated grant auth flow state: {e}"),
                 )
             })?;
+        let stored_public_key = BrowserGrantKeyStore::load_public_key(state.key_id.clone()).await?;
+        if stored_public_key != state.client_pk {
+            return Err(PubkyError::new(
+                PubkyErrorName::ClientStateError,
+                "Delegated grant key public key does not match saved flow.",
+            ));
+        }
         let client = match client {
             Some(c) => c,
             None => pubky::PubkyHttpClient::new()?,

@@ -390,7 +390,6 @@ test("BrowserSessionStore: clearAll removes sessions and all delegated keys", as
     AuthFlowKind.signin(),
     { clientId: "session-store-clear-all-pending.test", relay: TESTNET_HTTP_RELAY },
   );
-  const savedUrl = flow.authorizationUrl;
   const delegatedState = flow.saveDelegated();
   flow.free();
 
@@ -405,14 +404,12 @@ test("BrowserSessionStore: clearAll removes sessions and all delegated keys", as
     t.equal(error.name, "ClientStateError", "stored delegated session is not restorable");
   }
 
-  const resumed = sdk.resumeDelegatedGrantAuthFlow(delegatedState);
-  await signer.approveAuthRequest(savedUrl);
   try {
-    await resumed.awaitApproval();
+    await sdk.resumeDelegatedGrantAuthFlow(delegatedState);
     t.fail("clearAll should remove the pending delegated flow key");
   } catch (error) {
     assertPubkyError(t, error);
-    t.equal(error.name, "AuthenticationError", "pending delegated flow cannot sign without key");
+    t.equal(error.name, "ClientStateError", "pending delegated flow cannot resume without key");
   }
 
   t.end();
@@ -444,7 +441,7 @@ test("BrowserSessionStore: delegated browser pending flow can be resumed", async
   t.ok(delegatedState.length > 0, "facade selected a delegated browser grant flow");
 
   flow.free();
-  const resumed = sdk.resumeDelegatedGrantAuthFlow(delegatedState);
+  const resumed = await sdk.resumeDelegatedGrantAuthFlow(delegatedState);
 
   t.equal(
     resumed.authorizationUrl,
