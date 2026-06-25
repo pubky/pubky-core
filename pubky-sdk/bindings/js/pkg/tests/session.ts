@@ -4,6 +4,7 @@ import {
   AuthFlowKind,
   CookieSession,
   GrantInfo,
+  GrantManager,
   GrantSession,
   GrantSessionInfo,
   Keypair,
@@ -51,8 +52,8 @@ type _SessionCookie = Assert<
 type _GrantSessionInfo = Assert<
   IsExact<ReturnType<GrantSession["sessionInfo"]>, Promise<GrantSessionInfo>>
 >;
-type _GrantListGrants = Assert<
-  IsExact<ReturnType<GrantSession["listGrants"]>, Promise<GrantInfo[]>>
+type _GrantManagerList = Assert<
+  IsExact<ReturnType<GrantManager["list"]>, Promise<GrantInfo[]>>
 >;
 type _CookieExportSecret = Assert<
   IsExact<ReturnType<CookieSession["exportSecret"]>, Promise<string>>
@@ -146,7 +147,7 @@ test("Session: cookie exportSecret restores from secret token", async (t) => {
   t.end();
 });
 
-test("Session: grant-only view exposes grant metadata and management", async (t) => {
+test("Session: grant-only view exposes metadata; GrantManager manages grants", async (t) => {
   const sdk = Pubky.testnet();
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
@@ -193,13 +194,14 @@ test("Session: grant-only view exposes grant metadata and management", async (t)
     "restored grant keeps identity",
   );
 
-  const grants = await restoredGrant.listGrants();
+  const grantManager = new GrantManager(restored);
+  const grants = await grantManager.list();
   t.ok(
     grants.some((entry) => entry.grantId === info.grantId && entry.clientId === clientId),
-    "listGrants includes the active grant",
+    "GrantManager.list includes the active grant",
   );
 
-  await restoredGrant.revokeGrant(info.grantId);
+  await grantManager.revoke(info.grantId);
   try {
     await sdk.restoreSession(exported);
     t.fail("restoring a revoked grant should fail");
@@ -254,23 +256,24 @@ test("Session: non-root grant management calls return homeserver 403", async (t)
   }
 
   const info = await grant.sessionInfo();
+  const grantManager = new GrantManager(session);
 
   try {
-    await grant.listGrants();
-    t.fail("non-root listGrants should fail");
+    await grantManager.list();
+    t.fail("non-root GrantManager.list should fail");
   } catch (error) {
-    assertPubkyError(t, error, "listGrants throws PubkyError");
-    t.equal(error.name, "RequestError", "listGrants maps to RequestError");
-    t.equal(getStatusCode(error), 403, "listGrants status code is 403");
+    assertPubkyError(t, error, "GrantManager.list throws PubkyError");
+    t.equal(error.name, "RequestError", "GrantManager.list maps to RequestError");
+    t.equal(getStatusCode(error), 403, "GrantManager.list status code is 403");
   }
 
   try {
-    await grant.revokeGrant(info.grantId);
-    t.fail("non-root revokeGrant should fail");
+    await grantManager.revoke(info.grantId);
+    t.fail("non-root GrantManager.revoke should fail");
   } catch (error) {
-    assertPubkyError(t, error, "revokeGrant throws PubkyError");
-    t.equal(error.name, "RequestError", "revokeGrant maps to RequestError");
-    t.equal(getStatusCode(error), 403, "revokeGrant status code is 403");
+    assertPubkyError(t, error, "GrantManager.revoke throws PubkyError");
+    t.equal(error.name, "RequestError", "GrantManager.revoke maps to RequestError");
+    t.equal(getStatusCode(error), 403, "GrantManager.revoke status code is 403");
   }
 
   t.end();
@@ -292,7 +295,7 @@ test("Session: invalid grant id throws InvalidInput", async (t) => {
   }
 
   try {
-    await grant.revokeGrant("");
+    await new GrantManager(session).revoke("");
     t.fail("empty grant id should fail");
   } catch (error) {
     assertPubkyError(t, error, "invalid grant id throws PubkyError");

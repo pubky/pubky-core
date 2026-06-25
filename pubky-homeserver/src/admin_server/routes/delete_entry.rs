@@ -20,7 +20,7 @@ mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
     use crate::persistence::files::{
-        events::{EventRepository, EventType},
+        events::{EventRepository, EventType, EventVisibility},
         FileService,
     };
     use crate::persistence::sql::entry::EntryRepository;
@@ -81,9 +81,14 @@ mod tests {
             .get(&entry_path)
             .await
             .expect_err("Blob should be deleted from storage");
-        let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
-            .await
-            .unwrap();
+        let events = EventRepository::get_by_cursor(
+            None,
+            Some(10),
+            EventVisibility::All,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             events.len(),

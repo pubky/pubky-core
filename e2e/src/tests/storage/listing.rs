@@ -162,7 +162,7 @@ async fn list_shallow() {
         format!("/pub/example.com/c.txt"),
         format!("/pub/example.com/d.txt"),
         format!("/pub/example.con/d.txt"),
-        format!("/pub/example.con"),
+        format!("/pub/example.con-file"),
         format!("/pub/file"),
         format!("/pub/file2"),
         format!("/pub/z.com/a.txt"),
@@ -189,7 +189,9 @@ async fn list_shallow() {
             vec![
                 format!("{public_key}/pub/a.com/").parse().unwrap(),
                 format!("{public_key}/pub/example.com/").parse().unwrap(),
-                format!("{public_key}/pub/example.con").parse().unwrap(),
+                format!("{public_key}/pub/example.con-file")
+                    .parse()
+                    .unwrap(),
                 format!("{public_key}/pub/example.con/").parse().unwrap(),
                 format!("{public_key}/pub/file").parse().unwrap(),
                 format!("{public_key}/pub/file2").parse().unwrap(),
@@ -236,7 +238,9 @@ async fn list_shallow() {
     assert_eq!(
         list1,
         vec![
-            format!("{public_key}/pub/example.con").parse().unwrap(),
+            format!("{public_key}/pub/example.con-file")
+                .parse()
+                .unwrap(),
             format!("{public_key}/pub/example.con/").parse().unwrap(),
         ],
         "normal list shallow with limit and a file cursor"
@@ -274,7 +278,9 @@ async fn list_shallow() {
         assert_eq!(
             list,
             vec![
-                format!("{public_key}/pub/example.con").parse().unwrap(),
+                format!("{public_key}/pub/example.con-file")
+                    .parse()
+                    .unwrap(),
                 format!("{public_key}/pub/example.con/").parse().unwrap(),
                 format!("{public_key}/pub/file").parse().unwrap(),
             ],

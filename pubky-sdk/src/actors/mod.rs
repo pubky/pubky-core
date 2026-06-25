@@ -13,7 +13,9 @@ pub use auth::deep_links;
 #[doc(hidden)]
 pub use auth::grant::pop_signer::{DelegatedSignFn, delegated_sign_callback};
 pub use auth::grant::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
-pub use auth::grant::{DelegatedGrantCredentialState, GrantCredential, GrantSessionView};
+pub use auth::grant::{
+    DelegatedGrantCredentialState, GrantCredential, GrantManager, GrantSessionView,
+};
 pub use auth::relay::http_relay_inbox_channel::{
     DEFAULT_HTTP_RELAY_INBOX, EncryptedHttpRelayInboxChannel, HttpRelayInboxChannel,
 };

@@ -81,6 +81,7 @@ Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCe
 - `Pubky` - facade, always start here! Owns the transport and constructs actors.
 - `PubkySigner` - local key holder. Can `signup`, `signin`, approve QR auth, publish PKDNS.
 - `PubkySession` - authenticated “as me” handle. Exposes session-scoped storage.
+- `GrantManager` - account-level grant listing and revocation using an authenticated root session.
 - `PublicStorage` - unauthenticated reads of others’ public data.
 - `Pkdns` - resolve/publish `_pubky` records.
 
@@ -146,6 +147,9 @@ Path rules:
 
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
+- A storage path cannot be both an exact file and an implicit folder prefix. For example:
+  - if `/pub/app/foo` exists, writing `/pub/app/foo/bar.json` returns `409 Conflict`.
+  - if descendants under `/pub/app/foo/` exist, writing `/pub/app/foo` returns `409 Conflict`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
 

@@ -10,4 +10,6 @@ pub enum LayerDomainError {
     WritePathForbidden,
     #[error("disk_space_quota_exceeded")]
     DiskSpaceQuotaExceeded,
+    #[error("path_collision")]
+    PathCollision,
 }

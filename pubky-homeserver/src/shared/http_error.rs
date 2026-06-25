@@ -122,6 +122,9 @@ impl From<FileIoError> for HttpError {
             FileIoError::WritePathForbidden => {
                 Self::forbidden_with_message("Write to this path is not allowed")
             }
+            FileIoError::PathCollision => {
+                Self::new_with_message(StatusCode::CONFLICT, "File/folder path collision")
+            }
             FileIoError::StreamBroken(_) => Self::bad_request("Stream broken"),
             e => Self::internal_server_and_log(format!("FileIoError: {}", e)),
         }

@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![warn(unused_crate_dependencies)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![allow(
@@ -47,7 +48,7 @@ pub use actors::deep_links;
 #[doc(inline)]
 pub use actors::{
     CookieCredential, CookieSessionView, DelegatedGrantCredentialState, GrantCredential,
-    GrantSessionView,
+    GrantManager, GrantSessionView,
 };
 #[doc(inline)]
 pub use actors::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
@@ -98,3 +99,6 @@ pub use pubky_common::{
     session::CookieSessionRecord,
 };
 pub use reqwest::{Method, StatusCode};
+
+#[cfg(test)]
+use pubky_testnet as _; // Used in docstring tests.

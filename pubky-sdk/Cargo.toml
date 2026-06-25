@@ -1,17 +1,13 @@
 [package]
 name = "pubky"
 description = "Pubky SDK"
-version = "0.9.0"
+version.workspace = true
 edition = "2024"
 rust-version.workspace = true
-authors = [
-    "SeverinAlexB <severin@synonym.to>",
-    "SHAcollision <shacollision@synonym.to>",
-    "Nuh <nuh@nuh.dev>",
-]
-license = "MIT"
-homepage = "https://github.com/pubky/pubky-core"
-repository = "https://github.com/pubky/pubky-core"
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 keywords = ["web", "dht", "dns", "decentralized", "identity"]
 categories = [
@@ -29,20 +25,20 @@ default = []
 json = ["reqwest/json"]
 
 [dependencies]
-pubky-common = { path = "../pubky-common" , version = "0.9.0" }
+pubky-common.workspace = true
 thiserror.workspace = true
-async-trait = "0.1"
-eventsource-stream = "0.2.3"
+async-trait.workspace = true
+eventsource-stream.workspace = true
 url.workspace = true
-base64 = "0.22.1"
+base64.workspace = true
 pkarr = { workspace = true, features = ["full"] }
-cookie = "0.18.1"
-flume = { version = "0.11.1", default-features = false, features = ["async"] }
-futures-util = "0.3.31"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-httpdate = "1"
-web-time = "1.1.0"
+cookie = "0.18"
+flume = { version = "0.11", default-features = false, features = ["async"] }
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+httpdate.workspace = true
+web-time = "1"
 # Cross-target async sync primitives. The `sync` feature is portable to
 # `wasm32-unknown-unknown` (see tokio's platform support docs); the native
 # target adds the full feature set in its own section below.
@@ -57,15 +53,19 @@ reqwest = { workspace = true, features = [
 ] }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
+# Used to build a revocation-free rustls config for the ICANN HTTP client (see
+# client/core.rs). Versions unify with what reqwest's rustls feature already pulls in.
+rustls = "0.23"
+webpki-roots = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 reqwest = { workspace = true, features = ["json", "stream"] }
 log.workspace = true
-wasm-bindgen-futures = "0.4.50"
-futures-lite = { version = "2.6.0", default-features = false }
+wasm-bindgen-futures.workspace = true
+futures-lite = { version = "2", default-features = false }
 
 [dev-dependencies]
-pubky-testnet = { path = "../pubky-testnet" , version = "0.9.0" } # used in docstring tests
+pubky-testnet.workspace = true # used in docstring tests
 httpmock = "0.7"
 http-relay = { workspace = true, features = ["server", "link-compat"] }
 

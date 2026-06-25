@@ -2,7 +2,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use crate::wrappers::keys::PublicKey;
-use pubky_common::auth::jws::GrantId;
 use serde::{Deserialize, Serialize};
 
 const DELEGATED_GRANT_CREDENTIAL_VERSION: &str = "pubky-delegated-grant-credential-v1";
@@ -20,7 +19,7 @@ struct DelegatedGrantCredentialJson {
 /// Grant-only view over a grant-backed `Session`.
 ///
 /// Cookie-backed sessions do not expose this view; use `session.grant` and
-/// check for `undefined` before calling grant management methods.
+/// check for `undefined` before calling grant-session methods.
 #[wasm_bindgen]
 pub struct GrantSession(pub(crate) pubky::PubkySession);
 
@@ -42,43 +41,6 @@ impl GrantSession {
     pub async fn grant_id(&self) -> JsResult<String> {
         let grant = self.as_grant()?;
         Ok(grant.grant_id().await.to_string())
-    }
-
-    /// List all active grants for this user.
-    ///
-    /// Requires a root-capability grant session. Non-root sessions surface the
-    /// homeserver `403` as the standard request error.
-    ///
-    /// @returns {Promise<GrantInfo[]>}
-    #[wasm_bindgen(js_name = "listGrants")]
-    pub async fn list_grants(&self) -> JsResult<Vec<GrantInfo>> {
-        let grant = self.as_grant()?;
-        Ok(grant
-            .list_grants()
-            .await?
-            .into_iter()
-            .map(GrantInfo)
-            .collect())
-    }
-
-    /// Revoke a specific grant by id.
-    ///
-    /// Requires a root-capability grant session. Malformed ids throw
-    /// `InvalidInput`.
-    ///
-    /// @param {string} grantId
-    /// @returns {Promise<void>}
-    #[wasm_bindgen(js_name = "revokeGrant")]
-    pub async fn revoke_grant(&self, grant_id: String) -> JsResult<()> {
-        let grant_id = GrantId::parse(&grant_id).map_err(|e| {
-            PubkyError::new(
-                PubkyErrorName::InvalidInput,
-                format!("Invalid grant id: {e}"),
-            )
-        })?;
-        let grant = self.as_grant()?;
-        grant.revoke_grant(&grant_id).await?;
-        Ok(())
     }
 
     /// Export the portable local secret material needed to restore this grant session.
@@ -153,7 +115,7 @@ pub(crate) fn decode_delegated_grant_state(
     })
 }
 
-/// Summary of an active grant returned by `grant.listGrants()`.
+/// Summary of an active grant returned by `GrantManager.list()`.
 #[wasm_bindgen]
 pub struct GrantInfo(pub(crate) pubky_common::auth::grant_session_responses::GrantInfo);
 

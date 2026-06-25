@@ -195,7 +195,8 @@ impl Pubky {
         &self,
         saved_state: String,
     ) -> JsResult<GrantAuthFlow> {
-        GrantAuthFlow::resume_delegated_with_client(saved_state, Some(self.0.client().clone())).await
+        GrantAuthFlow::resume_delegated_with_client(saved_state, Some(self.0.client().clone()))
+            .await
     }
 
     /// Create a `Signer` from an existing `Keypair`.

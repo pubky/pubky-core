@@ -350,6 +350,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_rejects_descendant_when_exact_file_exists() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path = EntryPath::new(
+            pubkey.clone(),
+            WebDavPath::new("/pub/app/foo/bar.json").unwrap(),
+        );
+
+        file_service
+            .write(&exact_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&descendant_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected descendant should not create metadata");
+        file_service
+            .get(&descendant_path)
+            .await
+            .expect_err("Rejected descendant should not create a blob");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_rejects_exact_file_when_descendant_exists() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        file_service
+            .write(&descendant_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&exact_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("exact-file write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&exact_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected exact file should not create metadata");
+        file_service
+            .get(&exact_path)
+            .await
+            .expect_err("Rejected exact file should not create a blob");
+    }
+
     /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
     #[tokio::test]
     #[pubky_test_utils::test]
