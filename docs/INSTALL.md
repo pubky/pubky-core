@@ -2,34 +2,41 @@
 
 This guide is for running a standalone Pubky homeserver. For local app development against an ephemeral test network, see [Local Development](./LOCAL_DEVELOPMENT.md). For contributor test databases and CI setup, see [Testing](./TESTING.md).
 
-## Choose an Install Method
+## Contents
 
-### Install a Release Binary Ubuntu
+- [Docker Compose (coming soon)](#docker-compose-coming-soon)
+- [Install the Homeserver](#install-the-homeserver)
+  - [Release Binary](#release-binary) | [Build From Source](#build-from-source) | [Docker](#docker)
+- [Set Up PostgreSQL](#set-up-postgresql)
+  - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
+- [Run](#run)
+- [First Run](#first-run)
+- [Configuration](#configuration)
+- [Production Notes](#production-notes)
+- [Troubleshooting](#troubleshooting)
 
-Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases).
+## Docker Compose (coming soon)
 
-Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`.
+A `docker-compose.yml` that bundles the homeserver and PostgreSQL together is planned. This will be the simplest way to get started.
+
+## Install the Homeserver
+
+### Release Binary
+
+Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`:
 
 ```bash
-wget https://github.com/pubky/pubky-core/releases/download/v0.7.0/pubky-core-v0.7.0-linux-amd64.tar.gz
-tar -xf pubky-core-v0.7.0-linux-amd64.tar.gz
-cp pubky-core-v0.7.0-linux-amd64/pubky-homeserver /usr/local/bin
+wget https://github.com/pubky/pubky-core/releases/download/v0.9.0/pubky-core-v0.9.0-linux-amd64.tar.gz
+tar -xf pubky-core-v0.9.0-linux-amd64.tar.gz
+cp pubky-core-v0.9.0-linux-amd64/pubky-homeserver /usr/local/bin
 ```
 
-### Build From Source Ubuntu
+### Build From Source
 
-<details>
-<summary>Rust Toolchain required</summary>
-
-#### Install Toolchain
-
-Make sure you have the rust toolchain installed and working.
+Make sure you have the Rust toolchain installed and working.
 
 - [Install Guide](https://rust-lang.org/tools/install/)
 - On Ubuntu, you might also need `apt install build-essential git`
-
----
-</details>
 
 Build the homeserver from the repository root:
 
@@ -40,81 +47,91 @@ git checkout vx.x.x   # Pick a version
 cargo build --release -p pubky-homeserver
 ```
 
-Place the built release binary `pubky-homeserver` somewhere on your `PATH`. For example:
+Place the built release binary somewhere on your `PATH`:
 
 ```bash
 cp ./target/release/pubky-homeserver /usr/local/bin
 ```
 
-## PostgreSQL
+### Docker
 
-The standalone homeserver requires PostgreSQL. 
+Build the homeserver image using the [Dockerfile](../Dockerfile) in the repo root:
+
+```bash
+docker build --build-arg BUILD_TARGET=homeserver -t pubky-homeserver .
+```
+
+## Set Up PostgreSQL
+
+The homeserver requires a running PostgreSQL instance with an empty database. It runs migrations automatically on startup. The default connection string is `postgres://localhost:5432/pubky_homeserver`.
 
 ### Docker
 
-<details>
-<summary>Docker Engine required</summary>
+Requires [Docker Engine](https://docs.docker.com/engine/install/ubuntu/).
 
-#### Install Docker Engine
-
-Checkout the guide: https://docs.docker.com/engine/install/ubuntu/
-
----
-</details>
-
-
-For a local Docker PostgreSQL instance with password authentication:
+Start a PostgreSQL container with the `pubky_homeserver` database:
 
 ```bash
 docker run --name pubky-postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
   -e POSTGRES_DB=pubky_homeserver \
   -p 127.0.0.1:5432:5432 \
   -v postgres-data:/var/lib/postgresql/data \
-  -d postgres
+  -d postgres:17
 ```
 
-Set the homeserver database URL in `~/.pubky/config.toml`:
-
-```toml
-[general]
-database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
-```
-
-### Native Ubuntu
-
-In order for LND to run on Postgres, an empty database should already exist. A database can be created via the usual ways (psql, pgadmin, etc.). A user with access to this database is also required.
-
-<details>
-<summary>Install and setup postgres</summary>
-
-#### Install and Setup Postgres
-
-Checkout the guide: https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart
-
-The homeserver needs and empty database + a user/password to connect to.
-
-Use this command to convieniently test if the resulting connection string is working:
+Verify it's running and the database exists:
 
 ```bash
-# Replace the same connection string with your specific string
-sudo -u postgres psql "postgres://postgres:postres@localhost:5432/pubky_homeserver" -c '\conninfo'
+docker exec pubky-postgres psql -U postgres -c '\l pubky_homeserver'
 ```
 
----
-</details>
+No config changes needed — the default connection string matches this setup.
 
-Set the homeserver database URL in `~/.pubky/config.toml`:
+### Native
+
+Install PostgreSQL ([Ubuntu guide](https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart)):
+
+```bash
+sudo apt install postgresql
+```
+
+Create the database:
+
+```bash
+sudo -u postgres createdb pubky_homeserver
+```
+
+Verify the connection:
+
+```bash
+psql "postgres://localhost:5432/pubky_homeserver" -c '\conninfo'
+```
+
+On most Ubuntu installs, peer/trust auth is the default, so no config changes are needed.
+
+### Existing instance
+
+Create a database on your existing PostgreSQL instance:
+
+```bash
+createdb -h <HOST> -U <USER> pubky_homeserver
+```
+
+Set the connection string in `~/.pubky/config.toml`:
 
 ```toml
 [general]
-database_url = "postgres://postgres:postgres@:5432/pubky_homeserver"
+database_url = "postgres://<USER>:<PASSWORD>@<HOST>:5432/pubky_homeserver"
+```
 
+Verify the connection:
 
+```bash
+psql "postgres://<USER>:<PASSWORD>@<HOST>:5432/pubky_homeserver" -c '\conninfo'
+```
 
-
-## First Run
+## Run
 
 Start the homeserver:
 
@@ -122,11 +139,19 @@ Start the homeserver:
 pubky-homeserver
 ```
 
-Or from source:
+From source:
 
 ```bash
 cargo run -p pubky-homeserver
 ```
+
+With Docker (using host networking so it can reach PostgreSQL on localhost):
+
+```bash
+docker run --network host -v pubky-data:/root/.pubky pubky-homeserver
+```
+
+## First Run
 
 On first run, the homeserver creates its data directory at `~/.pubky` unless you pass a different path:
 
@@ -144,7 +169,7 @@ The data directory contains:
 
 The generated `config.toml` is based on [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
 
-## Default Endpoints
+The default endpoints are:
 
 | Endpoint | Default |
 | --- | --- |
@@ -153,8 +178,6 @@ The generated `config.toml` is based on [`pubky-homeserver/config.sample.toml`](
 | Admin API | `http://127.0.0.1:6288` |
 | Metrics API | `http://127.0.0.1:6289` |
 
-## Signup Tokens
-
 Standalone homeservers require signup tokens by default. Generate one through the admin API:
 
 ```bash
@@ -162,19 +185,7 @@ curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
   -H "X-Admin-Password: admin"
 ```
 
-Change the admin password before exposing a homeserver beyond local development:
-
-```toml
-[admin]
-admin_password = "change-me"
-```
-
-You can also open signup entirely for a private or temporary deployment:
-
-```toml
-[general]
-signup_mode = "open"
-```
+You can also open signup entirely for a private or temporary deployment by setting `signup_mode = "open"` in `config.toml` (see [Configuration](#configuration)).
 
 ## Configuration
 
@@ -200,10 +211,10 @@ Review the full documented sample at [`pubky-homeserver/config.sample.toml`](../
 
 Before using a homeserver in production:
 
-- Use a persistent PostgreSQL instance and back it up.
+- Use a persistent PostgreSQL instance with password authentication and back it up. Do not use trust auth in production.
 - Back up the homeserver `secret` file and any filesystem or bucket storage.
 - Do not expose the admin or metrics APIs to the public internet.
-- Change the default admin password.
+- Change the default admin password in `[admin].admin_password`.
 - Configure `pkdns.public_ip`, `pkdns.icann_domain`, and public ports for your deployment.
 - Put the regular HTTP API behind a reverse proxy if you need browser-compatible HTTPS.
 - Use persistent filesystem storage or a configured bucket backend, not in-memory storage.
@@ -225,26 +236,10 @@ Or update `[general].database_url` in `~/.pubky/config.toml` to point at an exis
 
 Make sure PostgreSQL is running and listening on the host and port in `general.database_url`.
 
-For the Docker example above, check the container:
+For the Docker examples above, check the container:
 
 ```bash
 docker ps --filter name=pubky-postgres
-```
-
-### Port Already In Use
-
-Change the relevant listen socket in `~/.pubky/config.toml`:
-
-```toml
-[drive]
-icann_listen_socket = "127.0.0.1:6286"
-pubky_listen_socket = "127.0.0.1:6287"
-
-[admin]
-listen_socket = "127.0.0.1:6288"
-
-[metrics]
-listen_socket = "127.0.0.1:6289"
 ```
 
 ### Invalid Configuration

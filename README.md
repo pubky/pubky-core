@@ -24,11 +24,11 @@
 
 This repository contains `pubky-homeserver`, the reference homeserver implementation for Pubky, and the crates needed to run, test, and integrate with it.
 
-Pubky Core is the broader protocol ecosystem: public-key identity, PKDNS/Pkarr discovery, Pubky TLS, signers, and more. This repository focuses on the homeserver and its closely related developer tooling.
+Pubky Core is the broader protocol ecosystem: public-key identity, PKDNS/Pkarr discovery, Pubky TLS, signers, and more. This repository focuses on the homeserver and its related developer tooling.
 
 ## What Is a Homeserver?
 
-A Pubky homeserver acts as a user's agent on the internet. It provides availability for user data, exposes HTTP APIs for authenticated writes and public reads, and publishes the records that allow other clients to discover where a user's data is hosted.
+A Pubky homeserver acts is the user's data store in the Pubky ecosystem. It provides availability for user data, exposes HTTP APIs for authenticated writes and public reads, and publishes the records that allow other clients to discover where a user's data is hosted.
 
 Key capabilities:
 
@@ -51,7 +51,7 @@ Key capabilities:
 
 ## Quick Start
 
-The easiest way to run a homeserver locally is the long-lived testnet with embedded PostgreSQL. It starts a local DHT, Pkarr relay, HTTP relay, homeserver, and admin server. The first run downloads PostgreSQL binaries that are reused on later runs.
+The easiest way to run a homeserver locally is via the long-lived testnet with embedded PostgreSQL. It starts a local DHT, Pkarr relay, HTTP relay, homeserver, and admin server. The first run downloads PostgreSQL binaries that are reused on later runs.
 
 ```bash
 cargo run -p pubky-testnet --features embedded-postgres -- --embedded-postgres
