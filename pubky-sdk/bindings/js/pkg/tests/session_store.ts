@@ -49,6 +49,9 @@ type _StoredCapabilities = Assert<
 type _StoredStorageMode = Assert<
   IsExact<StoredSessionInfo["storageMode"], string>
 >;
+type _DelegatedResume = Assert<
+  IsExact<ReturnType<Facade["resumeDelegatedGrantAuthFlow"]>, Promise<GrantAuthFlow>>
+>;
 
 test("BrowserSessionStore: Node runtime reports unavailable without IndexedDB", async (t) => {
   if (typeof indexedDB !== "undefined") {
@@ -466,6 +469,37 @@ test("BrowserSessionStore: delegated browser pending flow can be resumed", async
   t.end();
 });
 
+test("BrowserSessionStore: delegated pending flow rejects mismatched stored public key", async (t) => {
+  if (typeof indexedDB === "undefined") {
+    t.comment("browser-only pending-flow resume test skipped without IndexedDB");
+    t.end();
+    return;
+  }
+
+  await assertBrowserDelegationAvailable(t);
+
+  const sdk = Pubky.testnet();
+  const flow = await sdk.startGrantAuthFlow(
+    "/pub/pubky.app/:rw",
+    AuthFlowKind.signin(),
+    { clientId: "session-store-delegated-resume-mismatch.test", relay: TESTNET_HTTP_RELAY },
+  );
+  const delegatedState = flow.saveDelegated();
+  const tamperedState = tamperClientPublicKey(delegatedState);
+  flow.free();
+
+  try {
+    await sdk.resumeDelegatedGrantAuthFlow(tamperedState);
+    t.fail("resume should reject when saved public key differs from IndexedDB key");
+  } catch (error) {
+    assertPubkyError(t, error);
+    t.equal(error.name, "ClientStateError", "mismatched delegated key rejects at resume");
+    t.match(error.message, /does not match saved flow/i, "error explains key mismatch");
+  }
+
+  t.end();
+});
+
 /**
  * Assert that the browser runner can exercise real delegated grant keys.
  */
@@ -522,6 +556,12 @@ function setBrowserDelegationOverride(value: boolean | undefined): void {
   } else {
     Reflect.set(globalThis, key, value);
   }
+}
+
+function tamperClientPublicKey(savedState: string): string {
+  const state = JSON.parse(savedState) as { client_pk: string };
+  state.client_pk = Keypair.random().publicKey.z32();
+  return JSON.stringify(state);
 }
 
 /**
