@@ -21,6 +21,9 @@ For cookie-auth applications:
 - JS: replace `resumeAuthFlow` with `resumeCookieAuthFlow`.
 - Rust: replace `start_auth_flow` with `start_cookie_auth_flow`.
 - Rust: replace `resume_auth_flow` with `resume_cookie_auth_flow`.
+- Rust: replace `session.export_secret()` with `session.as_cookie().and_then(|cookie| cookie.export_secret())`.
+- Rust: if your code uses cookie metadata fields from `session.info()`, use `session.as_cookie().unwrap().session_info()`.
+- Rust: prefer `session.as_cookie().unwrap().write_secret_file(...)` over deprecated `session.write_secret_file(...)`.
 
 ## JavaScript SDK
 
@@ -267,12 +270,16 @@ Restore cookie secret tokens with `Pubky::restore_session` or the existing `Pubk
 let restored = pubky.restore_session(&secret).await?;
 ```
 
-Writing `.sess` files also moves behind the cookie view.
+In `v0.9.x`, native Rust apps could write `.sess` files directly from `PubkySession`.
 
 ```rust
 // v0.9.x
 session.write_secret_file("alice.sess")?;
+```
 
+In v0.10, `write_secret_file` still exists as a deprecated compatibility method. Prefer the cookie view so the cookie-only operation is explicit.
+
+```rust
 // v0.10 cookie-compatible
 session
     .as_cookie()
@@ -290,16 +297,26 @@ The direct legacy methods `session.export()`, `session.write_secret_file(...)`, 
 
 ### Session Info
 
-In `v0.9.x`, `session.info()` returned the common cookie session record type. In v0.10, `session.info()` returns minimal auth-agnostic metadata.
+In `v0.9.x`, `session.info()` returned the common cookie session record type, so cookie metadata fields were available directly.
 
 ```rust
+// v0.9.x
+let created_at = session.info().created_at();
+let bytes = session.info().serialize();
+```
+
+In v0.10, `session.info()` returns minimal auth-agnostic metadata.
+
+```rust
+// v0.10 auth-agnostic
 let public_key = session.info().public_key();
 let capabilities = session.info().capabilities();
 ```
 
-If your app needs cookie-specific fields such as `created_at()` or the old binary serialization format, use the cookie view.
+To keep using cookie-specific fields such as `created_at()` or the old binary serialization format, use the cookie view.
 
 ```rust
+// v0.10 cookie-compatible
 let cookie_record = session
     .as_cookie()
     .expect("expected a cookie-backed session")
