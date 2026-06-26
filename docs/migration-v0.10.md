@@ -24,6 +24,7 @@ For cookie-auth applications:
 - Rust: replace `session.export_secret()` with `session.as_cookie().and_then(|cookie| cookie.export_secret())`.
 - Rust: if your code uses cookie metadata fields from `session.info()`, use `session.as_cookie().unwrap().session_info()`.
 - Rust: prefer `session.as_cookie().unwrap().write_secret_file(...)` over deprecated `session.write_secret_file(...)`.
+- General: v0.10 tightens capability path matching. A trailing slash is significant.
 
 ## JavaScript SDK
 
