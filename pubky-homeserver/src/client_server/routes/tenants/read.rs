@@ -26,7 +26,7 @@ pub async fn head(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    has_read_permission(session.as_ref(), Some(pubky.public_key()), &path.0)?;
+    has_read_permission(session.as_ref(), Some(pubky.public_key()), path.inner())?;
 
     state
         .user_service
@@ -52,7 +52,7 @@ pub async fn get(
     Path(path): Path<WebDavPathAxum>,
     params: ListQueryParams,
 ) -> HttpResult<impl IntoResponse> {
-    has_read_permission(session.as_ref(), Some(pubky.public_key()), &path.0)?;
+    has_read_permission(session.as_ref(), Some(pubky.public_key()), path.inner())?;
 
     let public_key = pubky.public_key().clone();
     let entry_path = EntryPath::new(public_key.clone(), path.inner().clone());

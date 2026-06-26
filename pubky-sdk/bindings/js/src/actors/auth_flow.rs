@@ -21,7 +21,7 @@ use crate::{
 /// Start and control a pubkyauth authorization flow.
 ///
 /// Typical flow:
-/// 1) `AuthFlow.start(...)` or `pubky.startAuthFlow(...)`
+/// 1) `AuthFlow.start(...)` or `pubky.startCookieAuthFlow(...)`
 /// 2) Show `authorizationUrl()` as QR/deeplink to the user’s signing device
 /// 3) `awaitApproval()` to receive a ready `Session`
 ///
@@ -36,7 +36,7 @@ pub struct AuthFlow {
 #[wasm_bindgen]
 impl AuthFlow {
     /// Start a flow (standalone).
-    /// Prefer `pubky.startAuthFlow()` to reuse a facade client.
+    /// Prefer `pubky.startCookieAuthFlow()` to reuse a facade client.
     ///
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
@@ -104,10 +104,10 @@ impl AuthFlow {
     }
 
     /// Resume a previously started auth flow from its saved `authorizationUrl` (standalone).
-    /// Prefer `pubky.resumeAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
+    /// Prefer `pubky.resumeCookieAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
     ///
     /// Relay messages expire after ~5 minutes; resume is only viable in that window.
-    /// See `Pubky.resumeAuthFlow()` / `Pubky.startAuthFlow()` for full guidance.
+    /// See `Pubky.resumeCookieAuthFlow()` / `Pubky.startCookieAuthFlow()` for full guidance.
     ///
     /// **Security:** `authorizationUrl` contains the `client_secret`.
     /// Delete it from storage as soon as resume completes or is abandoned.
@@ -130,7 +130,7 @@ impl AuthFlow {
             Some(c) => pubky::Pubky::with_client(c),
             None => pubky::Pubky::new()?,
         };
-        let flow = pubky.resume_auth_flow(&authorization_url)?;
+        let flow = pubky.resume_cookie_auth_flow(&authorization_url)?;
         Ok(flow.into())
     }
 
@@ -138,7 +138,7 @@ impl AuthFlow {
     ///
     /// **Security:** This URL contains the `client_secret` in plaintext.
     /// Treat it as a short-lived secret and delete it after the flow completes.
-    /// See `Pubky.startAuthFlow()` docs for storage guidance.
+    /// See `Pubky.startCookieAuthFlow()` docs for storage guidance.
     ///
     /// @returns {string} A `pubkyauth://…` or `https://…` URL with channel info.
     ///

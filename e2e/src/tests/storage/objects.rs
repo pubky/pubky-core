@@ -1,4 +1,17 @@
 use super::*;
+use base64::Engine;
+
+fn assert_server_status(error: Error, expected: StatusCode) {
+    assert!(
+        matches!(error, Error::Request(RequestError::Server { status, .. }) if status == expected),
+        "expected server status {expected}, got {error:?}"
+    );
+}
+
+fn admin_basic_auth(password: &str) -> String {
+    let auth = base64::engine::general_purpose::STANDARD.encode(format!("admin:{password}"));
+    format!("Basic {auth}")
+}
 
 #[tokio::test]
 #[pubky_testnet::test]
@@ -75,6 +88,124 @@ async fn put_get_delete() {
 
     // Should not exist, PubkyError of 404 type
     assert!(session.storage().get(path).await.is_err());
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn path_collisions_return_conflict_and_recover_after_delete() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    let exact = "/pub/app/foo";
+    let descendant = "/pub/app/foo/bar.json";
+
+    session.storage().put(exact, vec![1]).await.unwrap();
+
+    let err = session
+        .storage()
+        .put(descendant, vec![2])
+        .await
+        .expect_err("descendant write should conflict with exact file");
+    assert_server_status(err, StatusCode::CONFLICT);
+    let err = session
+        .storage()
+        .get(descendant)
+        .await
+        .expect_err("rejected descendant should not be readable");
+    assert_server_status(err, StatusCode::NOT_FOUND);
+
+    session.storage().delete(exact).await.unwrap();
+    session.storage().put(descendant, vec![3]).await.unwrap();
+
+    let err = session
+        .storage()
+        .put(exact, vec![4])
+        .await
+        .expect_err("exact-file write should conflict with descendant");
+    assert_server_status(err, StatusCode::CONFLICT);
+    let err = session
+        .storage()
+        .get(exact)
+        .await
+        .expect_err("rejected exact file should not be readable");
+    assert_server_status(err, StatusCode::NOT_FOUND);
+
+    session.storage().delete(descendant).await.unwrap();
+    session.storage().put(exact, vec![5]).await.unwrap();
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn deleting_legacy_exact_file_does_not_delete_descendants() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let user = session.public_key().z32();
+
+    let admin_password = pubky_testnet::pubky_homeserver::ConfigToml::default_test_config()
+        .admin
+        .admin_password;
+    let admin_auth = admin_basic_auth(&admin_password);
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+    let admin_client = pubky_testnet::pubky::PubkyHttpClient::new().unwrap();
+
+    let exact_url = format!("http://{admin_socket}/dav/{user}/pub/app/foo");
+    let descendant_url = format!("http://{admin_socket}/dav/{user}/pub/app/foo/bar.json");
+    let exact = "/pub/app/foo";
+    let descendant = "/pub/app/foo/bar.json";
+
+    let response = admin_client
+        .request(Method::PUT, &exact_url)
+        .header("Authorization", &admin_auth)
+        .body(vec![1])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let response = admin_client
+        .request(Method::PUT, &descendant_url)
+        .header("Authorization", &admin_auth)
+        .body(vec![2])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    session.storage().delete(exact).await.unwrap();
+
+    let err = session
+        .storage()
+        .get(exact)
+        .await
+        .expect_err("deleted exact file should not be readable");
+    assert_server_status(err, StatusCode::NOT_FOUND);
+
+    let descendant_bytes = session
+        .storage()
+        .get(descendant)
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(descendant_bytes.as_ref(), &[2]);
 }
 
 use serde::{Deserialize, Serialize};

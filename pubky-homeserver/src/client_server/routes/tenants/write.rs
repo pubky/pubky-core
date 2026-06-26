@@ -22,7 +22,7 @@ use crate::{
     },
     services::user_service::FILE_METADATA_SIZE,
     shared::{
-        webdav::{EntryPath, WebDavPathAxum},
+        webdav::{EntryPath, WebDavFilePathAxum},
         HttpError, HttpResult,
     },
 };
@@ -31,9 +31,9 @@ pub async fn delete(
     State(state): State<AppState>,
     session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavFilePathAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    has_write_permission(&session, pubky.public_key(), &path.0)?;
+    has_write_permission(&session, pubky.public_key(), path.inner())?;
 
     let public_key = pubky.public_key();
     state
@@ -50,11 +50,11 @@ pub async fn put(
     State(state): State<AppState>,
     session: AuthSession,
     pubky: PubkyHost,
-    Path(path): Path<WebDavPathAxum>,
+    Path(path): Path<WebDavFilePathAxum>,
     headers: HeaderMap,
     body: Body,
 ) -> HttpResult<impl IntoResponse> {
-    has_write_permission(&session, pubky.public_key(), &path.0)?;
+    has_write_permission(&session, pubky.public_key(), path.inner())?;
 
     let public_key = pubky.public_key();
     let user = state

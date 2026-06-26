@@ -32,7 +32,7 @@ test("Auth: 3rd party signup", async (t) => {
   const signupToken = await createSignupToken();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  const flow = sdk.startAuthFlow(capabilities, AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken), TESTNET_HTTP_RELAY);
+  const flow = sdk.startCookieAuthFlow(capabilities, AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken), TESTNET_HTTP_RELAY);
 
   type Flow = typeof flow;
   type SessionPromise = ReturnType<Flow["awaitApproval"]>;
@@ -70,7 +70,7 @@ test("Auth: 3rd party signin", async (t) => {
   const pubky = signer.publicKey.z32();
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
-  const flow = sdk.startAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+  const flow = sdk.startCookieAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
 
   type Flow = typeof flow;
   type SessionPromise = ReturnType<Flow["awaitApproval"]>;
@@ -199,14 +199,14 @@ test("Grant auth: 3rd party signup", async (t) => {
   t.end();
 });
 
-test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
+test("startCookieAuthFlow: rejects malformed capabilities; normalizes valid; allows empty", async (t) => {
   const sdk = Pubky.testnet(); // uses local testnet mapping so URLs are resolvable in-node
 
   // 1) Invalid entries -> throws InvalidInput with a precise message
   try {
     // @ts-ignore: invalid capabilities string format. Emulating plain JS validation rules.
-    sdk.startAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
-    t.fail("startAuthFlow() should throw on malformed capability entries");
+    sdk.startCookieAuthFlow("/ok/:rw,not/a/cap,/also:bad:x", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+    t.fail("startCookieAuthFlow() should throw on malformed capability entries");
   } catch (error) {
     assertPubkyError(t, error);
     t.equal(error.name, "InvalidInput", "invalid caps -> InvalidInput");
@@ -241,7 +241,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
   // 2) Valid entry with unordered actions -> normalized in URL (wr -> rw)
   {
     // @ts-ignore: invalid capabilities string format. Emulating plain JS normalization.
-    const flow = sdk.startAuthFlow("/pub/example/:wr", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+    const flow = sdk.startCookieAuthFlow("/pub/example/:wr", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(
@@ -253,7 +253,7 @@ test("startAuthFlow: rejects malformed capabilities; normalizes valid; allows em
 
   // 3) Empty string -> allowed; caps param remains empty
   {
-    const flow = sdk.startAuthFlow("", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+    const flow = sdk.startCookieAuthFlow("", AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
     const url = new URL(flow.authorizationUrl);
     const caps = url.searchParams.get("caps");
     t.equal(caps, "", "empty input allowed (no scopes)");
@@ -403,7 +403,7 @@ test("Auth: resume signin flow reconnects to same channel", async (t) => {
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
 
   // 1) Start a flow and save the URL (as the app would before a refresh).
-  const originalFlow = sdk.startAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
+  const originalFlow = sdk.startCookieAuthFlow(capabilities, AuthFlowKind.signin(), TESTNET_HTTP_RELAY);
   const savedUrl = originalFlow.authorizationUrl;
   // Explicitly free the WASM handle — simulates page refresh killing WASM memory.
   // JS block scoping does NOT trigger WASM destructors; .free() does.
@@ -417,7 +417,7 @@ test("Auth: resume signin flow reconnects to same channel", async (t) => {
   }
 
   // 3) Resume from the saved URL — reconnects to the same relay channel.
-  const resumedFlow = sdk.resumeAuthFlow(savedUrl);
+  const resumedFlow = sdk.resumeCookieAuthFlow(savedUrl);
 
   t.equal(
     resumedFlow.authorizationUrl,
@@ -451,7 +451,7 @@ test("Auth: resume signup flow preserves signup params and channel", async (t) =
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
 
   // 1) Start a signup flow and save URL before refresh.
-  const originalFlow = sdk.startAuthFlow(
+  const originalFlow = sdk.startCookieAuthFlow(
     capabilities,
     AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken),
     TESTNET_HTTP_RELAY,
@@ -479,7 +479,7 @@ test("Auth: resume signup flow preserves signup params and channel", async (t) =
   await signer.approveAuthRequest(savedUrl);
 
   // 3) Resume from persisted URL.
-  const resumedFlow = sdk.resumeAuthFlow(savedUrl);
+  const resumedFlow = sdk.resumeCookieAuthFlow(savedUrl);
 
   t.equal(
     resumedFlow.authorizationUrl,
@@ -515,12 +515,12 @@ test("Auth: resume signup flow preserves signup params and channel", async (t) =
   t.end();
 });
 
-test("resumeAuthFlow: rejects invalid URL", async (t) => {
+test("resumeCookieAuthFlow: rejects invalid URL", async (t) => {
   const sdk = Pubky.testnet();
 
   try {
-    sdk.resumeAuthFlow("https://not-a-pubkyauth-url.com");
-    t.fail("resumeAuthFlow() should throw on non-pubkyauth URL");
+    sdk.resumeCookieAuthFlow("https://not-a-pubkyauth-url.com");
+    t.fail("resumeCookieAuthFlow() should throw on non-pubkyauth URL");
   } catch (error) {
     assertPubkyError(t, error);
     t.equal(error.name, "AuthenticationError", "invalid URL -> AuthenticationError");
@@ -531,8 +531,8 @@ test("resumeAuthFlow: rejects invalid URL", async (t) => {
   }
 
   try {
-    sdk.resumeAuthFlow("pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8");
-    t.fail("resumeAuthFlow() should reject seed export URLs");
+    sdk.resumeCookieAuthFlow("pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8");
+    t.fail("resumeCookieAuthFlow() should reject seed export URLs");
   } catch (error) {
     assertPubkyError(t, error);
     t.equal(error.name, "AuthenticationError", "seed export URL -> AuthenticationError");
