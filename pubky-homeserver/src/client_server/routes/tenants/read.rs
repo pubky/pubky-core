@@ -26,7 +26,7 @@ pub async fn head(
     pubky: PubkyHost,
     Path(path): Path<WebDavPathAxum>,
 ) -> HttpResult<impl IntoResponse> {
-    has_read_permission(session.as_ref(), &pubky, &path.0)?;
+    has_read_permission(session.as_ref(), &pubky, path.inner())?;
 
     state
         .user_service
@@ -52,7 +52,7 @@ pub async fn get(
     Path(path): Path<WebDavPathAxum>,
     params: ListQueryParams,
 ) -> HttpResult<impl IntoResponse> {
-    has_read_permission(session.as_ref(), &pubky, &path.0)?;
+    has_read_permission(session.as_ref(), &pubky, path.inner())?;
 
     let public_key = pubky.public_key().clone();
     let entry_path = EntryPath::new(public_key.clone(), path.inner().clone());
@@ -290,6 +290,35 @@ mod tests {
             .to_string();
 
         Ok((context, router, server, public_key, cookie))
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn put_rejects_directory_path() {
+        let (_context, _router, server, public_key, cookie) = create_environment().await.unwrap();
+
+        let response = server
+            .put("/pub/app/foo/")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .bytes(Vec::from("data").into())
+            .await;
+
+        response.assert_status(StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn delete_rejects_directory_path() {
+        let (_context, _router, server, public_key, cookie) = create_environment().await.unwrap();
+
+        let response = server
+            .delete("/pub/app/foo/")
+            .add_header("host", public_key.z32())
+            .add_header(header::COOKIE, cookie)
+            .await;
+
+        response.assert_status(StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
