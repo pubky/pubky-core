@@ -51,6 +51,7 @@ mod tests {
             file_service.clone(),
             "",
             context.user_service.clone(),
+            context.events_service.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
@@ -112,6 +113,7 @@ mod tests {
             FileService::new_from_context(&context).unwrap(),
             "",
             context.user_service.clone(),
+            context.events_service.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
@@ -136,6 +138,7 @@ mod tests {
             FileService::new_from_context(&context).unwrap(),
             "",
             context.user_service.clone(),
+            context.events_service.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))

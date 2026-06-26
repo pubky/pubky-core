@@ -455,3 +455,91 @@ async fn allowed_write_paths_enforced_via_http() {
         "Expected 403 FORBIDDEN on delete but got: {err:?}"
     );
 }
+
+/// End-to-end: a real `/priv/` write surfaces in the admin events feed
+/// while the public client-server feed stays public-only and never leaks the private path.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn admin_events_feed_exposes_private_events() {
+    let config = ConfigToml::default_test_config();
+    let admin_password = config.admin.admin_password.clone();
+
+    let mut testnet = Testnet::new().await.unwrap();
+    let pubky = testnet.sdk().unwrap();
+    let mock_dir = MockDataDir::new(config, Some(Keypair::random())).unwrap();
+    let server = testnet
+        .create_homeserver_app_with_mock(mock_dir)
+        .await
+        .unwrap();
+
+    let admin_socket = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .listen_socket();
+
+    // Create a user/session and write one public and one private file.
+    let signer = pubky.signer(Keypair::random());
+    let pubkey_z32 = signer.public_key().z32();
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    session
+        .storage()
+        .put("/pub/note.txt", vec![1, 2, 3])
+        .await
+        .unwrap();
+    session
+        .storage()
+        .put("/priv/app/secret.txt", vec![4, 5, 6])
+        .await
+        .unwrap();
+
+    // Admin feed (password-authenticated) returns BOTH events, including the private one,
+    // and must not be cached.
+    let admin_resp = PubkyHttpClient::new()
+        .unwrap()
+        .request(Method::GET, &format!("http://{admin_socket}/events"))
+        .header("X-Admin-Password", &admin_password)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(admin_resp.status(), StatusCode::OK);
+    assert_eq!(
+        admin_resp
+            .headers()
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store"),
+    );
+    let admin_body = admin_resp.text().await.unwrap();
+    assert!(
+        admin_body.contains(&format!("PUT pubky://{pubkey_z32}/pub/note.txt")),
+        "admin feed should include the public event: {admin_body}"
+    );
+    assert!(
+        admin_body.contains(&format!("PUT pubky://{pubkey_z32}/priv/app/secret.txt")),
+        "admin feed should include the private event: {admin_body}"
+    );
+
+    // The public client-server feed is public-only, it must NOT leak the private path.
+    let feed_url = format!("https://{}/events/", server.public_key().z32());
+    let public_body = session
+        .client()
+        .request(Method::GET, &feed_url)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        public_body.contains(&format!("PUT pubky://{pubkey_z32}/pub/note.txt")),
+        "public feed should include the public event: {public_body}"
+    );
+    assert!(
+        !public_body.contains("/priv/"),
+        "public feed must not leak private paths: {public_body}"
+    );
+}

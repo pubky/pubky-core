@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::routes::{
-    dav_handler, delete_entry,
+    admin_events, dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
     generate_signup_token, info, root, signup_tokens, user_quota,
 };
@@ -28,6 +28,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
                 .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
+        .route("/events", get(admin_events::feed))
         .route("/signup_tokens", get(signup_tokens::list_signup_tokens))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
@@ -118,6 +119,7 @@ impl AdminServer {
             context.file_service.clone(),
             &password,
             context.user_service.clone(),
+            context.events_service.clone(),
         )
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
@@ -208,10 +210,77 @@ mod tests {
                 FileService::new_from_context(context).unwrap(),
                 "",
                 context.user_service.clone(),
+                context.events_service.clone(),
             ),
             "test",
         ))
         .unwrap()
+    }
+
+    /// Seed `paths` as PUT events for a fresh random user, returning that user's pubkey.
+    /// Within a test's fresh database, event ids are assigned in `paths` order starting at 1.
+    async fn seed_put_events(
+        context: &AppContext,
+        paths: &[&str],
+    ) -> pubky_common::crypto::PublicKey {
+        use crate::persistence::files::events::EventType;
+        use crate::persistence::sql::user::UserRepository;
+        use crate::shared::webdav::{EntryPath, WebDavPath};
+        use pubky_common::crypto::{Hash, Keypair};
+
+        let pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        for p in paths {
+            let path = EntryPath::new(pubkey.clone(), WebDavPath::new(p).unwrap());
+            context
+                .events_service
+                .create_event(
+                    user.id,
+                    EventType::Put {
+                        content_hash: Hash::from_bytes([0; 32]),
+                    },
+                    &path,
+                    &mut context.sql_db.pool().into(),
+                )
+                .await
+                .unwrap();
+        }
+        pubkey
+    }
+
+    /// Split an admin feed body into its event lines and the trailing `cursor: <id>` value
+    /// (if any), the way a client consuming the plain-text feed would.
+    fn parse_admin_feed(body: &str) -> (Vec<String>, Option<String>) {
+        let mut lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
+        let cursor = lines
+            .last()
+            .and_then(|l| l.strip_prefix("cursor: "))
+            .map(|c| c.to_string());
+        if cursor.is_some() {
+            lines.pop();
+        }
+        (lines, cursor)
+    }
+
+    /// GET the admin feed with the test password, assert it is a 200 with `Cache-Control: no-store`
+    async fn admin_feed_body(server: &TestServer, query: &str) -> String {
+        let response = server
+            .get(&format!("/events{query}"))
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-store"),
+            "admin feed must be Cache-Control: no-store"
+        );
+        response.text()
     }
 
     #[tokio::test]
@@ -545,5 +614,85 @@ mod tests {
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(1024));
         assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(limits.rate_write, QuotaOverride::Default);
+    }
+
+    /// The feed rejects unauthenticated and malformed requests.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_events_feed_rejects_unauthorized_and_invalid() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // Missing password → 401 (the feed lives behind AdminAuthLayer).
+        let response = server.get("/events").expect_failure().await;
+        response.assert_status_unauthorized();
+
+        // Wrong password → 401.
+        let response = server
+            .get("/events")
+            .add_header("X-Admin-Password", "wrongpassword")
+            .expect_failure()
+            .await;
+        response.assert_status_unauthorized();
+
+        // Valid password but a malformed cursor → 400 (same as the public feed).
+        let response = server
+            .get("/events?cursor=notanumber")
+            .add_header("X-Admin-Password", "test")
+            .expect_failure()
+            .await;
+        response.assert_status_bad_request();
+    }
+
+    /// The admin feed returns every event — public and private — and paginates correctly.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_events_feed_returns_all_events_paginated() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // Empty feed: a 200 with an empty body and no `cursor:` line.
+        assert_eq!(admin_feed_body(&server, "").await, "");
+
+        // Interleave public and private events (ids 1..=5 in this fresh DB).
+        let pubkey = seed_put_events(
+            &context,
+            &["/pub/a", "/priv/b", "/pub/c", "/priv/d", "/pub/e"],
+        )
+        .await;
+        let uri = |p: &str| format!("PUT pubky://{}{}", pubkey.z32(), p);
+
+        // Page 1: `limit=2` is enforced and exposes both /pub and /priv, cursor points at id 2.
+        let (page1, cursor1) = parse_admin_feed(&admin_feed_body(&server, "?limit=2").await);
+        assert_eq!(page1, vec![uri("/pub/a"), uri("/priv/b")]);
+        assert_eq!(cursor1.as_deref(), Some("2"));
+
+        // Page 2: resume from the page-1 cursor → ids 3,4.
+        let (page2, cursor2) = parse_admin_feed(
+            &admin_feed_body(&server, &format!("?limit=2&cursor={}", cursor1.unwrap())).await,
+        );
+        assert_eq!(page2, vec![uri("/pub/c"), uri("/priv/d")]);
+        assert_eq!(cursor2.as_deref(), Some("4"));
+
+        // Page 3: partial final page → id 5.
+        let (page3, _) = parse_admin_feed(
+            &admin_feed_body(&server, &format!("?limit=2&cursor={}", cursor2.unwrap())).await,
+        );
+        assert_eq!(page3, vec![uri("/pub/e")]);
+
+        // Concatenating the pages reproduces the full ordered set — no dup, no gap, private included.
+        let mut all = page1;
+        all.extend(page2);
+        all.extend(page3);
+        assert_eq!(
+            all,
+            vec![
+                uri("/pub/a"),
+                uri("/priv/b"),
+                uri("/pub/c"),
+                uri("/priv/d"),
+                uri("/pub/e"),
+            ]
+        );
     }
 }

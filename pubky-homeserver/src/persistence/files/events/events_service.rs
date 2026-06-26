@@ -122,6 +122,21 @@ impl EventsService {
         EventRepository::get_by_cursor(cursor, limit, EventVisibility::Public, executor).await
     }
 
+    /// Get a list of all events (public `/pub/...` and private `/priv/...`)
+    /// starting from a cursor position.
+    ///
+    /// ## Parameters
+    /// - `cursor`: Starting position (None = from beginning)
+    /// - `limit`: Maximum number of events to return (None = default limit)
+    pub async fn get_all_by_cursor<'a>(
+        &self,
+        cursor: Option<EventCursor>,
+        limit: Option<u16>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<Vec<EventEntity>, sqlx::Error> {
+        EventRepository::get_by_cursor(cursor, limit, EventVisibility::All, executor).await
+    }
+
     /// Get events for multiple users with individual cursor positions.
     ///
     /// ## Parameters
@@ -241,5 +256,46 @@ mod tests {
             .unwrap();
         assert_eq!(page.len(), 1);
         assert_eq!(page[0].id, 5); // /pub/c (skips /priv/y at id 4)
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_events_service_get_all_by_cursor_includes_private() {
+        let db = SqlDb::test().await;
+        let events_service = EventsService::new(100);
+
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Same interleaving as the public test: ids 1=/pub/a, 2=/priv/x,
+        // 3=/pub/b, 4=/priv/y, 5=/pub/c.
+        let paths = ["/pub/a", "/priv/x", "/pub/b", "/priv/y", "/pub/c"];
+        for p in paths {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
+            events_service
+                .create_event(
+                    user.id,
+                    EventType::Put {
+                        content_hash: pubky_common::crypto::Hash::from_bytes([0; 32]),
+                    },
+                    &path,
+                    &mut db.pool().into(),
+                )
+                .await
+                .unwrap();
+        }
+
+        // The admin view returns every event, private ones included, in id order.
+        let events = events_service
+            .get_all_by_cursor(None, None, &mut db.pool().into())
+            .await
+            .unwrap();
+        let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(
+            returned,
+            vec!["/pub/a", "/priv/x", "/pub/b", "/priv/y", "/pub/c"]
+        );
     }
 }

@@ -216,11 +216,29 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
 /// data: cursor: 42
 /// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
 /// ```
-fn formatted_event_path(entity: &EventEntity) -> String {
+pub(crate) fn formatted_event_path(entity: &EventEntity) -> String {
     // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
     // once the homeserver crate depends on it directly, so we avoid ad-hoc string
     // reconstruction here.
     format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
+}
+
+/// Render a batch of events as the plain-text feed body used by `GET /events/`.
+///
+/// One line per event (`<TYPE> pubky://<user>/<path>`), followed by a trailing
+/// `cursor: <id>` line pointing at the last event so the caller can resume.
+/// Returns an empty string when there are no events (and therefore no cursor line).
+pub(crate) fn format_events_feed(events: &[EventEntity]) -> String {
+    let mut result = events
+        .iter()
+        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
+        .collect::<Vec<String>>();
+
+    if let Some(next_cursor) = events.last().map(|event| event.id.to_string()) {
+        result.push(format!("cursor: {}", next_cursor));
+    }
+
+    result.join("\n")
 }
 
 fn event_to_sse_data(entity: &EventEntity) -> String {
@@ -281,20 +299,10 @@ pub async fn feed(
         .metrics
         .record_events_db_query(query_start.elapsed().as_millis());
 
-    let mut result = events
-        .iter()
-        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
-        .collect::<Vec<String>>();
-    let next_cursor = events.last().map(|event| event.id.to_string());
-
-    if let Some(next_cursor) = next_cursor {
-        result.push(format!("cursor: {}", next_cursor));
-    }
-
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(result.join("\n")))
+        .body(Body::from(format_events_feed(&events)))
         .unwrap())
 }
 
