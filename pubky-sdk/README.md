@@ -51,7 +51,7 @@ assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
 let caps = Capabilities::builder().write("/pub/example.com/").finish();
-let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 let app_session = flow.await_approval().await?;
 
@@ -198,7 +198,7 @@ Request an authorization URL and await approval.
 
 **Typical usage:**
 
-1. Start an auth flow with `pubky.start_grant_auth_flow(&caps, ..)` (or `pubky.start_auth_flow(&caps, ..)` for the deprecated cookie variant). You can also use `PubkyGrantAuthFlow::builder()` / `PubkyCookieAuthFlow::builder()` to set a custom relay.
+1. Start an auth flow with `pubky.start_grant_auth_flow(&caps, ..)` (or `pubky.start_cookie_auth_flow(&caps, ..)` for the cookie variant). You can also use `PubkyGrantAuthFlow::builder()` / `PubkyCookieAuthFlow::builder()` to set a custom relay.
 2. Show `authorization_url()` (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) — [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756) / [Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
 3. Await `await_approval()` to obtain a session-bound `PubkySession`, or `await_credential()` for a raw `GrantCredential`/`CookieCredential` that you can persist, inspect, or lift into a session later via `PubkySession::from_{grant,cookie}_credential`.
 
@@ -211,7 +211,7 @@ let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read_write("pub/example.com/").finish();
 
 // Start the flow using the default relay (see “Relay & reliability” below)
-let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;

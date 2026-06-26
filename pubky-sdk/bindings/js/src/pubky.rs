@@ -93,13 +93,12 @@ impl Pubky {
     /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
     ///
     /// @example
-    /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
+    /// const flow = pubky.startCookieAuthFlow("/pub/my-cool-app/:rw");
     /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
     ///
-    /// @deprecated Use `Pubky.startGrantAuthFlow(...)` instead.
-    #[wasm_bindgen(js_name = "startAuthFlow")]
-    pub fn start_auth_flow(
+    #[wasm_bindgen(js_name = "startCookieAuthFlow")]
+    pub fn start_cookie_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
@@ -145,15 +144,15 @@ impl Pubky {
     ///
     /// **Security:** The URL contains the `client_secret` in plaintext.
     /// Delete it from storage as soon as the resumed flow completes.
-    /// See `startAuthFlow()` docs for full storage guidance.
+    /// See `startCookieAuthFlow()` docs for full storage guidance.
     ///
     /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
     /// @returns {AuthFlow} A flow reconnected to the original relay channel.
     /// @throws {PubkyError}
     /// - `{ name: "AuthenticationError" }` if the URL is invalid or not a signin/signup link
     /// - `{ name: "RequestError" }` on network/relay failure
-    #[wasm_bindgen(js_name = "resumeAuthFlow")]
-    pub fn resume_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
+    #[wasm_bindgen(js_name = "resumeCookieAuthFlow")]
+    pub fn resume_cookie_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
         AuthFlow::resume_with_client(authorization_url, Some(self.0.client().clone()))
     }
 

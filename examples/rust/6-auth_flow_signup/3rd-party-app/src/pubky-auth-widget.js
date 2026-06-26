@@ -79,7 +79,7 @@ export class PubkyAuthWidget extends LitElement {
 
     // Start the flow with the facade’s client
     let homeserverPublicKey = pubky.PublicKey.from(this.homeserverPublicKey);
-    const flow = this._sdk.startAuthFlow(this.caps, pubky.AuthFlowKind.signup(homeserverPublicKey, this.signupToken), relay);
+    const flow = this._sdk.startCookieAuthFlow(this.caps, pubky.AuthFlowKind.signup(homeserverPublicKey, this.signupToken), relay);
 
     // Capture the deep link *before* awaiting (await will consume the flow handle)
     this._authUrl = flow.authorizationUrl;
