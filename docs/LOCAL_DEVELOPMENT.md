@@ -11,13 +11,30 @@ For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./
 
 ## Contents
 
+- [Prerequisites](#prerequisites)
 - [Persistent Testnet (coming soon)](#persistent-testnet-coming-soon)
 - [Ephemeral Testnet](#ephemeral-testnet)
   - [Set Up PostgreSQL](#set-up-postgresql)
   - [Run the Testnet](#run-the-testnet)
-- [Run Examples](#run-examples)
+- [Run Examples](#run-examples) (keygen, signup, write, read)
 - [Custom Homeserver Config](#custom-homeserver-config)
 - [Troubleshooting](#troubleshooting)
+
+## Prerequisites
+
+- Rust `1.89` or newer.
+- PostgreSQL (see [Set Up PostgreSQL](#set-up-postgresql) below).
+- Node.js `20` or newer for JS/WASM bindings.
+- `wasm-pack` when working on the JavaScript SDK bindings.
+
+Useful commands:
+
+```bash
+cargo check --workspace --all-features
+cargo fmt --check
+cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+```
+
 
 ## Persistent Testnet (coming soon)
 
@@ -29,34 +46,30 @@ The ephemeral testnet starts a full local Pubky network from source: Homeserver,
 
 ### Set Up PostgreSQL
 
-The testnet requires a running PostgreSQL instance. The quickest option is Docker:
+The testnet requires a running PostgreSQL instance with a user that can create databases. You do **not** need to create a database manually, the testnet creates ephemeral `pubky_test_*` databases automatically and cleans them up on exit.
+
+The quickest option is Docker:
 
 ```bash
 docker run --name pubky-postgres \
-  -e POSTGRES_HOST_AUTH_METHOD=trust \
-  -e POSTGRES_DB=postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
   -p 127.0.0.1:5432:5432 \
   -d postgres:18
 ```
 
-The testnet creates ephemeral `pubky_test_*` databases automatically, you don't need to create a database manually.
-
-See [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql) for native install or if you have an existing Postgres instance already.
+For native PostgreSQL or an existing instance, see [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql). Skip the database creation step if youre only using testnet.
 
 ### Run the Testnet
 
-Start the testnet with the default connection string (`postgres://localhost:5432/postgres?pubky-test=true`):
+Using the Docker PostgreSQL from above:
 
 ```bash
-cargo run -p pubky-testnet
-```
-
-Or point it at a custom PostgreSQL instance:
-
-```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://<USER>:<PASSWORD>@<HOST>:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo run -p pubky-testnet
 ```
+
+Replace the connection string if your PostgreSQL instance uses different credentials or host.
 
 The `?pubky-test=true` parameter tells the testnet to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance. The database is cleaned up when the testnet exits.
 
@@ -79,23 +92,57 @@ pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo
 
 ## Run Examples
 
-With the testnet running, use the examples in a separate terminal.
+With the testnet running, use the examples in a separate terminal. Rust examples are in [`examples/rust`](../examples/rust).
 
-Rust examples are in [`examples/rust`](../examples/rust):
+### 1. Generate a keypair
 
 ```bash
-cargo run -p pubky-core-examples --bin signup -- --testnet pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo /tmp/pubky-recovery.json
+cargo run -p pubky-core-examples --bin keygen -- --output /tmp/pubky-recovery.json
 ```
 
-JavaScript examples are in [`examples/javascript`](../examples/javascript). They use the local testnet defaults when configured for testnet mode.
+You will be prompted to set and confirm a passphrase. Note the public key printed in the output.
 
-For a quick self-contained SDK smoke test, run:
+### 2. Generate a signup token
+
+```bash
+curl "http://127.0.0.1:6288/generate_signup_token" \
+  -H "X-Admin-Password: admin"
+```
+
+Copy the token from the response.
+
+### 3. Sign up
+
+```bash
+cargo run -p pubky-core-examples --bin signup -- --testnet \
+  pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
+  /tmp/pubky-recovery.json \
+  <SIGNUP_TOKEN>
+```
+
+Replace `<SIGNUP_TOKEN>` with the token from step 2. You will be prompted for your passphrase.
+
+### 4. Write data
+
+```bash
+cargo run -p pubky-core-examples --bin storage -- write --testnet \
+  /tmp/pubky-recovery.json \
+  /pub/example/hello.txt \
+  --content "Hello from pubky!"
+```
+
+This signs in, writes the file, reads it back, and deletes it.
+
+
+### Quick smoke test
+
+For a self-contained test (requires Docker) that starts its own ephemeral testnet, signs up a user, writes a file, and reads it back:
 
 ```bash
 cargo run -p pubky-core-examples --bin testnet
 ```
 
-That example starts its own ephemeral testnet, signs up a user, writes a file, and reads it back.
+JavaScript examples are in [`examples/javascript`](../examples/javascript). They use the local testnet defaults when configured for testnet mode.
 
 ## Custom Homeserver Config
 

@@ -4,62 +4,96 @@ This guide is for running a standalone Pubky homeserver. For local app developme
 
 ## Contents
 
-- [Docker Compose (coming soon)](#docker-compose-coming-soon)
 - [Install the Homeserver](#install-the-homeserver)
-  - [Release Binary](#release-binary) | [Build From Source](#build-from-source) | [Docker](#docker)
+  - [Release Binary](#release-binary) | [Build From Source](#build-from-source) ([Cargo](#with-cargo) | [Docker](#with-docker))
+- [Generate the Configuration](#generate-the-configuration)
 - [Set Up PostgreSQL](#set-up-postgresql)
   - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
+- [Configure the Homeserver with PostgreSQL](#configure-the-homeserver-with-postgresql)
 - [Run](#run)
-- [First Run](#first-run)
 - [Configuration](#configuration)
 - [Production Notes](#production-notes)
 - [Troubleshooting](#troubleshooting)
 
-## Docker Compose (coming soon)
-
-A `docker-compose.yml` that bundles the homeserver and PostgreSQL together is planned. This will be the simplest way to get started.
 
 ## Install the Homeserver
 
 ### Release Binary
 
-Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`:
+Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`.
+
+Requires `curl`. On Ubuntu/Debian: `apt install curl`.
 
 ```bash
-wget https://github.com/pubky/pubky-core/releases/download/v0.9.0/pubky-core-v0.9.0-linux-amd64.tar.gz
-tar -xf pubky-core-v0.9.0-linux-amd64.tar.gz
-cp pubky-core-v0.9.0-linux-amd64/pubky-homeserver /usr/local/bin
+curl -LO https://github.com/pubky/pubky-core/releases/download/vX.Y.Z/pubky-core-vX.Y.Z-linux-amd64.tar.gz
+tar -xf pubky-core-vX.Y.Z-linux-amd64.tar.gz
+cp pubky-core-vX.Y.Z-linux-amd64/pubky-homeserver /usr/local/bin
 ```
 
 ### Build From Source
 
-Make sure you have the Rust toolchain installed and working.
+On Ubuntu you might need: `apt install build-essential git curl`.
 
-- [Install Guide](https://rust-lang.org/tools/install/)
-- On Ubuntu, you might also need `apt install build-essential git`
-
-Build the homeserver from the repository root:
+Clone the repository:
 
 ```bash
 git clone https://github.com/pubky/pubky-core.git
 cd pubky-core
 git checkout vx.x.x   # Pick a version
-cargo build --release -p pubky-homeserver
 ```
 
-Place the built release binary somewhere on your `PATH`:
+#### With Cargo
+
+Make sure you have the Rust toolchain installed and working.
+
+<details>
+<summary>Install Rust</summary>
+
+Quick setup using [rustup](https://rustup.rs/) (recommended) on macOS or Linux:
 
 ```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+```
+
+For other platforms or methods, see the [Rust Install Guide](https://rust-lang.org/tools/install/).
+
+</details>
+
+Build and place the binary on your `PATH`:
+
+```bash
+cargo build --release -p pubky-homeserver
 cp ./target/release/pubky-homeserver /usr/local/bin
 ```
 
-### Docker
+#### With Docker
 
-Build the homeserver image using the [Dockerfile](../Dockerfile) in the repo root:
+Build the homeserver image using the [Dockerfile](../Dockerfile):
 
 ```bash
+git clone https://github.com/pubky/pubky-core.git
+cd pubky-core
 docker build --build-arg BUILD_TARGET=homeserver -t pubky-homeserver .
 ```
+
+Copy the binary out of the image and place it on your `PATH`:
+
+```bash
+docker create --name tmp-hs pubky-homeserver
+docker cp tmp-hs:/usr/local/bin/homeserver /usr/local/bin/pubky-homeserver
+docker rm tmp-hs
+```
+
+## Generate the Configuration
+
+Run the homeserver once to test that it starts and generate the default configuration:
+
+```bash
+pubky-homeserver
+```
+
+The homeserver will create its data directory at `~/.pubky` (or pass `--data-dir /path/to/pubky-data`). It will fail to connect to PostgreSQL, that's expected. Press `Ctrl+C` to stop it.
 
 ## Set Up PostgreSQL
 
@@ -73,10 +107,11 @@ Start a PostgreSQL container with the `pubky_homeserver` database:
 
 ```bash
 docker run --name pubky-postgres \
-  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
   -p 127.0.0.1:5432:5432 \
-  -v postgres-data:/var/lib/postgresql/data \
+  -v postgres-data:/var/lib/postgresql \
   -d postgres:18
 ```
 
@@ -86,29 +121,34 @@ Verify it's running and the database exists:
 docker exec pubky-postgres psql -U postgres -c '\l pubky_homeserver'
 ```
 
-No config changes needed — the default connection string matches this setup.
-
 ### Native
 
-Install PostgreSQL ([Ubuntu guide](https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart)):
+Install PostgreSQL:
 
 ```bash
-sudo apt install postgresql
+apt install -y postgresql
 ```
 
-Create the database:
+Start the server:
+
+(On a standard Ubuntu install with `systemd`, PostgreSQL starts automatically after installation.)
 
 ```bash
-sudo -u postgres createdb pubky_homeserver
+pg_ctlcluster $(ls /etc/postgresql/) main start
+```
+
+
+Set a password and create the database:
+
+```bash
+su - postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres';\" && createdb pubky_homeserver"
 ```
 
 Verify the connection:
 
 ```bash
-psql "postgres://localhost:5432/pubky_homeserver" -c '\conninfo'
+psql "postgres://postgres:postgres@localhost:5432/pubky_homeserver" -c '\conninfo'
 ```
-
-On most Ubuntu installs, peer/trust auth is the default, so no config changes are needed.
 
 ### Existing instance
 
@@ -118,18 +158,22 @@ Create a database on your existing PostgreSQL instance:
 createdb -h <HOST> -U <USER> pubky_homeserver
 ```
 
-Set the connection string in `~/.pubky/config.toml`:
-
-```toml
-[general]
-database_url = "postgres://<USER>:<PASSWORD>@<HOST>:5432/pubky_homeserver"
-```
-
 Verify the connection:
 
 ```bash
 psql "postgres://<USER>:<PASSWORD>@<HOST>:5432/pubky_homeserver" -c '\conninfo'
 ```
+
+## Configure the Homeserver with PostgreSQL
+
+Update `database_url` in `~/.pubky/config.toml` to match your PostgreSQL connection string. For the Docker and Native examples above:
+
+```toml
+[general]
+database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
+```
+
+Replace the credentials and host if using an existing instance.
 
 ## Run
 
@@ -144,30 +188,6 @@ From source:
 ```bash
 cargo run -p pubky-homeserver
 ```
-
-With Docker (using host networking so it can reach PostgreSQL on localhost):
-
-```bash
-docker run --network host -v pubky-data:/root/.pubky pubky-homeserver
-```
-
-## First Run
-
-On first run, the homeserver creates its data directory at `~/.pubky` unless you pass a different path:
-
-```bash
-pubky-homeserver --data-dir /path/to/pubky-data
-```
-
-The data directory contains:
-
-| Path | Purpose |
-| --- | --- |
-| `config.toml` | Homeserver configuration. |
-| `secret` | Homeserver key material. Keep this private and backed up. |
-| `data/` | Local file storage when using the filesystem storage backend. |
-
-The generated `config.toml` is based on [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
 
 The default endpoints are:
 
@@ -186,6 +206,8 @@ curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
 ```
 
 You can also open signup entirely for a private or temporary deployment by setting `signup_mode = "open"` in `config.toml` (see [Configuration](#configuration)).
+
+If you would like to test your homeserver with example clients, see [Run Examples](./LOCAL_DEVELOPMENT.md#run-examples) in the Local Development guide.
 
 ## Configuration
 
@@ -227,7 +249,7 @@ Before using a homeserver in production:
 Create the database:
 
 ```bash
-createdb pubky_homeserver
+createdb -h <HOST> -U <USER> pubky_homeserver
 ```
 
 Or update `[general].database_url` in `~/.pubky/config.toml` to point at an existing database.

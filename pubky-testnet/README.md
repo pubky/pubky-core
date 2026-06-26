@@ -14,7 +14,7 @@ For testing without a separate Postgres installation, enable the `docker-postgre
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.x", features = ["docker-postgres"] }
+pubky-testnet = { version = "<version>", features = ["docker-postgres"] }
 ```
 
 ```rust,no_run
@@ -44,23 +44,17 @@ Docker must be running on the host. The container is automatically cleaned up on
 If you prefer to use an external Postgres instance:
 
 ```bash
-docker run --name postgres \
-  -e POSTGRES_HOST_AUTH_METHOD=trust \
-  -e POSTGRES_DB=postgres \
+docker run --name pubky-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
   -p 127.0.0.1:5432:5432 \
   -d postgres:18
 ```
 
-Then run the testnet binary:
+Then run the testnet binary, passing the connection string:
 
 ```bash
-cargo run -p pubky-testnet
-```
-
-Or with a custom connection string:
-
-```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://<USER>:<PASSWORD>@<HOST>:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo run -p pubky-testnet
 ```
 

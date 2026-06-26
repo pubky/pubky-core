@@ -16,6 +16,7 @@
   <a href="https://github.com/pubky/pubky-core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pubky/pubky-core" alt="GitHub License" /></a>
   <a href="https://crates.io/crates/pubky"><img src="https://img.shields.io/crates/v/pubky" alt="Crates.io Version" /></a>
   <a href="https://www.npmjs.com/package/@synonymdev/pubky"><img src="https://img.shields.io/npm/v/@synonymdev/pubky" alt="npm Version" /></a>
+  <a href="https://t.me/pubkycore"><img src="https://img.shields.io/badge/Chat-Telegram-violet" alt="Telegram Chat Group" /></a>
   <a href="https://deepwiki.com/pubky/pubky-core"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </div>
 
@@ -60,7 +61,7 @@ Rust:
 
 ```toml
 [dependencies]
-pubky = "0.x"
+pubky = "<version>"
 ```
 
 JavaScript and TypeScript:
@@ -70,25 +71,6 @@ npm install @synonymdev/pubky
 ```
 
 See the [`pubky-sdk` README](./pubky-sdk) for API details or browse the [examples](./examples).
-
-## Development
-
-Prerequisites:
-
-- Rust `1.89` or newer.
-- PostgreSQL (see [Local Development](./docs/LOCAL_DEVELOPMENT.md#set-up-postgresql) for setup).
-- Node.js `20` or newer for JS/WASM bindings.
-- `wasm-pack` when working on the JavaScript SDK bindings.
-
-Useful commands:
-
-```bash
-cargo check --workspace --all-features
-cargo fmt --check
-cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
-```
-
-See [Testing](./docs/TESTING.md) for running tests, and [Local Development](./docs/LOCAL_DEVELOPMENT.md) for running a local testnet.
 
 ## Links
 

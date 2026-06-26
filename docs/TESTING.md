@@ -9,7 +9,7 @@ Many homeserver and testnet tests need PostgreSQL. See [Local Development - Set 
 Run tests with a test connection string:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo test -p pubky-homeserver --all-features
 ```
 
@@ -37,7 +37,7 @@ Enable it in your crate:
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.x", features = ["docker-postgres"] }
+pubky-testnet = { version = "<version>", features = ["docker-postgres"] }
 ```
 
 ### Per-test container
@@ -85,7 +85,7 @@ async fn test_one() {
 Run the homeserver tests against external PostgreSQL:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo test -p pubky-homeserver --all-features
 ```
 
@@ -98,7 +98,7 @@ cargo test -p pubky-testnet --features docker-postgres
 Run the full workspace test suite:
 
 ```bash
-TEST_PUBKY_CONNECTION_STRING='postgres://localhost:5432/postgres?pubky-test=true' \
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo test --workspace --all-features
 ```
 
