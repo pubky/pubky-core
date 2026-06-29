@@ -15,9 +15,9 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 
 The `?pubky-test=true` parameter tells the test helpers to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance. Databases are cleaned up after each test.
 
-## Test Database Cleanup
+## Automatic Database Cleanup
 
-Use the Pubky test macro for tests that create ephemeral PostgreSQL databases:
+Use the Pubky test macro to ensure ephemeral PostgreSQL databases are cleaned up:
 
 ```rust
 #[tokio::test]
@@ -78,6 +78,15 @@ async fn test_one() {
 
     let homeserver = testnet.homeserver_app();
 }
+```
+
+## End-to-End Tests
+
+The [`e2e`](../e2e) crate contains tests that cover cross-crate workflows using `pubky-testnet`. Run them with:
+
+```bash
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+  cargo test -p e2e
 ```
 
 ## Common Commands

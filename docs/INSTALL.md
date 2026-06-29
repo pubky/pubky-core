@@ -6,7 +6,7 @@ This guide is for running a standalone Pubky homeserver. For local app developme
 
 - [Install the Homeserver](#install-the-homeserver)
   - [Release Binary](#release-binary) | [Build From Source](#build-from-source) ([Cargo](#with-cargo) | [Docker](#with-docker))
-- [Generate the Configuration](#generate-the-configuration)
+- [Initialise the Data Directory](#initialise-the-data-directory)
 - [Set Up PostgreSQL](#set-up-postgresql)
   - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
 - [Configure the Homeserver with PostgreSQL](#configure-the-homeserver-with-postgresql)
@@ -72,12 +72,18 @@ cp ./target/release/pubky-homeserver /usr/local/bin
 Build the homeserver image using the [Dockerfile](../Dockerfile):
 
 ```bash
-git clone https://github.com/pubky/pubky-core.git
-cd pubky-core
 docker build --build-arg BUILD_TARGET=homeserver -t pubky-homeserver .
 ```
 
-Copy the binary out of the image and place it on your `PATH`:
+You can run the homeserver directly in Docker:
+
+```bash
+docker run -it --network=host pubky-homeserver
+```
+
+Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. See the Docker documentation for volume mounts and other options.
+
+Or copy the binary out of the image and place it on your `PATH`:
 
 ```bash
 docker create --name tmp-hs pubky-homeserver
@@ -85,15 +91,19 @@ docker cp tmp-hs:/usr/local/bin/homeserver /usr/local/bin/pubky-homeserver
 docker rm tmp-hs
 ```
 
-## Generate the Configuration
+## Initialise the Data Directory
 
-Run the homeserver once to test that it starts and generate the default configuration:
+Create the data directory, default `config.toml`, and server keypair without starting the server or connecting to PostgreSQL:
 
 ```bash
-pubky-homeserver
+pubky-homeserver init
 ```
 
-The homeserver will create its data directory at `~/.pubky` (or pass `--data-dir /path/to/pubky-data`). It will fail to connect to PostgreSQL, that's expected. Press `Ctrl+C` to stop it.
+This creates `~/.pubky/` with a sample config and a fresh server keypair. To use a different path:
+
+```bash
+pubky-homeserver --data-dir /path/to/pubky-data init
+```
 
 ## Set Up PostgreSQL
 
@@ -126,17 +136,14 @@ docker exec pubky-postgres psql -U postgres -c '\l pubky_homeserver'
 Install PostgreSQL:
 
 ```bash
-apt install -y postgresql
+apt update && apt install -y postgresql
 ```
 
-Start the server:
-
-(On a standard Ubuntu install with `systemd`, PostgreSQL starts automatically after installation.)
+Start the server (not needed on systems with `systemd`, where PostgreSQL starts automatically):
 
 ```bash
-pg_ctlcluster $(ls /etc/postgresql/) main start
+pg_ctlcluster $(pg_lsclusters -h | awk '{print $1, $2}') start
 ```
-
 
 Set a password and create the database:
 

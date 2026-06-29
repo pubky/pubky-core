@@ -144,6 +144,23 @@ cargo run -p pubky-core-examples --bin testnet
 
 JavaScript examples are in [`examples/javascript`](../examples/javascript). They use the local testnet defaults when configured for testnet mode.
 
+### JavaScript / WASM Bindings
+
+To build and test the JavaScript SDK bindings:
+
+```bash
+cd pubky-sdk/bindings/js/pkg
+npm i
+npm run build
+```
+
+To run the JS binding tests, start the testnet first (see [Run the Testnet](#run-the-testnet)), then in a separate terminal:
+
+```bash
+cd pubky-sdk/bindings/js/pkg
+npm test
+```
+
 ## Custom Homeserver Config
 
 The testnet binary accepts a homeserver config path:

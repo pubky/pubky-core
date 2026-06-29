@@ -12,10 +12,11 @@
     <span> | </span>
     <a href="https://www.npmjs.com/package/@synonymdev/pubky">JavaScript SDK</a>
   </h3>
-  <a href="https://github.com/pubky/pubky-core/releases/latest/"><img src="https://img.shields.io/github/v/release/pubky/pubky-core" alt="GitHub Release" /></a>
   <a href="https://github.com/pubky/pubky-core/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pubky/pubky-core" alt="GitHub License" /></a>
+  <a href="https://github.com/pubky/pubky-core/releases/latest/"><img src="https://img.shields.io/github/v/release/pubky/pubky-core" alt="GitHub Release" /></a>
   <a href="https://crates.io/crates/pubky"><img src="https://img.shields.io/crates/v/pubky" alt="Crates.io Version" /></a>
   <a href="https://www.npmjs.com/package/@synonymdev/pubky"><img src="https://img.shields.io/npm/v/@synonymdev/pubky" alt="npm Version" /></a>
+  <br/>
   <a href="https://t.me/pubkycore"><img src="https://img.shields.io/badge/Chat-Telegram-violet" alt="Telegram Chat Group" /></a>
   <a href="https://deepwiki.com/pubky/pubky-core"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </div>
@@ -43,6 +44,7 @@ A Pubky Homeserver stores and serves user data. It exposes HTTP APIs for authent
 | [`pubky-common`](./pubky-common) | Shared types and helpers used by the SDK and homeserver. |
 | [`pubky-testnet`](./pubky-testnet) | Local ephemeral Pubky network for development and tests. |
 | [`examples`](./examples) | Rust and JavaScript examples for signup, auth, storage, and requests. |
+| [`e2e`](./e2e) | End-to-end tests covering cross-crate workflows. |
 | [`docs`](./docs) | Install guides, local development, and testing docs. |
 
 ## Getting Started
@@ -61,7 +63,7 @@ Rust:
 
 ```toml
 [dependencies]
-pubky = "<version>"
+pubky = "0.9"  # see https://crates.io/crates/pubky for latest
 ```
 
 JavaScript and TypeScript:

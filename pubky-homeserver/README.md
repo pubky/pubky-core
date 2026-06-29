@@ -57,7 +57,7 @@ pubky-homeserver --data-dir ~/.pubky
 If the homeserver is set to require signup tokens, create one using the admin endpoint:
 
 ```bash
-curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
+curl "http://127.0.0.1:6288/generate_signup_token" \
      -H "X-Admin-Password: admin"
      # Use your admin password. "admin" is the testnet default.
 ```
