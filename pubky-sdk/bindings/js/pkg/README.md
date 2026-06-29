@@ -33,10 +33,10 @@ const homeserver = PublicKey.from(
 const signupToken = "<your-invite-code-or-null>";
 await signer.signup(homeserver, signupToken);
 
-// 3a) Signin with the signer directly
-const session = await signer.signin("example.com");
+// 3a) Signin with the signer directly.
+let session = await signer.signin("example.com");
 
-// 3b) Alternatively if you do not have the keypair available, authenticate on a 3rd-party app 
+// 3b) Or, if you do not have the keypair available, authenticate on a 3rd-party app
 // by delegating the authentication to a signer with a QR code.
 const authFlow = pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
@@ -44,7 +44,7 @@ const authFlow = pubky.startGrantAuthFlow(
   { clientId: "my-cool-app.example" },
 );
 renderQr(authFlow.authorizationUrl); // Show to user the signin deeplink via a QR code
-const session = await authFlow.awaitApproval();
+session = await authFlow.awaitApproval();
 
 // 4) Write a public JSON file
 const path = "/pub/my-cool-app/hello.json";
@@ -232,6 +232,30 @@ renderQr(flow.authorizationUrl); // show to user
 // Blocks until the signer approves; returns a ready Session
 const session = await flow.awaitApproval();
 ```
+
+#### Resume an auth flow after page refresh
+
+Grant auth flows are resumable by saving the pending flow state before refresh and restoring it afterwards:
+
+```js
+const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
+  clientId: "my-cool-app.example",
+  relay,
+});
+sessionStorage.setItem("pubky-grant-auth", flow.save());
+
+const saved = sessionStorage.getItem("pubky-grant-auth");
+if (saved) {
+  try {
+    const resumed = pubky.resumeGrantAuthFlow(saved);
+    const session = await resumed.awaitApproval();
+  } finally {
+    sessionStorage.removeItem("pubky-grant-auth");
+  }
+}
+```
+
+Legacy cookie auth flows can be resumed with `pubky.resumeCookieAuthFlow(authorizationUrl)`. Store pending auth state in `sessionStorage`, not `localStorage`, and delete it once the flow completes or is abandoned.
 
 #### Validate and normalize capabilities
 
