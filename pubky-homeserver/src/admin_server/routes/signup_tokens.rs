@@ -99,6 +99,7 @@ mod tests {
                 "",
                 context.user_service.clone(),
                 context.events_service.clone(),
+                context.metrics.clone(),
             ),
             "test",
         ))

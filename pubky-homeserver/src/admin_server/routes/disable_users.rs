@@ -100,6 +100,7 @@ mod tests {
             "",
             context.user_service.clone(),
             context.events_service.clone(),
+            context.metrics.clone(),
         );
         let router = Router::new()
             .route("/users/{pubkey}/disable", post(disable_user))

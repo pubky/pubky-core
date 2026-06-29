@@ -122,19 +122,26 @@ impl EventsService {
         EventRepository::get_by_cursor(cursor, limit, EventVisibility::Public, executor).await
     }
 
-    /// Get a list of all events (public `/pub/...` and private `/priv/...`)
-    /// starting from a cursor position.
-    ///
-    /// ## Parameters
-    /// - `cursor`: Starting position (None = from beginning)
-    /// - `limit`: Maximum number of events to return (None = default limit)
-    pub async fn get_all_by_cursor<'a>(
+    /// All events (public and private) by a single global cursor.
+    /// Admin-only, exposes private paths.
+    pub async fn get_all_events<'a>(
         &self,
         cursor: Option<EventCursor>,
         limit: Option<u16>,
+        reverse: bool,
+        path_prefix: Option<&str>,
+        user_ids: Option<&[i32]>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        EventRepository::get_by_cursor(cursor, limit, EventVisibility::All, executor).await
+        EventRepository::get_all_filtered_by_cursor(
+            cursor,
+            limit,
+            reverse,
+            path_prefix,
+            user_ids,
+            executor,
+        )
+        .await
     }
 
     /// Get events for multiple users with individual cursor positions.
@@ -260,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_events_service_get_all_by_cursor_includes_private() {
+    async fn test_events_service_get_all_events_includes_private() {
         let db = SqlDb::test().await;
         let events_service = EventsService::new(100);
 
@@ -287,9 +294,9 @@ mod tests {
                 .unwrap();
         }
 
-        // The admin view returns every event, private ones included, in id order.
+        // No filters: every event, private ones included, in id order.
         let events = events_service
-            .get_all_by_cursor(None, None, &mut db.pool().into())
+            .get_all_events(None, None, false, None, None, &mut db.pool().into())
             .await
             .unwrap();
         let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
@@ -297,5 +304,45 @@ mod tests {
             returned,
             vec!["/pub/a", "/priv/x", "/pub/b", "/priv/y", "/pub/c"]
         );
+
+        // reverse=true returns newest first.
+        let events = events_service
+            .get_all_events(None, None, true, None, None, &mut db.pool().into())
+            .await
+            .unwrap();
+        let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(
+            returned,
+            vec!["/pub/c", "/priv/y", "/pub/b", "/priv/x", "/pub/a"]
+        );
+
+        // path_prefix filters to a storage root (private included).
+        let events = events_service
+            .get_all_events(
+                None,
+                None,
+                false,
+                Some("/priv/"),
+                None,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(returned, vec!["/priv/x", "/priv/y"]);
+
+        // user_ids filters to those users.
+        let events = events_service
+            .get_all_events(
+                None,
+                None,
+                false,
+                None,
+                Some(&[user.id]),
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 5);
     }
 }

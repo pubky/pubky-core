@@ -2,6 +2,7 @@ use opentelemetry::metrics::{Counter, Histogram, Meter, MeterProvider, UpDownCou
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry, TextEncoder};
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -165,9 +166,117 @@ fn init_metrics() -> Result<(Registry, SdkMeterProvider, Meter), MetricsInitErro
     Ok((registry, provider, meter))
 }
 
+/// RAII guard that tracks an active event-stream (SSE) connection.
+///
+/// Increments the active-connection gauge on creation and, on drop (any exit path),
+/// decrements it and records the connection duration. Shared by the public and admin
+/// event-stream endpoints so both record the same metrics.
+pub(crate) struct ConnectionGuard {
+    metrics: Metrics,
+    start: Instant,
+}
+
+impl ConnectionGuard {
+    pub(crate) fn new(metrics: Metrics) -> Self {
+        metrics.increment_active_connections();
+        Self {
+            metrics,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.metrics.decrement_active_connections();
+        self.metrics
+            .record_connection_closed(self.start.elapsed().as_millis());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_guard_drops_on_early_return() {
+        let metrics = Metrics::new().expect("Failed to create metrics");
+
+        // Create guard and return early - guard should still decrement
+        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
+            let _guard = ConnectionGuard::new(metrics.clone());
+            // Simulate early return (e.g., error condition)
+            return Err("early exit");
+            #[allow(unreachable_code)]
+            {
+                Ok(())
+            }
+        }
+
+        let result = early_return_fn(metrics.clone());
+        assert!(result.is_err(), "Should have returned early");
+
+        // Verify guard cleaned up properly despite early return
+        let output = metrics.render().expect("Failed to render metrics");
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after early return: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_ms_count"),
+            "Should have recorded connection duration: {}",
+            output
+        );
+    }
+
+    #[tokio::test]
+    async fn connection_guard_concurrent() {
+        let metrics = Metrics::new().expect("Failed to create metrics");
+
+        // Create 5 concurrent guards using tokio::spawn
+        let handles: Vec<_> = (0..5)
+            .map(|i| {
+                let metrics_clone = metrics.clone();
+                tokio::spawn(async move {
+                    let _guard = ConnectionGuard::new(metrics_clone);
+                    // Simulate some work
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10 * i)).await;
+                    // Guard will be dropped here
+                })
+            })
+            .collect();
+
+        // While tasks are running, check active connections
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        let output = metrics.render().expect("Failed to render metrics");
+        // We should have some active connections (implementation dependent on timing)
+        assert!(
+            output.contains("event_stream_active_connections"),
+            "Should have active connections metric: {}",
+            output
+        );
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // All guards should be cleaned up
+        let output = metrics.render().expect("Failed to render metrics");
+        assert!(
+            output.contains("event_stream_active_connections") && output.contains("} 0"),
+            "Should have 0 active connections after all concurrent guards dropped: {}",
+            output
+        );
+        assert!(
+            output.contains("event_stream_connection_duration_ms_count") && output.contains("} 5"),
+            "Should have recorded 5 connection durations: {}",
+            output
+        );
+    }
 
     #[test]
     fn test_metrics_recording() {

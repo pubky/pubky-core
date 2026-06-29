@@ -8,7 +8,7 @@ mod app;
 pub(crate) mod app_state;
 pub(crate) mod auth;
 mod middleware;
-pub(crate) mod query_params;
+mod query_params;
 pub(crate) mod routes;
 
 pub use app::create_app;

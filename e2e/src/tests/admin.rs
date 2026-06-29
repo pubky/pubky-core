@@ -456,11 +456,16 @@ async fn allowed_write_paths_enforced_via_http() {
     );
 }
 
-/// End-to-end: a real `/priv/` write surfaces in the admin events feed
-/// while the public client-server feed stays public-only and never leaks the private path.
+/// End-to-end over raw HTTP/SSE: real `/pub/` and `/priv/` writes surface in the admin
+/// `/events-stream` (batch + live), a wrong password is rejected, and the public client-server
+/// feed stays public-only and never leaks the private path.
 #[tokio::test]
 #[pubky_testnet::test]
-async fn admin_events_feed_exposes_private_events() {
+async fn admin_event_stream_exposes_private_events() {
+    use eventsource_stream::Eventsource;
+    use futures::StreamExt;
+    use tokio::time::{timeout, Duration};
+
     let config = ConfigToml::default_test_config();
     let admin_password = config.admin.admin_password.clone();
 
@@ -476,15 +481,14 @@ async fn admin_events_feed_exposes_private_events() {
         .admin_server()
         .expect("admin server should be enabled")
         .listen_socket();
+    let stream_url = format!("http://{admin_socket}/events-stream");
 
     // Create a user/session and write one public and one private file.
     let signer = pubky.signer(Keypair::random());
-    let pubkey_z32 = signer.public_key().z32();
     let session = signer
         .signup_cookie(&server.public_key(), None)
         .await
         .unwrap();
-
     session
         .storage()
         .put("/pub/note.txt", vec![1, 2, 3])
@@ -496,34 +500,75 @@ async fn admin_events_feed_exposes_private_events() {
         .await
         .unwrap();
 
-    // Admin feed (password-authenticated) returns BOTH events, including the private one,
-    // and must not be cached.
-    let admin_resp = PubkyHttpClient::new()
-        .unwrap()
-        .request(Method::GET, &format!("http://{admin_socket}/events"))
+    let admin_client = PubkyHttpClient::new().unwrap();
+
+    // Batch mode: the SSE stream replays every event (public + private) then closes.
+    let response = admin_client
+        .request(Method::GET, &stream_url)
         .header("X-Admin-Password", &admin_password)
         .send()
         .await
         .unwrap();
-    assert_eq!(admin_resp.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
-        admin_resp
+        response
             .headers()
             .get("cache-control")
             .and_then(|v| v.to_str().ok()),
         Some("no-store"),
     );
-    let admin_body = admin_resp.text().await.unwrap();
+    let mut stream = response.bytes_stream().eventsource();
+    let mut data = String::new();
+    while let Ok(Some(Ok(event))) = timeout(Duration::from_secs(5), stream.next()).await {
+        data.push_str(&event.data);
+        data.push('\n');
+    }
     assert!(
-        admin_body.contains(&format!("PUT pubky://{pubkey_z32}/pub/note.txt")),
-        "admin feed should include the public event: {admin_body}"
+        data.contains("/pub/note.txt"),
+        "admin stream should include the public event: {data}"
     );
     assert!(
-        admin_body.contains(&format!("PUT pubky://{pubkey_z32}/priv/app/secret.txt")),
-        "admin feed should include the private event: {admin_body}"
+        data.contains("/priv/app/secret.txt"),
+        "admin stream should include the private event: {data}"
     );
 
-    // The public client-server feed is public-only, it must NOT leak the private path.
+    // A wrong admin password is rejected with 401.
+    let unauthorized = admin_client
+        .request(Method::GET, &stream_url)
+        .header("X-Admin-Password", "wrong-password")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    // Live mode: after replaying history, a brand-new private write is delivered.
+    let response = admin_client
+        .request(Method::GET, &format!("{stream_url}?live=true"))
+        .header("X-Admin-Password", &admin_password)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut live = response.bytes_stream().eventsource();
+    session
+        .storage()
+        .put("/priv/app/new.txt", vec![7, 8, 9])
+        .await
+        .unwrap();
+    let mut saw_new = false;
+    while let Ok(Some(Ok(event))) = timeout(Duration::from_secs(10), live.next()).await {
+        if event.data.contains("/priv/app/new.txt") {
+            saw_new = true;
+            break;
+        }
+    }
+    assert!(
+        saw_new,
+        "live admin stream should deliver the new private event"
+    );
+    drop(live); // close the live connection
+
+    // The public client-server feed is public-only; it must NOT leak the private paths.
     let feed_url = format!("https://{}/events/", server.public_key().z32());
     let public_body = session
         .client()
@@ -535,7 +580,7 @@ async fn admin_events_feed_exposes_private_events() {
         .await
         .unwrap();
     assert!(
-        public_body.contains(&format!("PUT pubky://{pubkey_z32}/pub/note.txt")),
+        public_body.contains("/pub/note.txt"),
         "public feed should include the public event: {public_body}"
     );
     assert!(

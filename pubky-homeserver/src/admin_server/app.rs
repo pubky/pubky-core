@@ -28,7 +28,7 @@ fn create_protected_router(password: &str) -> Router<AppState> {
                 .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
-        .route("/events", get(admin_events::feed))
+        .route("/events-stream", get(admin_events::feed_stream))
         .route("/signup_tokens", get(signup_tokens::list_signup_tokens))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
@@ -120,6 +120,7 @@ impl AdminServer {
             &password,
             context.user_service.clone(),
             context.events_service.clone(),
+            context.metrics.clone(),
         )
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
@@ -211,6 +212,7 @@ mod tests {
                 "",
                 context.user_service.clone(),
                 context.events_service.clone(),
+                context.metrics.clone(),
             ),
             "test",
         ))
@@ -250,24 +252,12 @@ mod tests {
         pubkey
     }
 
-    /// Split an admin feed body into its event lines and the trailing `cursor: <id>` value
-    /// (if any), the way a client consuming the plain-text feed would.
-    fn parse_admin_feed(body: &str) -> (Vec<String>, Option<String>) {
-        let mut lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
-        let cursor = lines
-            .last()
-            .and_then(|l| l.strip_prefix("cursor: "))
-            .map(|c| c.to_string());
-        if cursor.is_some() {
-            lines.pop();
-        }
-        (lines, cursor)
-    }
-
-    /// GET the admin feed with the test password, assert it is a 200 with `Cache-Control: no-store`
-    async fn admin_feed_body(server: &TestServer, query: &str) -> String {
+    /// GET the admin event stream in **batch** mode (no `live`) and return the raw SSE
+    /// body, asserting a 200 with `Cache-Control: no-store`. Only use for non-live requests —
+    /// the body is finite, so it can be buffered to a string.
+    async fn admin_stream_body(server: &TestServer, query: &str) -> String {
         let response = server
-            .get(&format!("/events{query}"))
+            .get(&format!("/events-stream{query}"))
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
@@ -278,9 +268,14 @@ mod tests {
                 .get(axum::http::header::CACHE_CONTROL)
                 .and_then(|v| v.to_str().ok()),
             Some("no-store"),
-            "admin feed must be Cache-Control: no-store"
+            "admin stream must be Cache-Control: no-store"
         );
         response.text()
+    }
+
+    /// Count SSE event frames (`event: <TYPE>` lines) in a batch body.
+    fn count_sse_events(body: &str) -> usize {
+        body.lines().filter(|l| l.starts_with("event: ")).count()
     }
 
     #[tokio::test]
@@ -616,83 +611,97 @@ mod tests {
         assert_eq!(limits.rate_write, QuotaOverride::Default);
     }
 
-    /// The feed rejects unauthenticated and malformed requests.
+    /// The stream rejects unauthenticated and malformed requests.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_admin_events_feed_rejects_unauthorized_and_invalid() {
+    async fn test_admin_stream_rejects_unauthorized_and_invalid() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        // Missing password → 401 (the feed lives behind AdminAuthLayer).
-        let response = server.get("/events").expect_failure().await;
+        // Missing password → 401 (the stream lives behind AdminAuthLayer).
+        let response = server.get("/events-stream").expect_failure().await;
         response.assert_status_unauthorized();
 
         // Wrong password → 401.
         let response = server
-            .get("/events")
+            .get("/events-stream")
             .add_header("X-Admin-Password", "wrongpassword")
             .expect_failure()
             .await;
         response.assert_status_unauthorized();
 
-        // Valid password but a malformed cursor → 400 (same as the public feed).
-        let response = server
-            .get("/events?cursor=notanumber")
-            .add_header("X-Admin-Password", "test")
-            .expect_failure()
-            .await;
-        response.assert_status_bad_request();
+        // The malformed-request cases all 400 with a valid password.
+        for query in [
+            "?cursor=notanumber",
+            "?live=true&reverse=true",
+            "?limit=abc",
+        ] {
+            let response = server
+                .get(&format!("/events-stream{query}"))
+                .add_header("X-Admin-Password", "test")
+                .expect_failure()
+                .await;
+            response.assert_status_bad_request();
+        }
     }
 
-    /// The admin feed returns every event — public and private — and paginates correctly.
+    /// Batch mode returns every event — public and private — with `limit` enforced and the
+    /// SSE framing/no-store header the client expects. Empty DB yields an empty body.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_admin_events_feed_returns_all_events_paginated() {
+    async fn test_admin_stream_returns_all_events() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
 
-        // Empty feed: a 200 with an empty body and no `cursor:` line.
-        assert_eq!(admin_feed_body(&server, "").await, "");
+        // Empty stream: 200, no-store (asserted in helper), no event frames.
+        assert_eq!(count_sse_events(&admin_stream_body(&server, "").await), 0);
 
-        // Interleave public and private events (ids 1..=5 in this fresh DB).
-        let pubkey = seed_put_events(
-            &context,
-            &["/pub/a", "/priv/b", "/pub/c", "/priv/d", "/pub/e"],
-        )
-        .await;
-        let uri = |p: &str| format!("PUT pubky://{}{}", pubkey.z32(), p);
+        // ids 1=/pub/a.txt, 2=/priv/app/secret.txt in this fresh DB.
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/priv/app/secret.txt"]).await;
 
-        // Page 1: `limit=2` is enforced and exposes both /pub and /priv, cursor points at id 2.
-        let (page1, cursor1) = parse_admin_feed(&admin_feed_body(&server, "?limit=2").await);
-        assert_eq!(page1, vec![uri("/pub/a"), uri("/priv/b")]);
-        assert_eq!(cursor1.as_deref(), Some("2"));
-
-        // Page 2: resume from the page-1 cursor → ids 3,4.
-        let (page2, cursor2) = parse_admin_feed(
-            &admin_feed_body(&server, &format!("?limit=2&cursor={}", cursor1.unwrap())).await,
+        // Full firehose: both visibilities present, framed as PUT events.
+        let body = admin_stream_body(&server, "").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(
+            body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())),
+            "stream should include the public event: {body}"
         );
-        assert_eq!(page2, vec![uri("/pub/c"), uri("/priv/d")]);
-        assert_eq!(cursor2.as_deref(), Some("4"));
-
-        // Page 3: partial final page → id 5.
-        let (page3, _) = parse_admin_feed(
-            &admin_feed_body(&server, &format!("?limit=2&cursor={}", cursor2.unwrap())).await,
+        assert!(
+            body.contains(&format!("pubky://{}/priv/app/secret.txt", pubkey.z32())),
+            "stream should include the private event: {body}"
         );
-        assert_eq!(page3, vec![uri("/pub/e")]);
+        assert!(body.contains("event: PUT"), "expected SSE framing: {body}");
+        assert!(body.contains("cursor: "), "expected cursor lines: {body}");
 
-        // Concatenating the pages reproduces the full ordered set — no dup, no gap, private included.
-        let mut all = page1;
-        all.extend(page2);
-        all.extend(page3);
-        assert_eq!(
-            all,
-            vec![
-                uri("/pub/a"),
-                uri("/priv/b"),
-                uri("/pub/c"),
-                uri("/priv/d"),
-                uri("/pub/e"),
-            ]
-        );
+        // `limit=1` stops after the first event (the public one).
+        let body = admin_stream_body(&server, "?limit=1").await;
+        assert_eq!(count_sse_events(&body), 1);
+        assert!(body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())));
+        assert!(!body.contains("/priv/app/secret.txt"));
+
+        // `limit=0` sends nothing.
+        let body = admin_stream_body(&server, "?limit=0").await;
+        assert_eq!(count_sse_events(&body), 0);
+    }
+
+    /// `user=` is an optional filter: it restricts the stream to the named users.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_user_filter() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let alice = seed_put_events(&context, &["/pub/alice.txt"]).await;
+        let bob = seed_put_events(&context, &["/pub/bob.txt"]).await;
+
+        // No filter → both users' events.
+        let body = admin_stream_body(&server, "").await;
+        assert_eq!(count_sse_events(&body), 2);
+
+        // Filter to alice → only alice's event.
+        let body = admin_stream_body(&server, &format!("?user={}", alice.z32())).await;
+        assert_eq!(count_sse_events(&body), 1);
+        assert!(body.contains(&format!("pubky://{}/pub/alice.txt", alice.z32())));
+        assert!(!body.contains(&format!("pubky://{}/pub/bob.txt", bob.z32())));
     }
 }

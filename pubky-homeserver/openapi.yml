@@ -626,6 +626,13 @@ paths:
         data: cursor: 42
         data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI=
         ```
+
+        **Admin server variant.** The admin server (`http://localhost:6288`) exposes the same
+        `GET /events-stream` SSE protocol, but authenticated with the `X-Admin-Password` header
+        instead of a session. It streams **all** events, including private (`/priv/...`) paths, and
+        responds with `Cache-Control: no-store`. There, `user` is an *optional* filter (omit it to
+        stream every user's events) and a single global `cursor` paginates the combined feed;
+        `limit`, `live`, `reverse`, and `path` behave as below.
       operationId: getEventStream
       parameters:
         - name: user
@@ -702,53 +709,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminInfoResponse"
-        "401":
-          description: Missing or invalid admin password
-
-  /events:
-    get:
-      tags: [Admin]
-      summary: All events feed (plain text, includes private paths)
-      description: |
-        Same plain-text, cursor-paginated format as the public `GET /events/` feed, but exposes
-        all events including private (`/priv/...`) paths. Response is `Cache-Control: no-store`.
-      operationId: getAdminEventFeed
-      servers:
-        - url: http://localhost:6288
-      security:
-        - adminPassword: []
-      parameters:
-        - name: cursor
-          in: query
-          description: Starting cursor position. Defaults to `"0"` (beginning) when omitted.
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Maximum number of events to return.
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 65535
-      responses:
-        "200":
-          description: Event feed (public and private events)
-          headers:
-            Cache-Control:
-              schema:
-                type: string
-                example: no-store
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                PUT pubky://o1gg96ewuo.../pub/example.txt
-                PUT pubky://o1gg96ewuo.../priv/app/secret.txt
-                DEL pubky://o1gg96ewuo.../pub/old.txt
-                cursor: 12345
-        "400":
-          description: Invalid cursor
         "401":
           description: Missing or invalid admin password
 
