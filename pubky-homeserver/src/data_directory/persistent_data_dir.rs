@@ -61,6 +61,17 @@ impl PersistentDataDir {
     pub fn get_secret_file_path(&self) -> PathBuf {
         self.expanded_path.join("secret")
     }
+
+    /// Initialize the data directory without starting the server.
+    ///
+    /// Creates the directory, writes a sample config file (if absent),
+    /// and generates a server keypair (if absent).
+    pub fn init(&self) -> anyhow::Result<()> {
+        self.ensure_data_dir_exists_and_is_writable()?;
+        self.read_or_create_config_file()?;
+        self.read_or_create_keypair()?;
+        Ok(())
+    }
 }
 
 impl Default for PersistentDataDir {
