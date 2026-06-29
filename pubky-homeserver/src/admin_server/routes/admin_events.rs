@@ -134,7 +134,10 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
 /// Resolve parsed params into a service-layer [`AllEventsFilter`]: `404` for an unknown `user=`,
 /// `400` for an invalid cursor. This is the route's only real work — the streaming itself lives in
 /// [`EventsService::all_events_stream`].
-async fn resolve_filter(state: &AppState, params: AdminStreamParams) -> HttpResult<AllEventsFilter> {
+async fn resolve_filter(
+    state: &AppState,
+    params: AdminStreamParams,
+) -> HttpResult<AllEventsFilter> {
     // None = all users (firehose); otherwise resolve each pubkey to its id.
     let user_ids = if params.users.is_empty() {
         None
