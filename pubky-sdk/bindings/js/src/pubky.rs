@@ -167,9 +167,12 @@ impl Pubky {
     /// // 2) After reload, resume from the saved URL.
     /// const savedUrl = sessionStorage.getItem("pubky-auth-url");
     /// if (savedUrl) {
-    ///   const resumed = pubky.resumeCookieAuthFlow(savedUrl);
-    ///   const session = await resumed.awaitApproval();
-    ///   sessionStorage.removeItem("pubky-auth-url");
+    ///   try {
+    ///     const resumed = pubky.resumeCookieAuthFlow(savedUrl);
+    ///     const session = await resumed.awaitApproval();
+    ///   } finally {
+    ///     sessionStorage.removeItem("pubky-auth-url");
+    ///   }
     /// }
     #[wasm_bindgen(js_name = "resumeCookieAuthFlow")]
     pub fn resume_cookie_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {

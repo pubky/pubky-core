@@ -33,7 +33,7 @@ const homeserver = PublicKey.from(
 const signupToken = "<your-invite-code-or-null>";
 await signer.signup(homeserver, signupToken);
 
-// 3a) Signin with the signer directly
+// 3a) Signin with the signer directly.
 let session = await signer.signin("example.com");
 
 // 3b) Or, if you do not have the keypair available, authenticate on a 3rd-party app
@@ -246,9 +246,12 @@ sessionStorage.setItem("pubky-grant-auth", flow.save());
 
 const saved = sessionStorage.getItem("pubky-grant-auth");
 if (saved) {
-  const resumed = pubky.resumeGrantAuthFlow(saved);
-  const session = await resumed.awaitApproval();
-  sessionStorage.removeItem("pubky-grant-auth");
+  try {
+    const resumed = pubky.resumeGrantAuthFlow(saved);
+    const session = await resumed.awaitApproval();
+  } finally {
+    sessionStorage.removeItem("pubky-grant-auth");
+  }
 }
 ```
 
