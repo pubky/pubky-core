@@ -1,6 +1,6 @@
 use pubky_common::events::{EventCursor, EventType};
 use pubky_common::timestamp::Timestamp;
-use sea_query::{Condition, Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Condition, Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
@@ -313,13 +313,14 @@ impl EventRepository {
     }
 
     /// Get **all** events (public and private) by a single global cursor, with optional reverse,
-    /// path-prefix, and user-id filters. Backs the admin events stream — it applies no
-    /// `/pub`-vs-`/priv` visibility predicate, so reach it only from admin-authenticated callers.
+    /// path, and user-id filters. The path filter uses [`PathFilter`] (file-vs-directory matching).
+    /// Backs the admin events stream — it applies no `/pub`-vs-`/priv` visibility predicate, so
+    /// reach it only from admin-authenticated callers.
     pub async fn get_all_filtered_by_cursor<'a>(
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         reverse: bool,
-        path_prefix: Option<&str>,
+        path_filter: Option<&PathFilter>,
         user_ids: Option<&[i32]>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
@@ -363,19 +364,8 @@ impl EventRepository {
                 .to_owned();
         }
 
-        if let Some(prefix) = path_prefix {
-            // Escape special LIKE characters: %, _, and \
-            let escaped_prefix = prefix
-                .replace('\\', "\\\\")
-                .replace('_', "\\_")
-                .replace('%', "\\%");
-            let like_pattern = format!("{}%", escaped_prefix);
-            statement = statement
-                .and_where(
-                    Expr::col((EVENT_TABLE, EventIden::Path))
-                        .like(LikeExpr::new(like_pattern).escape('\\')),
-                )
-                .to_owned();
+        if let Some(filter) = path_filter {
+            statement = statement.and_where(filter.to_condition()).to_owned();
         }
 
         if let Some(ids) = user_ids {

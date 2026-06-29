@@ -11,7 +11,7 @@ use crate::persistence::{
     },
     sql::{SqlDb, UnifiedExecutor},
 };
-use crate::shared::webdav::{EntryPath, WebDavPath};
+use crate::shared::webdav::EntryPath;
 
 /// Maximum number of users allowed in a single event stream request.
 /// Based on HTTP header size limits (~4KB) and typical URL encoding:
@@ -36,8 +36,9 @@ pub(crate) struct AllEventsFilter {
     pub start_cursor: Option<EventCursor>,
     /// User filter. `None` = all users (firehose).
     pub user_ids: Option<Vec<i32>>,
-    /// Path-prefix filter.
-    pub path: Option<WebDavPath>,
+    /// Path filter (file-vs-directory matching: a trailing slash selects a directory and its
+    /// descendants, otherwise an exact file).
+    pub path: Option<PathFilter>,
     /// Newest-first ordering (batch only).
     pub reverse: bool,
     /// Stay open for live events after replaying history.
@@ -153,7 +154,7 @@ impl EventsService {
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         reverse: bool,
-        path_prefix: Option<&str>,
+        path_filter: Option<&PathFilter>,
         user_ids: Option<&[i32]>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
@@ -161,7 +162,7 @@ impl EventsService {
             cursor,
             limit,
             reverse,
-            path_prefix,
+            path_filter,
             user_ids,
             executor,
         )
@@ -218,7 +219,7 @@ impl EventsService {
                         last_cursor,
                         None,
                         filter.reverse,
-                        filter.path.as_ref().map(|p| p.as_str()),
+                        filter.path.as_ref(),
                         filter.user_ids.as_deref(),
                         &mut sql_db.pool().into(),
                     )
@@ -286,7 +287,7 @@ impl EventsService {
 }
 
 /// Whether a live broadcast event belongs in an all-events stream: not already sent (cursor dedup),
-/// inside the optional user filter, and under the optional path prefix.
+/// inside the optional user filter, and under the optional path filter.
 fn accept_live_event(
     event: &EventEntity,
     last_cursor: Option<EventCursor>,
@@ -303,7 +304,7 @@ fn accept_live_event(
         }
     }
     if let Some(path) = filter.path.as_ref() {
-        if !event.path.path().as_str().starts_with(path.as_str()) {
+        if !path.matches(event.path.path().as_str()) {
             return false;
         }
     }
@@ -465,13 +466,14 @@ mod tests {
             vec!["/pub/c", "/priv/y", "/pub/b", "/priv/x", "/pub/a"]
         );
 
-        // path_prefix filters to a storage root (private included).
+        // A directory path filter scopes to a storage root (private included).
+        let priv_filter = PathFilter::from(WebDavPath::new("/priv/").unwrap());
         let events = events_service
             .get_all_events(
                 None,
                 None,
                 false,
-                Some("/priv/"),
+                Some(&priv_filter),
                 None,
                 &mut db.pool().into(),
             )

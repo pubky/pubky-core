@@ -19,7 +19,7 @@ use url::form_urlencoded;
 use super::super::app_state::AppState;
 use crate::{
     persistence::{
-        files::events::{AllEventsFilter, MAX_EVENT_STREAM_USERS},
+        files::events::{AllEventsFilter, PathFilter, MAX_EVENT_STREAM_USERS},
         sql::user::UserRepository,
     },
     shared::{webdav::WebDavPath, HttpError, HttpResult},
@@ -37,7 +37,8 @@ struct AdminStreamParams {
     live: bool,
     /// Reverse (newest-first) ordering; batch-only.
     reverse: bool,
-    /// Optional path-prefix filter (literal prefix — use a trailing slash to scope to a directory).
+    /// Optional path filter. A trailing slash matches a directory and its descendants; without
+    /// one it matches that exact file (see [`PathFilter`]).
     path: Option<WebDavPath>,
 }
 
@@ -165,7 +166,7 @@ async fn resolve_filter(state: &AppState, params: AdminStreamParams) -> HttpResu
     Ok(AllEventsFilter {
         start_cursor,
         user_ids,
-        path: params.path,
+        path: params.path.map(PathFilter::from),
         reverse: params.reverse,
         live: params.live,
         limit: params.limit,
