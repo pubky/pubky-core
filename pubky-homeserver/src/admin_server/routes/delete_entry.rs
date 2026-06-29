@@ -11,7 +11,7 @@ pub async fn delete_entry(
     State(state): State<AppState>,
     Path(entry_path): Path<EntryPathPub>,
 ) -> HttpResult<impl IntoResponse> {
-    state.file_service.delete(entry_path.inner()).await?;
+    state.file_service.admin_delete(entry_path.inner()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -20,7 +20,7 @@ mod tests {
     use super::super::super::app_state::AppState;
     use super::*;
     use crate::persistence::files::{
-        events::{EventRepository, EventType},
+        events::{EventRepository, EventType, EventVisibility},
         FileService,
     };
     use crate::persistence::sql::entry::EntryRepository;
@@ -46,7 +46,12 @@ mod tests {
         let file_path = "my_file.txt";
         let db = context.sql_db.clone();
         let file_service = FileService::new_from_context(&context).unwrap();
-        let app_state = AppState::new(context.sql_db.clone(), file_service.clone(), "");
+        let app_state = AppState::new(
+            context.sql_db.clone(),
+            file_service.clone(),
+            "",
+            context.user_service.clone(),
+        );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
             .with_state(app_state);
@@ -71,9 +76,19 @@ mod tests {
         EntryRepository::get_by_path(&entry_path, &mut db.pool().into())
             .await
             .expect_err("Should be deleted");
-        let events = EventRepository::get_by_cursor(None, Some(10), &mut db.pool().into())
+        // Verify the blob is also gone from the storage backend
+        file_service
+            .get(&entry_path)
             .await
-            .unwrap();
+            .expect_err("Blob should be deleted from storage");
+        let events = EventRepository::get_by_cursor(
+            None,
+            Some(10),
+            EventVisibility::All,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             events.len(),
@@ -96,6 +111,7 @@ mod tests {
             context.sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
+            context.user_service.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))
@@ -119,6 +135,7 @@ mod tests {
             sql_db.clone(),
             FileService::new_from_context(&context).unwrap(),
             "",
+            context.user_service.clone(),
         );
         let router = Router::new()
             .route("/webdav/{*entry_path}", delete(delete_entry))

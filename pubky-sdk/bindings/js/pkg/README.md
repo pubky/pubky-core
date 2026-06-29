@@ -31,21 +31,29 @@ const homeserver = PublicKey.from(
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo"
 );
 const signupToken = "<your-invite-code-or-null>";
-const session = await signer.signup(homeserver, signupToken);
+await signer.signup(homeserver, signupToken);
 
-// 3) Write a public JSON file (session-scoped storage uses cookies automatically)
-const path = "/pub/example.com/hello.json";
+// 3a) Signin with the signer directly
+let session = await signer.signin("example.com");
+
+// 3b) Or, if you do not have the keypair available, authenticate on a 3rd-party app
+// by delegating the authentication to a signer with a QR code.
+const authFlow = pubky.startGrantAuthFlow(
+  "/pub/my-cool-app/:rw",
+  AuthFlowKind.signin(),
+  { clientId: "my-cool-app.example" },
+);
+renderQr(authFlow.authorizationUrl); // Show to user the signin deeplink via a QR code
+session = await authFlow.awaitApproval();
+
+// 4) Write a public JSON file
+const path = "/pub/my-cool-app/hello.json";
 await session.storage.putJson(path, { hello: "world" });
 
-// 4) Read it publicly (no auth needed)
+// 5) Read it publicly (no auth needed)
 const userPk = session.info.publicKey.toString();
-const addr = `${userPk}/pub/example.com/hello.json`;
+const addr = `${userPk}/pub/my-cool-app/hello.json`;
 const json = await pubky.publicStorage.getJson(addr); // -> { hello: "world" }
-
-// 5) Authenticate on a 3rd-party app
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin()); // require permissions to read and write into `my.app`
-renderQr(authFlow.authorizationUrl); // show to user
-const session = await authFlow.awaitApproval();
 ```
 
 Find here [**ready-to-run examples**](https://github.com/pubky/pubky-core/tree/main/examples).
@@ -84,8 +92,12 @@ const pubkyLocal = Pubky.testnet("localhost");
 // Signer (bind your keypair to a new Signer actor)
 const signer = pubky.signer(Keypair.random());
 
-// Pubky Auth flow (with capabilities)
-const authFlow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
+// Grant Pubky Auth flow (with capabilities)
+const authFlow = pubky.startGrantAuthFlow(
+  "/pub/my-cool-app/:rw",
+  AuthFlowKind.signin(),
+  { clientId: "my-cool-app.example" },
+);
 
 // Public storage (read-only)
 const publicStorage = pubky.publicStorage;
@@ -106,7 +118,7 @@ const client = new Client(); // or: pubky.client.fetch(); instead of constructin
 
 // Convert the identifier into a transport URL before fetching.
 const userId = PublicKey.from("pubky<z32>").toString();
-const url = resolvePubky(`${userId}/pub/example.com/file.txt`);
+const url = resolvePubky(`${userId}/pub/my-cool-app/file.txt`);
 const res = await client.fetch(url);
 ```
 
@@ -155,12 +167,12 @@ const keypair = Keypair.random();
 const signer = pubky.signer(keypair);
 
 const homeserver = PublicKey.from("8pinxxgq…");
-const session = await signer.signup(homeserver, /* invite */ null);
+await signer.signup(homeserver); // Add optional signup code here if required
 
-const session2 = await signer.signin(); // fast, prefer this; publishes PKDNS in background
-const session3 = await signer.signinBlocking(); // slower but safer; waits for PKDNS publish
+const session1 = await signer.signin("example.com"); // fast, prefer this; publishes PKDNS in background
+const session2 = await signer.signinBlocking("example.com"); // slower but safer; waits for PKDNS publish
 
-await session.signout(); // invalidates server session
+await session1.signout(); // invalidates server session
 ```
 
 **Session details**
@@ -172,29 +184,29 @@ const caps = session.info.capabilities; // -> string[] permissions and paths
 const storage = session.storage; // -> This User's storage API (absolute paths)
 ```
 
-**Persist a session across tab refreshes (browser)**
+**Persist a grant session**
 
 ```js
-// Save the session snapshot (no secrets inside; relies on the HTTP-only cookie).
-const snapshot = session.export();
-localStorage.setItem("pubky-session", snapshot);
+// Save the session secret. Treat this string like a bearer token.
+const secret = await session.exportSecret();
+localStorage.setItem("pubky-session", secret);
 
-// Later (after a reload), rehydrate using the browser's stored cookie.
+// Later, restore by minting a fresh short-lived bearer.
 const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
 ```
 
-> The exported string contains only public session metadata. The browser must keep the
-> HTTP-only cookie alive for the restored session to remain authenticated.
+> `session.export()` is still available for legacy cookie sessions, but new
+> applications should use grant auth plus `exportSecret()`.
 
 **Approve a pubkyauth request URL**
 
 ```js
-await signer.approveAuthRequest("pubkyauth:///?caps=...&secret=...&relay=...");
+await signer.approveAuthRequest("pubkyauth://signin?caps=...&secret=...&relay=...");
 ```
 
 ---
 
-### AuthFlow (pubkyauth)
+### GrantAuthFlow (pubkyauth)
 
 End-to-end auth (3rd-party app asks a user to approve via QR/deeplink, E.g. Pubky Ring).
 
@@ -208,8 +220,12 @@ const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 // Optional relay; defaults to Synonym-hosted relay if omitted
 const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to this)
 
-// Start the auth polling
-const flow = pubky.startAuthFlow(caps, AuthFlowKind.signin(), relay);
+// Start grant auth polling
+const flow = pubky.startGrantAuthFlow(
+  caps,
+  AuthFlowKind.signin(),
+  { clientId: "my-cool-app.example", relay },
+);
 
 renderQr(flow.authorizationUrl); // show to user
 
@@ -219,12 +235,29 @@ const session = await flow.awaitApproval();
 
 #### Resume an auth flow after page refresh
 
-Auth flows are resumable. See [`pubky.resumeAuthFlow()`](https://github.com/pubky/pubky-core/blob/main/pubky-sdk/bindings/js/src/pubky.rs#L110-L147) for usage and security guidance.
+Grant auth flows are resumable by saving the pending flow state before refresh and restoring it afterwards:
+
+```js
+const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
+  clientId: "my-cool-app.example",
+  relay,
+});
+sessionStorage.setItem("pubky-grant-auth", flow.save());
+
+const saved = sessionStorage.getItem("pubky-grant-auth");
+if (saved) {
+  const resumed = pubky.resumeGrantAuthFlow(saved);
+  const session = await resumed.awaitApproval();
+  sessionStorage.removeItem("pubky-grant-auth");
+}
+```
+
+Legacy cookie auth flows can be resumed with `pubky.resumeCookieAuthFlow(authorizationUrl)`. Store pending auth state in `sessionStorage`, not `localStorage`, and delete it once the flow completes or is abandoned.
 
 #### Validate and normalize capabilities
 
 If you accept capability strings from user input (forms, CLI arguments, etc.),
-use `validateCapabilities` before calling `startAuthFlow`. The helper returns a
+use `validateCapabilities` before calling `startGrantAuthFlow`. The helper returns a
 normalized string (ordering actions like `:rw`) and throws a structured error
 when the input is malformed.
 
@@ -237,7 +270,9 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startAuthFlow(caps, AuthFlowKind.signin());
+  const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
+    clientId: "my-cool-app.example",
+  });
   renderQr(flow.authorizationUrl);
   const session = await flow.awaitApproval();
   // ...
@@ -256,9 +291,8 @@ surface precise feedback to the user.
 
 #### Http Relay & reliability
 
-- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
-- For production and larger apps, run **your own http relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
-  The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
+- If you don’t specify a relay, the auth flow defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- For production and larger apps, run **your own http relay** (MIT, Docker): [https://github.com/pubky/http-relay](https://github.com/pubky/http-relay).
 
 ---
 
@@ -294,7 +328,7 @@ await pub.list(
 
 Use `get()` when you need the raw `Response` for streaming or custom parsing.
 
-#### SessionStorage (read/write; uses cookies)
+#### SessionStorage (read/write)
 
 ```js
 const s = session.storage;
@@ -426,12 +460,6 @@ try {
   }
 }
 ```
-
-## Browser environment notes
-
-- Keep the Pubky client UI and the homeserver on the **same origin family** (both local or both remote). Browsers partition cookies by scheme/host, and cross-site requests (e.g., http://localhost calling https://staging…​) can silently drop or cache `SameSite`/`Secure` session cookies.
-- If you must mix environments, use a reverse proxy so the browser always talks to one consistent origin (or disable caching via devtools and clear cookies between switches).
-- When troubleshooting auth/session caching: open a fresh incognito window, clear site data for the target origin, and verify the request includes credentials.
 
 ---
 

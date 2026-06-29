@@ -1,104 +1,115 @@
-use std::{fmt::Display, str::FromStr};
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use url::Url;
 
-use crate::actors::auth::deep_links::{DEEP_LINK_SCHEMES, error::DeepLinkParseError};
+use super::{
+    DeepLinkParseError,
+    query_params::parse_secret,
+    typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink},
+};
 
-/// A deep link for exporting a user secret to a signer like Pubky Ring.
-/// Supported formats:
-/// - <pubkyauth://secret_export?secret=base64_encoded_secret>
+/// Intent marker for seed-export deep links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecretExportIntent;
+
+impl DeepLinkIntent for SecretExportIntent {
+    const NAME: &'static str = "secret_export";
+}
+
+/// A typed seed-export deep link.
+pub type SeedExportDeepLink = TypedDeepLink<SecretExportIntent, SeedExportParams>;
+
+/// Typed parameters for a seed-export deep link.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeedExportDeepLink {
-    secret: [u8; 32],
+pub struct SeedExportParams {
+    /// The keypair secret to export.
+    pub secret: [u8; 32],
 }
 
-impl SeedExportDeepLink {
-    /// Create a new seed export deep link.
-    ///
-    /// # Arguments
-    /// * `secret` - The keypair secret to export.
-    #[must_use]
-    pub fn new(secret: [u8; 32]) -> Self {
-        Self { secret }
+impl DeepLinkParams for SeedExportParams {
+    fn parse(url: &Url) -> Result<Self, DeepLinkParseError> {
+        Ok(Self {
+            secret: parse_secret(url)?,
+        })
     }
 
-    /// Get the secret for the seed export flow.
-    #[must_use]
-    pub fn secret(&self) -> &[u8; 32] {
-        &self.secret
-    }
-}
-
-impl Display for SeedExportDeepLink {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "pubkyauth://secret_export?secret={}",
-            URL_SAFE_NO_PAD.encode(self.secret)
-        )
-    }
-}
-
-impl FromStr for SeedExportDeepLink {
-    type Err = DeepLinkParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s)?;
-        if !DEEP_LINK_SCHEMES.contains(&url.scheme()) {
-            return Err(DeepLinkParseError::InvalidSchema("pubkyauth or pubkyring"));
-        }
-        let intent = url.host_str().unwrap_or("").to_string();
-        if intent != "secret_export" {
-            return Err(DeepLinkParseError::InvalidIntent("secret_export"));
-        }
-
-        let raw_secret = url
-            .query_pairs()
-            .find(|(key, _)| key == "secret")
-            .ok_or(DeepLinkParseError::MissingQueryParameter("secret"))?
-            .1
-            .to_string();
-        let secret = URL_SAFE_NO_PAD
-            .decode(raw_secret.as_str())
-            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
-        let secret: [u8; 32] = secret.try_into().map_err(|e: Vec<u8>| {
-            let msg = format!("Expected 32 bytes, got {}", e.len());
-            DeepLinkParseError::InvalidQueryParameter(
-                "secret",
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
-            )
-        })?;
-
-        Ok(SeedExportDeepLink { secret })
-    }
-}
-
-impl From<SeedExportDeepLink> for Url {
-    fn from(val: SeedExportDeepLink) -> Self {
-        Url::parse(&val.to_string()).expect("Should be able to parse the deep link")
+    fn append_query_pairs(&self, url: &mut Url) {
+        url.query_pairs_mut()
+            .append_pair("secret", &URL_SAFE_NO_PAD.encode(self.secret));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Keypair;
+    use crate::actors::auth::deep_links::DeepLinkScheme;
+
+    const SECRET: &str = "kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
+    const SECRET_BYTES: [u8; 32] = [
+        146, 169, 220, 120, 67, 32, 172, 212, 12, 255, 24, 180, 234, 132, 23, 140, 13, 220, 36,
+        117, 255, 69, 9, 176, 212, 22, 58, 36, 77, 91, 177, 239,
+    ];
 
     #[test]
-    fn test_signin_deep_link_parse() {
-        let keypair = Keypair::random();
-        let secret = keypair.secret();
-        let deep_link = SeedExportDeepLink::new(secret);
-        let deep_link_str = deep_link.to_string();
-        assert_eq!(
-            deep_link_str,
-            format!(
-                "pubkyauth://secret_export?secret={}",
-                URL_SAFE_NO_PAD.encode(secret)
-            )
+    fn parses_seed_export_deep_link() {
+        let deep_link: SeedExportDeepLink = format!("pubkyring://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
+
+        assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyRing);
+        assert_eq!(deep_link.intent(), "secret_export");
+        assert_eq!(deep_link.params().secret, SECRET_BYTES);
+    }
+
+    #[test]
+    fn converts_seed_export_deep_link_to_url() {
+        let deep_link: SeedExportDeepLink = format!("pubkyring://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
+        let url = deep_link.to_url();
+
+        assert_eq!(url.scheme(), "pubkyring");
+        assert_eq!(url.host_str(), Some("secret_export"));
+        assert_eq!(SeedExportDeepLink::parse_url(&url).unwrap(), deep_link);
+    }
+
+    #[test]
+    fn creates_seed_export_deep_link_from_params() {
+        let deep_link = SeedExportDeepLink::new(
+            DeepLinkScheme::PubkyAuth,
+            SeedExportParams {
+                secret: SECRET_BYTES,
+            },
         );
-        let deep_link_parsed = SeedExportDeepLink::from_str(&deep_link_str).unwrap();
-        assert_eq!(deep_link_parsed, deep_link);
+        let url = deep_link.to_url();
+        let parsed_again = SeedExportDeepLink::parse_url(&url).unwrap();
+
+        assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyAuth);
+        assert_eq!(deep_link.intent(), "secret_export");
+        assert_eq!(deep_link.params().secret, SECRET_BYTES);
+        assert_eq!(parsed_again, deep_link);
+    }
+
+    #[test]
+    fn display_formats_as_url() {
+        let deep_link: SeedExportDeepLink = format!("pubkyauth://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
+
+        assert_eq!(deep_link.to_string(), deep_link.to_url().to_string());
+    }
+
+    #[test]
+    fn converts_owned_typed_deep_link_into_url() {
+        let deep_link: SeedExportDeepLink = format!("pubkyauth://secret_export?secret={SECRET}")
+            .parse()
+            .unwrap();
+        let url: Url = deep_link.into();
+
+        assert_eq!(url.scheme(), "pubkyauth");
+        assert_eq!(url.host_str(), Some("secret_export"));
+        url.query_pairs()
+            .find(|(key, _)| key == "secret")
+            .map(|(_, value)| assert_eq!(value, SECRET))
+            .expect("Expected 'secret' query parameter");
     }
 }

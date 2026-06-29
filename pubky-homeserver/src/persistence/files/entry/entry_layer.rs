@@ -1,6 +1,5 @@
 use super::entry_service::EntryService;
 
-use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::sql::{SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
@@ -56,7 +55,7 @@ impl<A: Access> LayeredAccess for EntryAccessor<A> {
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         let (rp, writer) = self.inner.write(path, args).await?;
         Ok((
             rp,
@@ -216,7 +215,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
     }
 
     fn delete(&mut self, path: &str, args: OpDelete) -> Result<()> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         self.inner.delete(path, args)?;
         self.delete_queue.push(entry_path);
         Ok(())

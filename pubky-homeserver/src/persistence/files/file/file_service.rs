@@ -42,17 +42,14 @@ impl FileService {
         data_directory: &Path,
         db: SqlDb,
         events_service: EventsService,
+        user_service: crate::services::user_service::UserService,
     ) -> Result<Self, FileIoError> {
-        let user_quota_bytes = match config.general.user_storage_quota_mb {
-            0 => u64::MAX,
-            other => other * 1024 * 1024,
-        };
         let opendal_service = OpendalService::new_from_config(
             &config.storage,
             data_directory,
             &db,
-            user_quota_bytes,
             events_service,
+            user_service,
         )?;
         Ok(Self::new(opendal_service, db))
     }
@@ -100,6 +97,17 @@ impl FileService {
         self.opendal.delete(path).await?;
         Ok(())
     }
+
+    /// Delete a file bypassing write-path restrictions.
+    /// Used by the admin `/webdav` REST delete route; the `/dav` WebDAV handler
+    /// already uses `admin_operator` directly and does not need this.
+    pub async fn admin_delete(&self, path: &EntryPath) -> Result<(), FileIoError> {
+        if !self.opendal.exists(path).await? {
+            return Err(FileIoError::NotFound);
+        }
+        self.opendal.admin_delete(path).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -134,7 +142,7 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use crate::{
-        persistence::{files::user_quota_layer::FILE_METADATA_SIZE, sql::user::UserRepository},
+        persistence::sql::user::UserRepository, services::user_service::FILE_METADATA_SIZE,
         shared::webdav::WebDavPath,
     };
     use futures_lite::StreamExt;
@@ -285,15 +293,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_update_basic() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -317,15 +322,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_entry() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];
@@ -348,12 +350,10 @@ mod tests {
         );
     }
 
-    /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_data_usage_exactly_to_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+    async fn test_rejects_descendant_when_exact_file_exists() {
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
@@ -361,6 +361,79 @@ mod tests {
         UserRepository::create(&pubkey, &mut db.pool().into())
             .await
             .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path = EntryPath::new(
+            pubkey.clone(),
+            WebDavPath::new("/pub/app/foo/bar.json").unwrap(),
+        );
+
+        file_service
+            .write(&exact_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&descendant_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("descendant write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&descendant_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected descendant should not create metadata");
+        file_service
+            .get(&descendant_path)
+            .await
+            .expect_err("Rejected descendant should not create a blob");
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_rejects_exact_file_when_descendant_exists() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create(&pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        let exact_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/pub/app/foo").unwrap());
+        let descendant_path =
+            EntryPath::new(pubkey, WebDavPath::new("/pub/app/foo/bar.json").unwrap());
+
+        file_service
+            .write(&descendant_path, Buffer::from(vec![1; 10]))
+            .await
+            .unwrap();
+        let err = file_service
+            .write(&exact_path, Buffer::from(vec![2; 10]))
+            .await
+            .expect_err("exact-file write should be rejected");
+
+        assert!(matches!(err, FileIoError::PathCollision));
+        file_service
+            .get_info(&exact_path, &mut db.pool().into())
+            .await
+            .expect_err("Rejected exact file should not create metadata");
+        file_service
+            .get(&exact_path)
+            .await
+            .expect_err("Rejected exact file should not create a blob");
+    }
+
+    /// Write a file that is exactly at the quota and check if the data usage is updated correctly.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_data_usage_exactly_to_quota() {
+        let context = AppContext::test().await;
+        let file_service = FileService::new_from_context(&context).unwrap();
+        let db = context.sql_db.clone();
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 - FILE_METADATA_SIZE as usize];
@@ -380,15 +453,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_above_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024 * 1024 + 1];
@@ -415,15 +485,12 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_data_usage_override_existing_above_quota() {
-        let mut context = AppContext::test().await;
-        context.config_toml.general.user_storage_quota_mb = 1;
+        let context = AppContext::test().await;
         let file_service = FileService::new_from_context(&context).unwrap();
         let db = context.sql_db.clone();
 
         let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        UserRepository::create(&pubkey, &mut db.pool().into())
-            .await
-            .unwrap();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
 
         let path = EntryPath::new(pubkey.clone(), WebDavPath::new("/test_file.txt").unwrap());
         let test_data = vec![1u8; 1024];

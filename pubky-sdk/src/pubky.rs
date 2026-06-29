@@ -14,8 +14,8 @@
 //! # async fn run() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
 //!
-//! let caps = Capabilities::default();
-//! let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+//! let caps = Capabilities::builder().write("/pub/demoapp/").finish();
+//! let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 //! println!("Scan to sign in: {}", flow.authorization_url());
 //!
 //! let session = flow.await_approval().await?;
@@ -23,18 +23,18 @@
 //! # Ok(()) }
 //! ```
 //!
-//! ### 2) Script that holds a key and signs in locally with root capabilities
+//! ### 2) Script that holds a key and signs in locally with write capabilities for a demo app
 //! ```no_run
-//! use pubky::{Pubky, PubkySigner, Keypair};
+//! use pubky::{ClientId, Pubky, PubkySigner, Keypair};
 //!
 //! # async fn run() -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
 //! let kp = Keypair::random();
 //! let signer = pubky.signer(kp);
 //!
-//! let session = signer.signin().await?;
+//! let session = signer.signin(ClientId::new("demo.app").unwrap()).await?;
 //! // do writes as-me
-//! session.storage().put("/pub/demo/hello.txt", "hi").await?;
+//! session.storage().put("/pub/demoapp/hello.txt", "hi").await?;
 //! # Ok(()) }
 //! ```
 //!
@@ -45,7 +45,7 @@
 //! # async fn run(user: pubky::PublicKey) -> pubky::Result<()> {
 //! let pubky = Pubky::new()?;
 //! let public = pubky.public_storage();
-//! let addr = format!("{}/pub/site/index.html", user);
+//! let addr = format!("{}/pub/pubky.app/profile.json", user);
 //! let html = public.get(addr).await?.text().await?;
 //! # Ok(()) }
 //! ```
@@ -54,14 +54,16 @@ use std::str::FromStr;
 
 use crate::PublicKey;
 
+#[allow(deprecated, reason = "Internal use of deprecated public API")]
+use crate::PubkyCookieAuthFlow;
 use crate::{
-    Capabilities, EventCursor, EventStreamBuilder, Pkdns, PubkyAuthFlow, PubkyHttpClient,
-    PubkySigner, PublicStorage, Result, actors::AuthFlowKind, deep_links::DeepLink,
-    errors::AuthError,
+    Capabilities, ClientId, EventCursor, EventStreamBuilder, GrantCredential, Pkdns,
+    PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
+    actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::{PubkySession, errors::RequestError};
+use crate::errors::RequestError;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
@@ -103,28 +105,56 @@ impl Pubky {
         Self { client }
     }
 
-    /// Start an end-to-end auth flow (QR/deeplink).
+    /// Start an end-to-end **legacy (cookie)** auth flow (QR/deeplink).
     /// Depending on the auth kind, the flow will be different.
     /// - `AuthFlowKind::SignIn` - Sign in to an existing account.
     /// - `AuthFlowKind::SignUp` - Sign up for a new account.
     ///
     /// Use with `flow.authorization_url()` and then `await_approval()` (blocking)
-    /// or `try_poll_once()` (non-blocking UI loops).
+    /// or `try_poll_once()` (non-blocking UI loops). Raw credentials are
+    /// available via `await_credential()` / `try_poll_credential_once()`.
+    ///
+    /// For long-lived, mirror-friendly sessions prefer [`Self::start_grant_auth_flow`].
     ///
     /// # Errors
     /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
     ///   fails (e.g., malformed relay URL when configured via the builder).
-    pub fn start_auth_flow(
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
+    pub fn start_cookie_auth_flow(
         &self,
         caps: &Capabilities,
         auth_kind: AuthFlowKind,
-    ) -> Result<PubkyAuthFlow> {
-        PubkyAuthFlow::builder(caps, auth_kind)
+    ) -> Result<PubkyCookieAuthFlow> {
+        PubkyCookieAuthFlow::builder(caps, auth_kind)
+            .client(self.client.clone())
+            .start()
+    }
+
+    /// Start an end-to-end **Grant + `PoP`** auth flow (QR/deeplink).
+    ///
+    /// The resulting [`PubkyGrantAuthFlow`] emits a deep link with `cid` and `cpk`
+    /// query params; the signer signs a `pubky-grant` JWS and the SDK exchanges
+    /// it for a self-refreshing grant-backed session.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Parse`] if internal URL construction for the flow
+    ///   fails (e.g., malformed relay URL when configured via the builder).
+    pub fn start_grant_auth_flow(
+        &self,
+        caps: &Capabilities,
+        auth_kind: AuthFlowKind,
+        client_id: ClientId,
+    ) -> Result<PubkyGrantAuthFlow> {
+        PubkyGrantAuthFlow::builder(caps, auth_kind, client_id)
             .client(self.client.clone())
             .start()
     }
 
     /// Resume a previously started auth flow from its `authorization_url`.
+    /// **Cookie Auth Flow only**
     ///
     /// Parses the secret, capabilities, relay, and flow kind from the URL
     /// and rebuilds the flow against the same relay channel. If the signer
@@ -132,19 +162,24 @@ impl Pubky {
     ///
     /// The relay inbox persists messages for **~5 minutes**; resume is only
     /// viable within that window. After the TTL expires the channel is gone
-    /// and you must start a fresh flow with [`start_auth_flow`](Self::start_auth_flow).
+    /// and you must start a fresh flow with
+    /// [`start_cookie_auth_flow`](Self::start_cookie_auth_flow).
     ///
     /// The `authorization_url` contains the `client_secret`; follow
-    /// [`start_auth_flow`](Self::start_auth_flow) storage guidance and delete it
+    /// [`start_cookie_auth_flow`](Self::start_cookie_auth_flow) storage guidance and delete it
     /// once resume completes or is abandoned.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if the URL cannot be parsed
     ///   or is not a signin/signup deep link.
-    pub fn resume_auth_flow(&self, authorization_url: &str) -> Result<PubkyAuthFlow> {
+    #[allow(
+        deprecated,
+        reason = "Cookie flow is intentionally exposed via this facade while deprecated"
+    )]
+    pub fn resume_cookie_auth_flow(&self, authorization_url: &str) -> Result<PubkyCookieAuthFlow> {
         let (caps, relay, secret, auth_kind) = parse_auth_deep_link(authorization_url)?;
 
-        PubkyAuthFlow::builder(&caps, auth_kind)
+        PubkyCookieAuthFlow::builder(&caps, auth_kind)
             .client_secret(secret)
             .relay(relay)
             .client(self.client.clone())
@@ -270,6 +305,30 @@ impl Pubky {
         PubkySession::from_secret_file(path.as_ref(), Some(self.client.clone())).await
     }
 
+    /// Restore a session from an exported session secret token.
+    ///
+    /// Accepts both legacy cookie session tokens from
+    /// [`CookieSessionView::export_secret`](crate::CookieSessionView::export_secret)
+    /// and grant session tokens from
+    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret).
+    /// Grant restore mints a fresh short-lived bearer; cookie restore revalidates
+    /// the stored cookie secret.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::RequestError::Validation`] when the token is malformed.
+    /// - Returns [`crate::errors::AuthError::RequestExpired`] when a stored cookie
+    ///   session is no longer valid.
+    /// - Returns [`crate::errors::Error::Authentication`] when a stored grant is
+    ///   expired or its stored `PoP` key does not match the grant.
+    /// - Propagates transport/server errors while validating or restoring the session.
+    pub async fn restore_session(&self, token: &str) -> Result<PubkySession> {
+        if GrantCredential::is_secret_token(token) {
+            return PubkySession::import_grant_secret(token, Some(self.client.clone())).await;
+        }
+
+        PubkySession::import_secret(token, Some(self.client.clone())).await
+    }
+
     /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].
     ///
     /// # Errors
@@ -312,17 +371,25 @@ fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], 
 
     match &deep_link {
         DeepLink::Signin(s) => Ok((
-            s.capabilities().clone(),
-            s.relay().clone(),
-            *s.secret(),
+            s.params().capabilities.clone(),
+            s.params().relay.clone(),
+            s.params().secret,
             AuthFlowKind::signin(),
         )),
         DeepLink::Signup(s) => Ok((
-            s.capabilities().clone(),
-            s.relay().clone(),
-            *s.secret(),
-            AuthFlowKind::signup(s.homeserver().clone(), s.signup_token()),
+            s.params().capabilities.clone(),
+            s.params().relay.clone(),
+            s.params().secret,
+            AuthFlowKind::signup(
+                s.params().homeserver.clone(),
+                s.params().signup_token.clone(),
+            ),
         )),
+        DeepLink::SigninGrant(_) | DeepLink::SignupGrant(_) => Err(AuthError::Validation(
+            "grant auth flows cannot be resumed from the authorization URL alone; the PoP client private key is required and is not encoded in the deep link."
+                .into(),
+        )
+        .into()),
         DeepLink::SeedExport(_) => {
             Err(AuthError::Validation("Only signin and signup URLs can be resumed.".into()).into())
         }

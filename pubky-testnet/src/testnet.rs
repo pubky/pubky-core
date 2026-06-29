@@ -128,7 +128,7 @@ impl Testnet {
         if !self.dht_relay_urls().is_empty() {
             mock_dir.config_toml.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
-        mock_dir.config_toml.storage = StorageConfigToml::InMemory;
+        mock_dir.config_toml.storage.backend = StorageConfigToml::InMemory;
         let homeserver = HomeserverApp::start_with_mock_data_dir(mock_dir).await?;
         self.homeservers.push(homeserver);
         Ok(self
@@ -153,7 +153,7 @@ impl Testnet {
 
     /// Run a new Pkarr relay.
     ///
-    /// You can access the list of relays at [Self::pkarr_relays].
+    /// You can access the list of relays at `Self::pkarr_relays`.
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
         let dir = tempfile::tempdir()?;
         let mut builder = pkarr_relay::Relay::builder();
@@ -285,7 +285,7 @@ mod test {
 
         let signer = sdk.signer(Keypair::random());
 
-        let session = signer.signup(&hs.public_key(), None).await.unwrap();
+        let session = signer.signup_cookie(&hs.public_key(), None).await.unwrap();
         assert_eq!(session.info().public_key(), &signer.public_key());
     }
 

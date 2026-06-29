@@ -6,12 +6,16 @@
 //! - Republishing the homeserver's pkarr packet to the DHT every hour.
 //! - Stopping the task when the homeserver is stopped.
 
+use std::borrow::Cow;
 use std::net::IpAddr;
 
 use anyhow::Result;
 use pkarr::dns::Name;
 use pkarr::errors::PublishError;
-use pkarr::{dns::rdata::SVCB, SignedPacket};
+use pkarr::{
+    dns::rdata::{SVCParam, SVCB},
+    SignedPacket,
+};
 
 use crate::app_context::AppContext;
 use tokio::task::JoinHandle;
@@ -127,10 +131,10 @@ pub fn create_signed_packet(
     svcb.set_port(public_pubky_tls_port);
     match &public_ip {
         IpAddr::V4(ip) => {
-            svcb.set_ipv4hint([ip.to_bits()])?;
+            svcb.set_ipv4hint(&[ip.to_bits()]);
         }
         IpAddr::V6(ip) => {
-            svcb.set_ipv6hint([ip.to_bits()])?;
+            svcb.set_ipv6hint(&[ip.to_bits()]);
         }
     };
     signed_packet_builder = signed_packet_builder.https(root_name.clone(), svcb, 60 * 60);
@@ -148,10 +152,10 @@ pub fn create_signed_packet(
 
         let http_port_be_bytes = public_icann_http_port.to_be_bytes();
         if domain.0 == "localhost" {
-            svcb.set_param(
+            svcb.set_param(SVCParam::Unknown(
                 pubky_common::constants::reserved_param_keys::HTTP_PORT,
-                &http_port_be_bytes,
-            )?;
+                Cow::Borrowed(&http_port_be_bytes),
+            ));
         }
         svcb.target = domain.0.as_str().try_into()?;
         signed_packet_builder = signed_packet_builder.https(root_name.clone(), svcb, 60 * 60);

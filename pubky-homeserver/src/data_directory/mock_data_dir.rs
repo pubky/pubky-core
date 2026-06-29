@@ -34,8 +34,9 @@ impl MockDataDir {
 
     /// Creates a mock data directory with a config and keypair appropriate for testing.
     ///
-    /// Uses [`ConfigToml::default_test_config()`] which enables the admin server.
-    /// For lightweight tests, use [`MockDataDir::new()`] with [`ConfigToml::minimal_test_config()`].
+    /// Uses [`super::ConfigToml::default_test_config()`] which enables the admin server.
+    /// For lightweight tests, use [`MockDataDir::new()`] with
+    /// [`super::ConfigToml::minimal_test_config()`].
     #[cfg(any(test, feature = "testing"))]
     pub fn test() -> Self {
         let config = super::ConfigToml::default_test_config();

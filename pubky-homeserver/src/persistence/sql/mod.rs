@@ -6,9 +6,9 @@
 //! both pooled connections and explicit transactions.
 
 mod connection_string;
-mod entities;
+pub(crate) mod entities;
 mod migration;
-mod migrations;
+pub(crate) mod migrations;
 mod migrator;
 mod pg_event_listener;
 mod sql_db;

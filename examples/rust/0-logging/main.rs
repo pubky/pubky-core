@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky_testnet::{pubky::Keypair, EphemeralTestnet};
+use pubky_testnet::{
+    pubky::{ClientId, Keypair},
+    EphemeralTestnet,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::level_filters::LevelFilter;
 use tracing::{debug, info};
@@ -16,7 +19,7 @@ struct Cli {
     #[arg(long, default_value_t = LevelFilter::INFO, value_parser = clap::value_parser!(LevelFilter))]
     level: LevelFilter,
 
-    /// Use an external PostgreSQL instance instead of embedded postgres.
+    /// Use an external PostgreSQL instance instead of the Docker-managed one.
     /// Connects to TEST_PUBKY_CONNECTION_STRING env var if set,
     /// otherwise defaults to postgres://postgres:postgres@localhost:5432/postgres
     #[arg(long)]
@@ -33,9 +36,9 @@ async fn main() -> Result<()> {
     #[allow(unused_mut)]
     let mut builder = EphemeralTestnet::builder();
 
-    #[cfg(feature = "embedded-postgres")]
+    #[cfg(feature = "docker-postgres")]
     let builder = if !cli.external_postgres {
-        builder.with_embedded_postgres()
+        builder.with_docker_postgres()
     } else {
         builder
     };
@@ -50,7 +53,8 @@ async fn main() -> Result<()> {
 
     let signer = pubky.signer(keypair);
     info!(homeserver = %homeserver.public_key(), "Signing up");
-    let session = signer.signup(&homeserver.public_key(), None).await?;
+    signer.signup(&homeserver.public_key(), None).await?;
+    let session = signer.signin(ClientId::new("logging.example")?).await?;
 
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     let path = format!("/pub/logging.example/{timestamp}.txt");

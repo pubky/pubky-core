@@ -6,35 +6,36 @@ All resources are ephemeral, including the database, and all servers are cleaned
 
 ## Quickstart
 
-### Option 1: Embedded PostgreSQL (No External DB Required)
+### Option 1: Docker PostgreSQL (No External DB Required)
 
-For testing without a separate Postgres installation, enable the `embedded-postgres` feature:
+For testing without a separate Postgres installation, enable the `docker-postgres` feature:
 
 ```toml
 [dev-dependencies]
-pubky-testnet = { version = "0.6", features = ["embedded-postgres"] }
+pubky-testnet = { version = "0.9", features = ["docker-postgres"] }
 ```
 
 ```rust,no_run
-# #[cfg(not(feature = "embedded-postgres"))]
+# #[cfg(not(feature = "docker-postgres"))]
 # fn main() {}
-# #[cfg(feature = "embedded-postgres")]
+# #[cfg(feature = "docker-postgres")]
 use pubky_testnet::EphemeralTestnet;
 
-# #[cfg(feature = "embedded-postgres")]
+# #[cfg(feature = "docker-postgres")]
 #[tokio::main]
 async fn main() {
     let testnet = EphemeralTestnet::builder()
-        .with_embedded_postgres()
+        .with_docker_postgres()
         .build()
         .await
         .unwrap();
 }
 ```
 
-The first run will download PostgreSQL binaries (~50-100MB), which are cached for subsequent runs.
+This uses [testcontainers](https://docs.rs/testcontainers) to run PostgreSQL in a Docker container.
+Docker must be running on the host. The container is automatically cleaned up on drop and on Ctrl+C/SIGTERM.
 
-> **Important**: If you have multiple tests, see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests) below.
+> **Important**: If you have multiple tests, see [Sharing Docker Postgres Across Tests](#sharing-docker-postgres-across-tests) below.
 
 ### Option 2: External PostgreSQL
 
@@ -80,7 +81,7 @@ async fn my_test() {
 
 ### Custom Postgres Connection
 
-By default (without embedded-postgres), testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
+By default (without docker-postgres), testnet will use `postgres://localhost:5432/postgres?pubky-test=true`.
 The `?pubky-test=true` parameter indicates that the homeserver should create an ephemeral database.
 
 To use a custom [connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS):
@@ -130,34 +131,22 @@ async fn main() {
 }
 ```
 
-## Sharing Embedded Postgres Across Tests
+## Sharing Docker Postgres Across Tests
 
-When using `embedded-postgres`, each call to `.with_embedded_postgres()` starts a **separate** PostgreSQL instance.
+When using `docker-postgres`, each call to `.with_docker_postgres()` starts a **separate** PostgreSQL container.
 
-The recommended pattern is to start **one** embedded postgres instance and share its connection string across all tests:
+Use `DockerPostgres::shared()` to start **one** container and share its connection string across all tests.
+Docker handles cleanup automatically when the process exits.
 
 ```rust
+# #[cfg(feature = "docker-postgres")]
+# mod docker_postgres_example {
 use pubky_testnet::EphemeralTestnet;
-use pubky_testnet::embedded_postgres::EmbeddedPostgres;
-use tokio::sync::OnceCell;
-
-// Shared embedded postgres instance for all tests in this module.
-// Started once, reused by every test via its connection string.
-static SHARED_PG: OnceCell<EmbeddedPostgres> = OnceCell::const_new();
-
-async fn shared_postgres() -> &'static EmbeddedPostgres {
-    SHARED_PG
-        .get_or_init(|| async {
-            EmbeddedPostgres::start()
-                .await
-                .expect("Failed to start embedded postgres")
-        })
-        .await
-}
+use pubky_testnet::docker_postgres::DockerPostgres;
 
 #[tokio::test]
 async fn test_one() {
-    let pg = shared_postgres().await;
+    let pg = DockerPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -168,7 +157,7 @@ async fn test_one() {
 
 #[tokio::test]
 async fn test_two() {
-    let pg = shared_postgres().await;
+    let pg = DockerPostgres::shared().await;
     let testnet = EphemeralTestnet::builder()
         .postgres(pg.connection_string().unwrap())
         .build()
@@ -176,32 +165,26 @@ async fn test_two() {
         .unwrap();
     // ... test code
 }
+# }
 ```
 
 Each testnet still gets its own ephemeral database within the shared PostgreSQL instance, so tests remain isolated.
 
 ## Troubleshooting
 
-### GitHub Rate Limiting During Binary Download
+### Docker not running
 
-The embedded PostgreSQL binary is downloaded from GitHub releases. If multiple tests (or repeated test runs) try to download concurrently, you may hit GitHub's API rate limit (60 requests/hour for unauthenticated requests), causing errors like `403 Forbidden` or `rate limit exceeded`.
+The `docker-postgres` feature requires Docker. If you see `"Is Docker running?"` errors, ensure the Docker daemon is started and your user has permission to access it (e.g., is in the `docker` group).
 
-**Solutions (try in order):**
+### Docker Hub rate limits
 
-1. **Set a GitHub token** to raise the rate limit from 60 to 5,000 requests/hour:
-   ```bash
-   export GITHUB_TOKEN=ghp_your_personal_access_token
-   cargo test
-   ```
-   The token does not need any scopes — a classic PAT with no permissions works.
+The Postgres image is pulled from Docker Hub. Anonymous pulls are limited to 100 per 6 hours. If you hit this, either `docker login` or pre-pull the image:
 
-2. **Run a single test first** to populate the cache before running the full suite.
+```bash
+docker pull postgres
+```
 
-3. **Share one embedded postgres instance** across tests (see [Sharing Embedded Postgres Across Tests](#sharing-embedded-postgres-across-tests)).
-
-4. **Wait for the rate limit to reset** (1 hour from first rate-limited request), then retry with one of the above solutions.
-
-**Cache location:** `~/.cache/pubky-testnet/postgresql/` (Linux/macOS). If you suspect a corrupt cache, delete this directory and retry.
+Once cached locally, subsequent test runs won't pull again.
 
 ## Binary (Static Testnet)
 

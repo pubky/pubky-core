@@ -15,3 +15,14 @@ pub enum StorageConfigToml {
     /// Files are stored on the local file system.
     FileSystem,
 }
+
+/// The `[storage]` TOML section: backend selection and storage quota.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StorageToml {
+    /// Which backend to use (file_system, google_bucket, in_memory).
+    #[serde(flatten)]
+    pub backend: StorageConfigToml,
+    /// Default per-user storage quota in MB.
+    /// Omit for unlimited. `0` means zero storage (not unlimited).
+    pub default_quota_mb: Option<u64>,
+}

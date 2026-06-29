@@ -27,7 +27,7 @@ fn normalize_and_collect(input: &str) -> (String, Vec<String>) {
         }
     }
 
-    let normalized = Capabilities(valid).to_string(); // normalizes action order (:rw)
+    let normalized = Capabilities::from(valid).normalize().to_string();
     (normalized, invalid)
 }
 

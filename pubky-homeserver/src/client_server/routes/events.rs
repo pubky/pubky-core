@@ -22,7 +22,7 @@ use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
 
 use crate::{
-    client_server::{extractors::ListQueryParams, AppState},
+    client_server::{query_params::ListQueryParams, AppState},
     metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
@@ -238,6 +238,10 @@ fn event_to_sse_data(entity: &EventEntity) -> String {
 
 /// Legacy text-based endpoint for fetching historical events.
 ///
+/// This feed is public and unauthenticated: it returns events under
+/// `/pub/...` exclusively and never exposes private (`/priv/...`) paths, even to
+/// an authenticated caller.
+///
 /// ## Query Parameters
 /// - `cursor` (optional): Starting cursor position. Default: "0" (beginning)
 /// - `limit` (optional): Maximum number of events to return
@@ -271,7 +275,7 @@ pub async fn feed(
     let query_start = Instant::now();
     let events = state
         .events_service
-        .get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
+        .get_public_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
         .await?;
     state
         .metrics

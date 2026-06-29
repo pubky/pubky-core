@@ -1,5 +1,5 @@
 //!
-//! Code from unmerge PR https://github.com/jdrouet/serde-toml-merge/pull/39
+//! Code from unmerge PR <https://github.com/jdrouet/serde-toml-merge/pull/39>
 //! We can't publish crates with a git dependency, so we copy the code here.
 //!
 

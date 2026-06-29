@@ -20,6 +20,7 @@ mod homeserver_app;
 mod metrics_server;
 mod persistence;
 mod republishers;
+mod services;
 mod shared;
 pub mod tracing;
 

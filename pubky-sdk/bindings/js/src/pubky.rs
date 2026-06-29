@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
     event_stream::EventStreamBuilder,
+    grant_auth_flow::{GrantAuthFlow, GrantAuthFlowOptions},
     session::Session,
     signer::Signer,
     storage::PublicStorage,
@@ -92,11 +93,12 @@ impl Pubky {
     /// - `{ name: "RequestError" }` if the flow cannot be started (network/relay)
     ///
     /// @example
-    /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw");
+    /// const flow = pubky.startCookieAuthFlow("/pub/my-cool-app/:rw");
     /// renderQr(flow.authorizationUrl);
     /// const session = await flow.awaitApproval();
-    #[wasm_bindgen(js_name = "startAuthFlow")]
-    pub fn start_auth_flow(
+    ///
+    #[wasm_bindgen(js_name = "startCookieAuthFlow")]
+    pub fn start_cookie_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
@@ -105,6 +107,34 @@ impl Pubky {
         let flow =
             AuthFlow::start_with_client(capabilities, kind, relay, Some(self.0.client().clone()))?;
         Ok(flow)
+    }
+
+    /// Start a grant-backed **pubkyauth** flow.
+    ///
+    /// Grant auth uses a user-signed grant JWS plus Proof-of-Possession and
+    /// returns a self-refreshing session.
+    ///
+    /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
+    /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
+    /// @param {GrantAuthFlowOptions} options Options for the grant flow: `{ clientId, relay? }`.
+    /// @returns {GrantAuthFlow}
+    /// A running grant auth flow. Show `authorizationUrl` as QR/deeplink,
+    /// then `awaitApproval()` to obtain a grant-backed `Session`.
+    ///
+    /// @example
+    /// const flow = pubky.startGrantAuthFlow(
+    ///   "/pub/my-cool-app/:rw",
+    ///   AuthFlowKind.signin(),
+    ///   { clientId: "my-cool-app.example" },
+    /// );
+    #[wasm_bindgen(js_name = "startGrantAuthFlow")]
+    pub fn start_grant_auth_flow(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
+        kind: AuthFlowKind,
+        options: GrantAuthFlowOptions,
+    ) -> JsResult<GrantAuthFlow> {
+        GrantAuthFlow::start_with_client(capabilities, kind, options, Some(self.0.client().clone()))
     }
 
     /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.
@@ -120,7 +150,7 @@ impl Pubky {
     /// **Security:** The URL contains the `client_secret` in plaintext.
     /// Store it in `sessionStorage` (scoped to the tab), **not** `localStorage`,
     /// and delete it as soon as the resumed flow completes or is abandoned.
-    /// See `startAuthFlow()` docs for full storage guidance.
+    /// See `startCookieAuthFlow()` docs for full storage guidance.
     ///
     /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
     /// @returns {AuthFlow} A flow reconnected to the original relay channel.
@@ -130,20 +160,32 @@ impl Pubky {
     ///
     /// @example
     /// // 1) Before a potential refresh, persist the URL.
-    /// const flow = pubky.startAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
+    /// const flow = pubky.startCookieAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
     /// sessionStorage.setItem("pubky-auth-url", flow.authorizationUrl);
     /// renderQr(flow.authorizationUrl);
     ///
     /// // 2) After reload, resume from the saved URL.
     /// const savedUrl = sessionStorage.getItem("pubky-auth-url");
     /// if (savedUrl) {
-    ///   const resumed = pubky.resumeAuthFlow(savedUrl);
+    ///   const resumed = pubky.resumeCookieAuthFlow(savedUrl);
     ///   const session = await resumed.awaitApproval();
     ///   sessionStorage.removeItem("pubky-auth-url");
     /// }
-    #[wasm_bindgen(js_name = "resumeAuthFlow")]
-    pub fn resume_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
+    #[wasm_bindgen(js_name = "resumeCookieAuthFlow")]
+    pub fn resume_cookie_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
         AuthFlow::resume_with_client(authorization_url, Some(self.0.client().clone()))
+    }
+
+    /// Resume a previously saved pending grant auth flow.
+    ///
+    /// **Security:** `savedState` contains the relay secret and PoP client private key.
+    /// Delete it from storage as soon as the resumed flow completes.
+    ///
+    /// @param {string} savedState A string produced by `grantFlow.save()`.
+    /// @returns {GrantAuthFlow} A flow reconnected to the original relay channel.
+    #[wasm_bindgen(js_name = "resumeGrantAuthFlow")]
+    pub fn resume_grant_auth_flow(&self, saved_state: String) -> JsResult<GrantAuthFlow> {
+        GrantAuthFlow::resume_with_client(saved_state, Some(self.0.client().clone()))
     }
 
     /// Create a `Signer` from an existing `Keypair`.
@@ -153,7 +195,7 @@ impl Pubky {
     ///
     /// @example
     /// const signer = pubky.signer(Keypair.random());
-    /// const session = await signer.signup(homeserverPk, null);
+    /// await signer.signup(homeserverPk);
     #[wasm_bindgen(js_name = "signer")]
     pub fn signer(&self, keypair: &Keypair) -> Signer {
         Signer(self.0.signer(keypair.as_inner().clone()))
@@ -199,12 +241,13 @@ impl Pubky {
         Client(self.0.client().clone())
     }
 
-    /// Restore a session from a previously exported snapshot, using this instance's client.
+    /// Restore a session from a previously exported token or snapshot, using this instance's client.
     ///
-    /// This does **not** read or write any secrets. It revalidates the session metadata with
-    /// the server using the browser-managed HTTP-only cookie that must still be present.
+    /// Accepts grant secret tokens from `session.exportSecret()` and legacy cookie
+    /// secret tokens. Also accepts legacy cookie metadata snapshots from `session.export()`.
+    /// Grant restore mints a fresh short-lived bearer.
     ///
-    /// @param {string} exported A string produced by `session.export()`.
+    /// @param {string} exported A string produced by `session.exportSecret()` or legacy `session.export()`.
     /// @returns {Promise<Session>}
     /// A rehydrated session bound to this SDK's HTTP client.
     ///
@@ -212,7 +255,11 @@ impl Pubky {
     /// const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
     #[wasm_bindgen(js_name = "restoreSession")]
     pub async fn restore_session(&self, exported: String) -> JsResult<Session> {
-        let session = pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?;
+        let session = if exported.starts_with("pubky-grant-credential-") || exported.contains(':') {
+            self.0.restore_session(&exported).await?
+        } else {
+            pubky::PubkySession::import(&exported, Some(self.0.client().clone())).await?
+        };
         Ok(Session(session))
     }
 

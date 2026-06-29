@@ -18,6 +18,7 @@ pubky = "0.x"            # this crate
 
 ```rust no_run
 use pubky::prelude::*;
+use pubky::ClientId;
 
 # async fn run() -> pubky::Result<()> {
 
@@ -29,7 +30,8 @@ let signer = pubky.signer(keypair);
 
 // 2) Sign up on a homeserver (identified by its public key)
 let homeserver = PublicKey::try_from("o4dksf...uyy").unwrap();
-let session = signer.signup(&homeserver, None).await?;
+signer.signup(&homeserver, None).await?;
+let session = signer.signin(ClientId::new("my-cool-app").unwrap()).await?;
 
 // 3) Read/Write as the signed-in user
 session.storage().put("/pub/my-cool-app/hello.txt", "hello").await?;
@@ -49,7 +51,7 @@ assert_eq!(txt, "hello");
 
 // 5) Keyless app flow (QR/deeplink)
 let caps = Capabilities::builder().write("/pub/example.com/").finish();
-let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 let app_session = flow.await_approval().await?;
 
@@ -79,6 +81,7 @@ Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCe
 - `Pubky` - facade, always start here! Owns the transport and constructs actors.
 - `PubkySigner` - local key holder. Can `signup`, `signin`, approve QR auth, publish PKDNS.
 - `PubkySession` - authenticated “as me” handle. Exposes session-scoped storage.
+- `GrantManager` - account-level grant listing and revocation using an authenticated root session.
 - `PublicStorage` - unauthenticated reads of others’ public data.
 - `Pkdns` - resolve/publish `_pubky` records.
 
@@ -93,12 +96,15 @@ Use a shared `Pubky` (via cloning it, passing down as argument or behind `OnceCe
 Session (authenticated):
 
 ```rust no_run
-use pubky::{Pubky, Keypair};
+use pubky::{ClientId, Keypair, Pubky};
 
 # async fn run(keypair: Keypair) -> pubky::Result<()> {
 
 let pubky = Pubky::new()?;
-let session = pubky.signer(keypair).signin().await?;
+let session = pubky
+    .signer(keypair)
+    .signin(ClientId::new("my-cool-app").unwrap())
+    .await?;
 
 let storage = session.storage();
 storage.put("/pub/my-cool-app/data.txt", "hi").await?;
@@ -141,6 +147,9 @@ Path rules:
 
 - Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
+- A storage path cannot be both an exact file and an implicit folder prefix. For example:
+  - if `/pub/app/foo` exists, writing `/pub/app/foo/bar.json` returns `409 Conflict`.
+  - if descendants under `/pub/app/foo/` exist, writing `/pub/app/foo` returns `409 Conflict`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
 
@@ -189,9 +198,9 @@ Request an authorization URL and await approval.
 
 **Typical usage:**
 
-1. Start an auth flow with `pubky.start_auth_flow(&caps)` (or use the `PubkyAuthFlow::builder()` to set a custom relay).
+1. Start an auth flow with `pubky.start_grant_auth_flow(&caps, ..)` (or `pubky.start_cookie_auth_flow(&caps, ..)` for the cookie variant). You can also use `PubkyGrantAuthFlow::builder()` / `PubkyCookieAuthFlow::builder()` to set a custom relay.
 2. Show `authorization_url()` (QR/deeplink) to the signing device (e.g., [Pubky Ring](https://github.com/pubky/pubky-ring) — [iOS](https://apps.apple.com/om/app/pubky-ring/id6739356756) / [Android](https://play.google.com/store/apps/details?id=to.pubky.ring)).
-3. Await `await_approval()` to obtain a session-bound `PubkySession`.
+3. Await `await_approval()` to obtain a session-bound `PubkySession`, or `await_credential()` for a raw `GrantCredential`/`CookieCredential` that you can persist, inspect, or lift into a session later via `PubkySession::from_{grant,cookie}_credential`.
 
 ```rust
 # use pubky::{Pubky, Capabilities, Keypair, AuthFlowKind};
@@ -202,7 +211,7 @@ let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read_write("pub/example.com/").finish();
 
 // Start the flow using the default relay (see “Relay & reliability” below)
-let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 println!("Scan to sign in: {}", flow.authorization_url());
 
 // On the signing device, approve with: signer.approve_auth(flow.authorization_url()).await?;
@@ -223,18 +232,19 @@ See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-
 
 #### Relay & reliability
 
-- If you don’t specify a relay, `PubkyAuthFlow` defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
+- If you don’t specify a relay, the auth flow defaults to a Synonym-hosted relay. If that relay is down, logins won’t complete.
 - For production and larger apps, run **your own relay** (MIT, Docker): [https://httprelay.io](https://httprelay.io).
   The channel is derived as `base64url(hash(secret))`; the token is end-to-end encrypted with the `secret` and cannot be decrypted by the relay.
 
 **Custom relay example**
 
 ```rust
-# use pubky::{Pubky, PubkyAuthFlow, Capabilities, AuthFlowKind};
+# use pubky::{Pubky, PubkyGrantAuthFlow, Capabilities, AuthFlowKind, ClientId};
 # async fn custom_relay() -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 let caps = Capabilities::builder().read("pub/example.com/").finish();
-let auth_flow = PubkyAuthFlow::builder(&caps, AuthFlowKind::signin())
+let client_id = ClientId::new("my.app").unwrap();
+let auth_flow = PubkyGrantAuthFlow::builder(&caps, AuthFlowKind::signin(), client_id)
     .client(pubky.client().clone())
     .relay(url::Url::parse("http://localhost:8080/inbox/")?) // your relay
     .start()?;
@@ -259,7 +269,7 @@ pubky = { version = "x.y.z", features = ["json"] }
 Spin up an ephemeral testnet (DHT + homeserver + relay) and run your tests fully offline:
 
 ```rust no_run
-# use pubky_testnet::{EphemeralTestnet, pubky::Keypair};
+# use pubky_testnet::{EphemeralTestnet, pubky::{ClientId, Keypair}};
 # async fn test() -> pubky_testnet::pubky::Result<()> {
 
 let testnet = EphemeralTestnet::builder().build().await.unwrap();
@@ -267,7 +277,10 @@ let homeserver  = testnet.homeserver_app();
 let pubky = testnet.sdk()?;
 
 let signer = pubky.signer(Keypair::random());
-let session  = signer.signup(&homeserver.public_key().into(), None).await?;
+signer.signup(&homeserver.public_key().into(), None).await?;
+let session = signer
+    .signin(ClientId::new("my-cool-app").unwrap())
+    .await?;
 
 session.storage().put("/pub/my-cool-app/hello.txt", "hi").await?;
 let s = session.storage().get("/pub/my-cool-app/hello.txt").await?.text().await?;
@@ -291,11 +304,14 @@ let signer = pubky.signer_from_recovery_file("/path/to/alice.pkarr", "passphrase
 Session secrets (`.sess`):
 
 ```rust no_run
-use pubky::{Pubky, Keypair};
+use pubky::{ClientId, Keypair, Pubky};
 # async fn run() -> pubky::Result<()> {
 let pubky = Pubky::new()?;
 let keypair = Keypair::random();
-let session = pubky.signer(keypair).signin().await?;
+let session = pubky
+    .signer(keypair)
+    .signin(ClientId::new("my-cool-app").unwrap())
+    .await?;
 session.write_secret_file("alice.sess").unwrap();
 let restored = pubky.session_from_file("alice.sess").await?;
 

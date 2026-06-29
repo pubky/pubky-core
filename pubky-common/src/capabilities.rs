@@ -122,8 +122,36 @@ impl Capability {
         }
     }
 
+    /// Whether this is the root capability (`/:rw`).
+    pub fn is_root(&self) -> bool {
+        *self == Self::root()
+    }
+
+    /// Whether this capability's scope covers the given path.
+    ///
+    /// The trailing `/` on a scope is significant — it distinguishes a
+    /// *directory* scope from a *file* scope:
+    ///
+    /// - **Directory scope** (ends in `/`): covers the directory itself and
+    ///   any path inside it. `/pub/app/` covers `/pub/app/`, `/pub/app/foo`,
+    ///   and `/pub/app/sub/bar`, but NOT `/pub/app` or `/pub/app-evil/foo`.
+    /// - **File scope** (no trailing `/`): covers only the exact path.
+    ///   `/pub/app` covers `/pub/app` and nothing else — not `/pub/app/foo`
+    ///   (that's inside the *directory* `/pub/app/`, a different resource)
+    ///   and not `/pub/app-evil` (no prefix-as-string matching).
+    pub fn scope_covers_path(&self, path: &str) -> bool {
+        if self.scope == path {
+            return true;
+        }
+        // Only directory scopes (trailing `/`) cover descendant paths.
+        // For a file scope, only exact-match (handled above) is allowed.
+        self.scope.ends_with('/') && path.starts_with(&self.scope)
+    }
+
+    /// Whether this capability fully covers `other` — i.e. the scope is equal or
+    /// broader, and every action (read/write) in `other` is also present in `self`.
     fn covers(&self, other: &Capability) -> bool {
-        if !scope_covers(&self.scope, &other.scope) {
+        if !self.scope_covers_path(&other.scope) {
             return false;
         }
 
@@ -272,7 +300,7 @@ impl TryFrom<&str> for Capability {
 
         let scope = value[0..value.len() - actions_str.len() - 1].to_string();
 
-        Ok(Capability { scope, actions })
+        Ok(Self { scope, actions })
     }
 }
 
@@ -327,9 +355,30 @@ pub enum Error {
 /// bespoke encoder/decoder instead of serde.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 #[must_use]
-pub struct Capabilities(pub Vec<Capability>);
+pub struct Capabilities(Vec<Capability>);
 
 impl Capabilities {
+    /// Return a normalized capability list.
+    ///
+    /// Normalization merges duplicate scopes, de-duplicates and sorts actions,
+    /// and removes capabilities already covered by broader capabilities.
+    ///
+    /// # Examples
+    /// ```
+    /// use pubky_common::capabilities::{Capability, Capabilities};
+    ///
+    /// let caps = Capabilities::from(vec![
+    ///     Capability::read("/pub/"),
+    ///     Capability::write("/pub/"),
+    ///     Capability::read("/pub/file.txt"),
+    /// ]);
+    ///
+    /// assert_eq!(caps.normalize().to_string(), "/pub/:rw");
+    /// ```
+    pub fn normalize(self) -> Self {
+        Self(normalize(self.0))
+    }
+
     /// Returns true if the list contains `capability`.
     pub fn contains(&self, capability: &Capability) -> bool {
         self.0.contains(capability)
@@ -350,37 +399,6 @@ impl Capabilities {
         self.0.iter()
     }
 
-    /// Parse capabilities from the `caps` query parameter.
-    ///
-    /// Expects a comma-separated list of capability strings, e.g.:
-    /// `?caps=/pub/my-cool-app/:rw,/foo:r`
-    ///
-    /// Invalid entries are ignored.
-    ///
-    /// # Examples
-    /// ```
-    /// # use url::Url;
-    /// # use pubky_common::capabilities::Capabilities;
-    /// let url = Url::parse("https://example/app?caps=/pub/my-cool-app/:rw,/foo:r").unwrap();
-    /// let caps = Capabilities::from_url(&url);
-    /// assert!(!caps.is_empty());
-    /// ```
-    pub fn from_url(url: &Url) -> Self {
-        // Get the first `caps` entry if present.
-        let value = url
-            .query_pairs()
-            .find_map(|(k, v)| (k == "caps").then(|| v.to_string()))
-            .unwrap_or_default();
-
-        // Parse comma-separated capabilities, skipping invalid pieces.
-        let caps = value
-            .split(',')
-            .filter_map(|s| Capability::try_from(s).ok())
-            .collect();
-
-        Capabilities(sanitize_caps(caps))
-    }
-
     /// Start a fluent builder for multiple capabilities.
     ///
     /// ```
@@ -392,6 +410,37 @@ impl Capabilities {
         CapsBuilder::default()
     }
 
+    /// Parse capabilities from the `caps` query parameter of `url`.
+    ///
+    /// Expects a comma-separated list of capability strings, e.g.:
+    /// `?caps=/pub/my-cool-app/:rw,/foo:r`
+    ///
+    /// Invalid entries are ignored.
+    ///
+    /// # Examples
+    /// ```
+    /// # use url::Url;
+    /// # use pubky_common::capabilities::Capabilities;
+    /// let url = Url::parse("https://example/app?caps=/pub/my-cool-app/:rw,/foo:r").unwrap();
+    /// let caps = Capabilities::from_caps_url(&url);
+    /// assert!(!caps.is_empty());
+    /// ```
+    pub fn from_caps_url(url: &Url) -> Self {
+        // Get the first `caps` entry if present.
+        let value = url
+            .query_pairs()
+            .find_map(|(k, v)| (k == "caps").then(|| v.to_string()))
+            .unwrap_or_default();
+
+        // Parse comma-separated capabilities, skipping invalid pieces.
+        let caps: Vec<_> = value
+            .split(',')
+            .filter_map(|s| Capability::try_from(s).ok())
+            .collect();
+
+        Self::from(caps)
+    }
+
     /// Borrow the inner capabilities as a slice without allocating.
     ///
     /// Constant-time; returns a view into the existing buffer.
@@ -400,7 +449,7 @@ impl Capabilities {
     /// ```
     /// use pubky_common::capabilities::{Capability, Capabilities};
     ///
-    /// let caps = Capabilities(vec![
+    /// let caps = Capabilities::from(vec![
     ///     Capability::read("/foo"),
     ///     Capability::write("/bar/"),
     /// ]);
@@ -412,19 +461,7 @@ impl Capabilities {
         &self.0
     }
 
-    /// Clone the inner capabilities into an owned `Vec<Capability>`.
-    ///
-    /// Allocates and performs an `O(n)` clone of the elements. Use when
-    /// ownership is required by downstream APIs.
-    ///
-    /// ```
-    /// use pubky_common::capabilities::{Capability, Capabilities};
-    ///
-    /// let caps = Capabilities(vec![Capability::read("/")]);
-    /// let owned: Vec<Capability> = caps.to_vec();
-    /// assert_eq!(owned, vec![Capability::read("/")]);
-    /// ```
-    #[inline]
+    /// Clone the inner capability list.
     pub fn to_vec(&self) -> Vec<Capability> {
         self.0.clone()
     }
@@ -493,9 +530,9 @@ impl CapsBuilder {
         self
     }
 
-    /// Finalize and produce the [`Capabilities`] list.
+    /// Finalize and produce the normalized [`Capabilities`] list.
     pub fn finish(self) -> Capabilities {
-        Capabilities(sanitize_caps(self.caps))
+        Capabilities::from(self.caps).normalize()
     }
 }
 
@@ -523,21 +560,7 @@ impl TryFrom<&str> for Capabilities {
             };
         }
 
-        Ok(Capabilities(sanitize_caps(caps)))
-    }
-}
-
-/// Allow `Capabilities::from(&url)` using the default `caps` key.
-impl From<&Url> for Capabilities {
-    fn from(url: &Url) -> Self {
-        Capabilities::from_url(url)
-    }
-}
-
-/// Allow `Capabilities::from(url)` (by value) using the default `caps` key.
-impl From<Url> for Capabilities {
-    fn from(url: Url) -> Self {
-        Capabilities::from_url(&url)
+        Ok(Self::from(caps))
     }
 }
 
@@ -578,7 +601,7 @@ impl<'de> Deserialize<'de> for Capabilities {
             };
         }
 
-        Ok(Capabilities(sanitize_caps(caps)))
+        Ok(Self::from(caps))
     }
 }
 
@@ -591,19 +614,7 @@ fn normalize_scope(mut s: String) -> String {
     s
 }
 
-fn scope_covers(parent: &str, child: &str) -> bool {
-    if parent == child {
-        return true;
-    }
-
-    if !parent.ends_with('/') {
-        return false;
-    }
-
-    child.starts_with(parent)
-}
-
-fn sanitize_caps(caps: Vec<Capability>) -> Vec<Capability> {
+fn normalize(caps: Vec<Capability>) -> Vec<Capability> {
     let mut merged: Vec<Capability> = Vec::new();
 
     for mut cap in caps {
@@ -750,7 +761,9 @@ mod tests {
     #[test]
     fn parse_from_string_list() {
         // From a comma-separated string:
-        let parsed = Capabilities::try_from("/:rw,/pub/my-cool-app/:r").unwrap();
+        let parsed = Capabilities::try_from("/:rw,/pub/my-cool-app/:r")
+            .unwrap()
+            .normalize();
         let built = Capabilities::builder()
             .read_write("/") // "/:rw"
             .read("/pub/my-cool-app/") // "/pub/my-cool-app/:r"
@@ -763,15 +776,15 @@ mod tests {
     fn parse_errors_are_informative() {
         // Invalid scope (doesn't start with '/'):
         let e = Capability::try_from("not/abs:rw").unwrap_err();
-        assert!(matches!(e, Error::InvalidScope));
+        assert_eq!(e, Error::InvalidScope);
 
         // Invalid format (missing ':'):
         let e = Capability::try_from("/pub/my.app").unwrap_err();
-        assert!(matches!(e, Error::InvalidFormat));
+        assert_eq!(e, Error::InvalidFormat);
 
         // Invalid action:
         let e = Capability::try_from("/pub/my.app:rx").unwrap_err();
-        assert!(matches!(e, Error::InvalidAction));
+        assert_eq!(e, Error::InvalidAction);
     }
 
     #[test]
@@ -780,7 +793,8 @@ mod tests {
             .read_write("/pub/example.com/")
             .read_write("/pub/example.com/")
             .write("/pub/example.com/subfolder")
-            .finish();
+            .finish()
+            .normalize();
 
         assert_eq!(caps.to_string(), "/pub/example.com/:rw");
     }
@@ -790,7 +804,8 @@ mod tests {
         let parsed = Capabilities::try_from(
             "/pub/example.com/:rw,/pub/example.com/:rw,/pub/example.com/subfolder:w",
         )
-        .unwrap();
+        .unwrap()
+        .normalize();
 
         let caps = Capabilities::builder()
             .read_write("/pub/example.com/")
@@ -806,7 +821,7 @@ mod tests {
             "https://example.test?caps=/pub/example.com/:rw,/pub/example.com/documents:w",
         )
         .unwrap();
-        let caps = Capabilities::from_url(&url);
+        let caps = Capabilities::from_caps_url(&url).normalize();
 
         assert_eq!(caps.to_string(), "/pub/example.com/:rw");
     }
@@ -816,7 +831,20 @@ mod tests {
         let caps = Capabilities::builder()
             .read("/pub/example.com/")
             .write("/pub/example.com/")
-            .finish();
+            .finish()
+            .normalize();
+
+        assert_eq!(caps.to_string(), "/pub/example.com/:rw");
+    }
+
+    #[test]
+    fn capabilities_normalize_dedups_from_vec() {
+        let caps = Capabilities::from(vec![
+            Capability::read_write("/pub/example.com/"),
+            Capability::write("/pub/example.com/subfolder"),
+            Capability::read("/pub/example.com/"),
+        ])
+        .normalize();
 
         assert_eq!(caps.to_string(), "/pub/example.com/:rw");
     }
@@ -846,5 +874,78 @@ mod tests {
 
         let back: Capabilities = serde_json::from_str(&json).unwrap();
         assert_eq!(back, caps);
+    }
+
+    // --- scope_covers_path: trailing slash semantics ---
+    //
+    // The trailing `/` on a scope is significant. A directory scope
+    // (`/pub/app/`) covers itself and any path inside it. A file scope
+    // (`/pub/app`) covers only the exact path — never descendants and never
+    // string-prefix neighbours like `/pub/app-evil`. Regression coverage
+    // for the e2e auth tests, which grant `/pub/pubky.app/:rw` and require
+    // `PUT /pub/pubky.app` to be denied.
+
+    fn dir(scope: &str) -> Capability {
+        Capability::write(scope)
+    }
+
+    #[test]
+    fn directory_scope_covers_itself() {
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/"));
+    }
+
+    #[test]
+    fn directory_scope_covers_descendants() {
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/foo"));
+        assert!(dir("/pub/app/").scope_covers_path("/pub/app/sub/bar.txt"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_parent_path_without_trailing_slash() {
+        // Regression: `/pub/app/` (the directory) is a different resource
+        // from `/pub/app` (a file at the parent level). The e2e auth tests
+        // grant `/pub/pubky.app/:rw` and expect `PUT /pub/pubky.app` to 403.
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/app"));
+        assert!(!dir("/pub/pubky.app/").scope_covers_path("/pub/pubky.app"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_sibling() {
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/other/file"));
+    }
+
+    #[test]
+    fn directory_scope_does_not_cover_string_prefix_sibling() {
+        // Even with a directory scope, a string-prefix sibling like
+        // `/pub/app-evil/...` is not inside `/pub/app/`.
+        assert!(!dir("/pub/app/").scope_covers_path("/pub/app-evil/file"));
+    }
+
+    #[test]
+    fn file_scope_covers_only_exact_path() {
+        assert!(dir("/pub/file.txt").scope_covers_path("/pub/file.txt"));
+    }
+
+    #[test]
+    fn file_scope_does_not_cover_descendants() {
+        // A file scope is not a namespace prefix — granting `/pub/app:rw`
+        // does not grant access to `/pub/app/inside`. To grant the directory,
+        // use `/pub/app/`.
+        assert!(!dir("/pub/app").scope_covers_path("/pub/app/inside"));
+    }
+
+    #[test]
+    fn file_scope_rejects_prefix_attack() {
+        // The original motivation for moving away from `path.starts_with(scope)`.
+        assert!(!dir("/pub/app").scope_covers_path("/pub/app-evil/file"));
+        assert!(!dir("/pub/app").scope_covers_path("/pub/appended"));
+    }
+
+    #[test]
+    fn root_scope_covers_any_path() {
+        let root = Capability::root();
+        assert!(root.scope_covers_path("/"));
+        assert!(root.scope_covers_path("/pub/anything"));
+        assert!(root.scope_covers_path("/dav/some/file.txt"));
     }
 }

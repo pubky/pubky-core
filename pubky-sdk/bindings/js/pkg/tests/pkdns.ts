@@ -79,8 +79,8 @@ test("pkdns: ifStale is a no-op when fresh; force overrides", async (t) => {
   // 1) Signup a user so an initial _pubky record exists
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
-  const session = await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-  const userPk = session.info.publicKey;
+  await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
+  const userPk = signer.publicKey;
 
   const publisher = signer.pkdns;
 

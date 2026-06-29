@@ -24,7 +24,7 @@ impl SeedExportDeepLink {
 
     #[wasm_bindgen(getter)]
     pub fn secret(&self) -> Uint8Array {
-        Uint8Array::from(self.0.secret().as_ref())
+        Uint8Array::from(self.0.params().secret.as_ref())
     }
 
     #[allow(

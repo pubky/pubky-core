@@ -1,17 +1,13 @@
 [package]
 name = "pubky-wasm"
-version = "0.7.0"
+version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 description = "Pubky-Core Client WASM bindings"
-authors = [
-    "SeverinAlexB <severin@synonym.to>",
-    "SHAcollision <shacollision@synonym.to>",
-    "Nuh <nuh@nuh.dev>",
-]
-license = "MIT"
-homepage = "https://github.com/pubky/pubky-core"
-repository = "https://github.com/pubky/pubky-core"
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 keywords = ["web", "dht", "dns", "decentralized", "identity"]
 categories = [
     "network-programming",
@@ -29,21 +25,24 @@ name = "bundle_npm"
 path = "scripts/bundle_npm.rs"
 
 [dependencies]
-wasm-bindgen = "0.2.108"
-console_log = { version = "1.0.0", features = ["color"] }
+base64.workspace = true
+console_log = { version = "1", features = ["color"] }
+futures-util.workspace = true
+js-sys.workspace = true
 log.workspace = true
-js-sys = "0.3.77"
-wasm-bindgen-futures = "0.4.54"
-futures-util = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1"
-serde-wasm-bindgen = "0.6"
-tsify = "0.5.5"
-pubky = { path = "../../../pubky-sdk", default-features = false, features = [
-    "json",
-] , version = "0.7.0" }
-pubky-common = { path = "../../../pubky-common" , version = "0.7.0" }
 pkarr = { workspace = true, default-features = false }
+pubky = { workspace = true, features = [ "json" ] }
+pubky-common.workspace = true
+reqwest = { workspace = true, features = [ "stream" ] }
+serde.workspace = true
+serde-wasm-bindgen = "0.6"
+serde_json.workspace = true
+tsify = "0.5"
+url.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures.workspace = true
+wasm-streams.workspace = true
+# ReadableStream is not available in early 0.3.x web-sys releases.
 web-sys = { version = "0.3.77", default-features = false, features = [
     "Request",
     "RequestInit",
@@ -54,13 +53,6 @@ web-sys = { version = "0.3.77", default-features = false, features = [
     "Headers",
     "ServiceWorkerGlobalScope",
 ] }
-url.workspace = true
-getrandom = { version = "0.3.3", features = ["wasm_js"] }
-reqwest = { workspace = true, features = [
-    "stream",
-] }
-wasm-streams = "0.5"
-base64 = "0.22"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

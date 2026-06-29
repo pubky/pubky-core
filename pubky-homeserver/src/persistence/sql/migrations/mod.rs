@@ -4,6 +4,10 @@ mod m20250813_create_session;
 mod m20250814_create_event;
 mod m20250815_create_entry;
 mod m20251014_events_table_index_and_content_hash;
+pub(crate) mod m20260325_create_grant_sessions;
+mod m20260327_add_quota_columns;
+mod m20260507_add_allowed_write_paths;
+mod m20260609_add_signup_code_used_at;
 
 pub(crate) use m20250806_create_user::M20250806CreateUserMigration;
 pub(crate) use m20250812_create_signup_code::M20250812CreateSignupCodeMigration;
@@ -11,3 +15,7 @@ pub(crate) use m20250813_create_session::M20250813CreateSessionMigration;
 pub(crate) use m20250814_create_event::M20250814CreateEventMigration;
 pub(crate) use m20250815_create_entry::M20250815CreateEntryMigration;
 pub(crate) use m20251014_events_table_index_and_content_hash::M20251014EventsTableIndexAndContentHashMigration;
+pub(crate) use m20260325_create_grant_sessions::M20260325CreateGrantSessionsMigration;
+pub(crate) use m20260327_add_quota_columns::M20260327AddQuotaColumnsMigration;
+pub(crate) use m20260507_add_allowed_write_paths::M20260507AddAllowedWritePathsMigration;
+pub(crate) use m20260609_add_signup_code_used_at::M20260609AddSignupCodeUsedAtMigration;

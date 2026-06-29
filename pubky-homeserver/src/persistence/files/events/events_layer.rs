@@ -1,5 +1,4 @@
 use crate::persistence::files::events::{EventType, EventsService};
-use crate::persistence::files::utils::ensure_valid_path;
 use crate::persistence::files::FileMetadataBuilder;
 use crate::persistence::sql::{user::UserRepository, SqlDb, UnifiedExecutor};
 use crate::shared::webdav::EntryPath;
@@ -59,7 +58,7 @@ impl<A: Access> LayeredAccess for EventsAccessor<A> {
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         let (rp, writer) = self.inner.write(path, args).await?;
         Ok((
             rp,
@@ -267,7 +266,7 @@ impl<R: oio::Delete> oio::Delete for DeleterWrapper<R> {
     }
 
     fn delete(&mut self, path: &str, args: OpDelete) -> Result<()> {
-        let entry_path = ensure_valid_path(path)?;
+        let entry_path = EntryPath::parse_opendal(path)?;
         self.inner.delete(path, args)?;
         self.delete_queue.push(entry_path);
         Ok(())
@@ -279,7 +278,7 @@ mod tests {
     use crate::{
         persistence::{
             files::{
-                events::{EventRepository, EventType, EventsService},
+                events::{EventRepository, EventType, EventVisibility, EventsService},
                 opendal::opendal_test_operators::OpendalTestOperators,
             },
             sql::user::UserRepository,
@@ -310,9 +309,14 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 1);
             let first_event = events.first().expect("Should succeed");
             assert_eq!(first_event.path, entry_path);
@@ -325,9 +329,14 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 2);
             let second_event = events.get(1).expect("Should succeed");
             assert_eq!(second_event.path, entry_path);
@@ -340,9 +349,14 @@ mod tests {
                 .expect("Should succeed");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 3);
             let third_event = events.get(2).expect("Should succeed");
             assert_eq!(third_event.path, entry_path);

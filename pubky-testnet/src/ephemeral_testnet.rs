@@ -3,8 +3,8 @@ use http_relay::HttpRelay;
 use pubky::{Keypair, Pubky};
 use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir};
 
-#[cfg(feature = "embedded-postgres")]
-use crate::embedded_postgres::EmbeddedPostgres;
+#[cfg(feature = "docker-postgres")]
+use crate::docker_postgres::DockerPostgres;
 
 /// A simple testnet with random ports assigned for all components.
 ///
@@ -28,16 +28,16 @@ use crate::embedded_postgres::EmbeddedPostgres;
 /// ```
 ///
 /// # Configuration Defaults
-/// - [`EphemeralTestnet::builder().build()`] uses [`ConfigToml::minimal_test_config()`] (admin/metrics **disabled**)
+/// - `EphemeralTestnet::builder().build()` uses [`ConfigToml::minimal_test_config()`] (admin/metrics **disabled**)
 /// - Deprecated [`EphemeralTestnet::start()`] uses [`ConfigToml::default_test_config()`] (admin **enabled**)
 pub struct EphemeralTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
-    /// Embedded PostgreSQL instance (if using embedded postgres).
+    /// Docker PostgreSQL instance (if using docker postgres).
     /// Kept alive as long as the testnet is running.
-    #[cfg(feature = "embedded-postgres")]
+    #[cfg(feature = "docker-postgres")]
     #[allow(dead_code)]
-    embedded_postgres: Option<EmbeddedPostgres>,
+    docker_postgres: Option<DockerPostgres>,
 }
 
 /// Builder for configuring and creating an [`EphemeralTestnet`].
@@ -78,8 +78,8 @@ pub struct EphemeralTestnetBuilder {
     homeserver_config: Option<ConfigToml>,
     homeserver_keypair: Option<Keypair>,
     http_relay: bool,
-    #[cfg(feature = "embedded-postgres")]
-    use_embedded_postgres: bool,
+    #[cfg(feature = "docker-postgres")]
+    use_docker_postgres: bool,
 }
 
 impl EphemeralTestnetBuilder {
@@ -90,8 +90,8 @@ impl EphemeralTestnetBuilder {
             homeserver_config: None,
             homeserver_keypair: None,
             http_relay: false,
-            #[cfg(feature = "embedded-postgres")]
-            use_embedded_postgres: false,
+            #[cfg(feature = "docker-postgres")]
+            use_docker_postgres: false,
         }
     }
 
@@ -119,11 +119,10 @@ impl EphemeralTestnetBuilder {
         self
     }
 
-    /// Use embedded PostgreSQL instead of an external database.
+    /// Use a Docker PostgreSQL container instead of an external database.
     ///
-    /// This starts an embedded PostgreSQL instance that is automatically
-    /// downloaded and managed. The first run will download the PostgreSQL
-    /// binaries (~50-100MB), which are cached for subsequent runs.
+    /// This starts a PostgreSQL container via testcontainers that is automatically
+    /// managed and cleaned up. Requires Docker to be running on the host.
     ///
     /// This is useful for running tests without requiring a separate
     /// PostgreSQL installation.
@@ -133,40 +132,47 @@ impl EphemeralTestnetBuilder {
     ///
     /// # Multiple Tests
     ///
-    /// Each call to `.with_embedded_postgres()` starts a separate PostgreSQL server.
-    /// If you have many tests, prefer starting one [`EmbeddedPostgres`](crate::embedded_postgres::EmbeddedPostgres)
+    /// Each call to `.with_docker_postgres()` starts a separate PostgreSQL container.
+    /// If you have many tests, prefer starting one [`DockerPostgres`](crate::docker_postgres::DockerPostgres)
     /// instance and passing its connection string via `.postgres()` instead.
-    /// See [`EmbeddedPostgres`](crate::embedded_postgres::EmbeddedPostgres) docs for the recommended pattern.
-    #[cfg(feature = "embedded-postgres")]
-    pub fn with_embedded_postgres(mut self) -> Self {
-        self.use_embedded_postgres = true;
+    /// See [`DockerPostgres`](crate::docker_postgres::DockerPostgres) docs for the recommended pattern.
+    #[cfg(feature = "docker-postgres")]
+    pub fn with_docker_postgres(mut self) -> Self {
+        self.use_docker_postgres = true;
         self
+    }
+
+    /// Deprecated alias for [`Self::with_docker_postgres()`].
+    #[cfg(feature = "docker-postgres")]
+    #[deprecated(since = "0.9.0", note = "Renamed to `with_docker_postgres()`")]
+    pub fn with_embedded_postgres(self) -> Self {
+        self.with_docker_postgres()
     }
 
     /// Build and start the testnet with the configured settings.
     /// Uses minimal_test_config() by default (admin/metrics disabled).
     ///
     /// # Errors
-    /// Returns an error if both `.postgres()` and `.with_embedded_postgres()` are set.
+    /// Returns an error if both `.postgres()` and `.with_docker_postgres()` are set.
     pub async fn build(self) -> anyhow::Result<EphemeralTestnet> {
-        #[cfg(feature = "embedded-postgres")]
-        if self.use_embedded_postgres && self.postgres_connection_string.is_some() {
+        #[cfg(feature = "docker-postgres")]
+        if self.use_docker_postgres && self.postgres_connection_string.is_some() {
             anyhow::bail!(
-                "Cannot use both embedded postgres and a custom connection string. \
-                 Use either .with_embedded_postgres() or .postgres(), not both."
+                "Cannot use both docker postgres and a custom connection string. \
+                 Use either .with_docker_postgres() or .postgres(), not both."
             );
         }
 
-        #[cfg(feature = "embedded-postgres")]
-        let (embedded_postgres, postgres_connection_string) = if self.use_embedded_postgres {
-            let embedded = EmbeddedPostgres::start().await?;
-            let conn_string = embedded.connection_string()?;
-            (Some(embedded), Some(conn_string))
+        #[cfg(feature = "docker-postgres")]
+        let (docker_postgres, postgres_connection_string) = if self.use_docker_postgres {
+            let pg = DockerPostgres::start().await?;
+            let conn_string = pg.connection_string()?;
+            (Some(pg), Some(conn_string))
         } else {
             (None, self.postgres_connection_string)
         };
 
-        #[cfg(not(feature = "embedded-postgres"))]
+        #[cfg(not(feature = "docker-postgres"))]
         let postgres_connection_string = self.postgres_connection_string;
 
         let mut testnet = if let Some(postgres) = postgres_connection_string {
@@ -195,8 +201,8 @@ impl EphemeralTestnetBuilder {
 
         Ok(EphemeralTestnet {
             testnet,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres,
         })
     }
 }
@@ -239,8 +245,8 @@ impl EphemeralTestnet {
         testnet.create_homeserver().await?;
         Ok(Self {
             testnet,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres: None,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres: None,
         })
     }
 
@@ -260,8 +266,8 @@ impl EphemeralTestnet {
         testnet.create_homeserver().await?;
         Ok(Self {
             testnet,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres: None,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres: None,
         })
     }
 
@@ -278,8 +284,8 @@ impl EphemeralTestnet {
     ) -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new_with_custom_postgres(postgres_connection_string).await?,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres: None,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres: None,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)
@@ -296,8 +302,8 @@ impl EphemeralTestnet {
     pub async fn start_minimal() -> anyhow::Result<Self> {
         let mut me = Self {
             testnet: Testnet::new().await?,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres: None,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres: None,
         };
         me.testnet.create_http_relay().await?;
         Ok(me)
@@ -388,8 +394,8 @@ mod test {
         testnet.create_http_relay().await.unwrap();
         let mut network = EphemeralTestnet {
             testnet,
-            #[cfg(feature = "embedded-postgres")]
-            embedded_postgres: None,
+            #[cfg(feature = "docker-postgres")]
+            docker_postgres: None,
         };
         assert!(network.testnet.homeservers.is_empty());
 

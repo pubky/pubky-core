@@ -79,7 +79,7 @@ AuthToken   = signature namespace version timestamp pubky capabilities
 
 signature      = 64OCTET ; ed25519 signature over the rest of the token
 namespace      = %x50.55.42.4b.59.3a.41.55.54.48 ; "PUBKY:AUTH" in UTF-8 (10 bytes)
-version        = 1*OCTET ; Version of the AuthToken for future proofing
+version        = OCTET ; Version of the AuthToken for future proofing
 timestamp      = 8OCTET ; Big-endian UNIX timestamp in microseconds
 pubky          = 32OCTET ; ed25519 public key of the user
 capabilities   = *(capability *( "," capability ))
@@ -90,8 +90,8 @@ scope          = absolute-path ; Absolute path, see RFC 3986
 absolute-path  = 1*( "/" segment )
 segment        = <segment, see [URI], Section 3.3>
 
-actions      = 1*action
-action        = "r" / "w" ; Read or write (more actions can be specified later)
+actions        = 1*action
+action         = "r" / "w" ; Read or write (more actions can be specified later)
 ```
 
 ### AuthToken verification
@@ -119,4 +119,4 @@ While the token itself can only be used for very brief period, it is immediately
 
 The assumption here is that we are authorizing a session to the `Homeserver` such that the user can always access all active sessions and revoke any session that they don't like, all from the `Authenticator` app.
 
-Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is a JWT or a Session with or without expiration and are free to allow the user to manage sessions the way they see fit.
+Other services are free to choose their authentication system once the homeserver verifies the pubky auth token, whether that is an opaque bearer or a session with or without expiration, and are free to allow the user to manage sessions the way they see fit.

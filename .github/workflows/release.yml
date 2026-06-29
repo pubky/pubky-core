@@ -15,12 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify tag is on main
-        run: |
-          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
-            echo "::error::Tag must point to a commit on the main branch."
-            exit 1
-          fi
       - name: Validate semver format
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -59,7 +53,7 @@ jobs:
         with:
           toolchain: stable
       - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
       - name: Build Artifacts
         run: .scripts/build-artifacts.sh
       - name: Upload artifacts
@@ -77,6 +71,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate changelog
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+          excludeTypes: ""
+          useGitmojis: false
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -85,7 +89,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.changes }}
           files: artifacts/*
 
   publish-crates:
@@ -100,7 +104,7 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
       - name: Publish crates
         run: cargo ws publish --no-git-commit --publish-as-is
         env:
@@ -127,6 +131,23 @@ jobs:
       - name: Build and publish npm package
         working-directory: pubky-sdk/bindings/js/pkg
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [[ "$VERSION" != *-* ]]; then
+            NPM_TAG="latest"
+          else
+            PRERELEASE="${VERSION#*-}"
+            case "$PRERELEASE" in
+              alpha*|beta*|rc*)
+                NPM_TAG="${PRERELEASE%%.*}"
+                ;;
+              *)
+                NPM_TAG="next"
+                ;;
+            esac
+          fi
+
+          echo "Publishing npm package with dist-tag: $NPM_TAG"
           npm ci
           npm run build
-          npm publish --provenance
+          npm publish --provenance --tag "$NPM_TAG"

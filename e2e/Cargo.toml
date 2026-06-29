@@ -2,20 +2,20 @@
 name = "e2e"
 edition.workspace = true
 rust-version.workspace = true
-version = "0.7.0"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 publish = false
 
-[dependencies]
-pubky-testnet = { path = "../pubky-testnet" , version = "0.7.0" }
-pubky-common = { path = "../pubky-common" , version = "0.7.0" }
-tokio = { workspace = true, features = ["full", "test-util"] }
-tracing-subscriber.workspace = true
-pkarr = { workspace = true }
-bytes = "1.10.1"
-rand = "0.9"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
 [dev-dependencies]
-eventsource-stream = "0.2"
+base64.workspace = true
+bytes.workspace = true
+eventsource-stream.workspace = true
 futures = "0.3"
+pubky-testnet.workspace = true
+rand = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }

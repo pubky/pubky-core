@@ -6,10 +6,10 @@ import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  npm run authenticator -- </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+  node 3-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 
 Example:
-  npm run authenticator -- ./alice.pkarr "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/inbox" --testnet
+  node 3-authenticator.mjs ./alice.pkarr "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/inbox" --testnet
 
 You can try this out with the example backend-less third party browser application in /examples/rust/3-auth_flow/3rd-party-app
 `;
@@ -39,7 +39,7 @@ const signer = pubky.signer(keypair);
 if (a.testnet) {
   const homeserver = PublicKey.from(a.homeserver);
   try {
-    await signer.signup(homeserver, null);
+    await signer.signup(homeserver);
     console.log("Testnet user signed up!");
   } catch {
     console.log("Testnet user was already signed up 👌");
