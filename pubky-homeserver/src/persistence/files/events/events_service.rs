@@ -1,10 +1,15 @@
-use crate::persistence::{
-    files::events::{EventCursor, EventEntity, EventRepository, EventType, EventVisibility},
-    sql::UnifiedExecutor,
-};
-use crate::shared::webdav::EntryPath;
+use std::time::Instant;
+
+use futures_util::Stream;
 use sqlx::PgPool;
 use tokio::sync::broadcast;
+
+use crate::metrics_server::routes::metrics::{ConnectionGuard, Metrics};
+use crate::persistence::{
+    files::events::{EventCursor, EventEntity, EventRepository, EventType, EventVisibility},
+    sql::{SqlDb, UnifiedExecutor},
+};
+use crate::shared::webdav::{EntryPath, WebDavPath};
 
 /// Maximum number of users allowed in a single event stream request.
 /// Based on HTTP header size limits (~4KB) and typical URL encoding:
@@ -20,6 +25,23 @@ pub(crate) const PG_NOTIFY_CHANNEL: &str = "events";
 pub struct EventsService {
     event_tx: broadcast::Sender<EventEntity>,
     channel_capacity: usize,
+}
+
+/// Resolved filter for the admin all-events stream. The route builds this after authorizing the
+/// request (pubkeys → user ids, cursor parsed); it drives [`EventsService::all_events_stream`].
+pub(crate) struct AllEventsFilter {
+    /// Starting cursor (global). `None` = from the beginning.
+    pub start_cursor: Option<EventCursor>,
+    /// User filter. `None` = all users (firehose).
+    pub user_ids: Option<Vec<i32>>,
+    /// Path-prefix filter.
+    pub path: Option<WebDavPath>,
+    /// Newest-first ordering (batch only).
+    pub reverse: bool,
+    /// Stay open for live events after replaying history.
+    pub live: bool,
+    /// Maximum total events to send before closing.
+    pub limit: Option<u16>,
 }
 
 impl EventsService {
@@ -159,6 +181,129 @@ impl EventsService {
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         EventRepository::get_by_user_cursors(user_cursors, reverse, path_prefix, executor).await
     }
+
+    /// Stream **all** events (the admin firehose): replay history over a single advancing global
+    /// cursor, then — when `filter.live` — stay open on the broadcast channel. Yields domain
+    /// [`EventEntity`]s for the caller to frame (e.g. SSE). Exposes private paths, so only
+    /// admin-authenticated routes may call it.
+    pub(crate) fn all_events_stream(
+        &self,
+        sql_db: SqlDb,
+        metrics: Metrics,
+        filter: AllEventsFilter,
+    ) -> impl Stream<Item = EventEntity> {
+        let service = self.clone();
+        let mut rx = self.subscribe();
+        let half_capacity = self.channel_capacity() / 2;
+
+        async_stream::stream! {
+            // Cleanup + connection metrics on any exit path.
+            let _guard = ConnectionGuard::new(metrics.clone());
+
+            let mut last_cursor = filter.start_cursor;
+            let mut total_sent: usize = 0;
+
+            // Phase 1: historical replay over a single advancing global cursor.
+            loop {
+                // Drain buffered events; they'll be covered by this or a later DB query.
+                while rx.try_recv().is_ok() {}
+
+                let query_start = Instant::now();
+                let events = match service
+                    .get_all_events(
+                        last_cursor,
+                        None,
+                        filter.reverse,
+                        filter.path.as_ref().map(|p| p.as_str()),
+                        filter.user_ids.as_deref(),
+                        &mut sql_db.pool().into(),
+                    )
+                    .await
+                {
+                    Ok(events) => events,
+                    Err(e) => {
+                        tracing::error!("Database error while streaming admin events: {}", e);
+                        break;
+                    }
+                };
+                metrics.record_event_stream_db_query(query_start.elapsed().as_millis());
+
+                // An empty batch means we've replayed everything up to `last_cursor`.
+                let caught_up = events.is_empty();
+                for event in events {
+                    // Check the limit before yielding so `limit=0` sends nothing.
+                    if filter.limit.is_some_and(|max| total_sent >= max as usize) {
+                        return;
+                    }
+                    last_cursor = Some(event.cursor());
+                    yield event;
+                    total_sent += 1;
+                }
+                if caught_up {
+                    if !filter.live {
+                        return;
+                    }
+                    break;
+                }
+            }
+
+            // Phase 2: live mode (reverse+live is rejected before we get here).
+            if filter.live {
+                loop {
+                    match rx.recv().await {
+                        Ok(event) => {
+                            if rx.len() >= half_capacity {
+                                metrics.record_broadcast_half_full();
+                            }
+                            if !accept_live_event(&event, last_cursor, &filter) {
+                                continue;
+                            }
+                            if filter.limit.is_some_and(|max| total_sent >= max as usize) {
+                                return;
+                            }
+                            last_cursor = Some(event.cursor());
+                            yield event;
+                            total_sent += 1;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                            metrics.record_broadcast_lagged();
+                            tracing::warn!(
+                                "Slow admin client detected: broadcast channel lagged by {} events. Closing connection.",
+                                skipped
+                            );
+                            return;
+                        }
+                        Err(_) => break, // Channel closed
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Whether a live broadcast event belongs in an all-events stream: not already sent (cursor dedup),
+/// inside the optional user filter, and under the optional path prefix.
+fn accept_live_event(
+    event: &EventEntity,
+    last_cursor: Option<EventCursor>,
+    filter: &AllEventsFilter,
+) -> bool {
+    if let Some(cursor) = last_cursor {
+        if event.cursor() <= cursor {
+            return false;
+        }
+    }
+    if let Some(ids) = filter.user_ids.as_deref() {
+        if !ids.contains(&event.user_id) {
+            return false;
+        }
+    }
+    if let Some(path) = filter.path.as_ref() {
+        if !event.path.path().as_str().starts_with(path.as_str()) {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]

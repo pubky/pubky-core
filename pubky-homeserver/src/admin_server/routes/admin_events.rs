@@ -2,7 +2,7 @@
 //! password, streams **all** events including private (`/priv/...`) paths. `user=` is an optional
 //! filter (omit for every user); a single global `cursor` paginates. Response is `no-store`.
 
-use std::{convert::Infallible, time::Instant};
+use std::convert::Infallible;
 
 use axum::{
     extract::{RawQuery, State},
@@ -12,14 +12,14 @@ use axum::{
         IntoResponse,
     },
 };
+use futures_util::StreamExt;
 use pubky_common::crypto::PublicKey;
 use url::form_urlencoded;
 
 use super::super::app_state::AppState;
 use crate::{
-    metrics_server::routes::metrics::ConnectionGuard,
     persistence::{
-        files::events::{EventCursor, EventEntity, MAX_EVENT_STREAM_USERS},
+        files::events::{AllEventsFilter, MAX_EVENT_STREAM_USERS},
         sql::user::UserRepository,
     },
     shared::{webdav::WebDavPath, HttpError, HttpResult},
@@ -130,42 +130,12 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
     })
 }
 
-/// Decide whether a live (broadcast) event belongs in the stream.
-fn admin_should_include_live_event(
-    event: &EventEntity,
-    last_cursor: Option<EventCursor>,
-    user_ids: Option<&[i32]>,
-    path_filter: Option<&WebDavPath>,
-) -> bool {
-    if let Some(cursor) = last_cursor {
-        if event.cursor() <= cursor {
-            return false;
-        }
-    }
-    if let Some(ids) = user_ids {
-        if !ids.contains(&event.user_id) {
-            return false;
-        }
-    }
-    if let Some(path) = path_filter {
-        if !event.path.path().as_str().starts_with(path.as_str()) {
-            return false;
-        }
-    }
-    true
-}
-
-/// Admin-only SSE stream over **all** events (public and private). See [`AdminStreamParams`]
-/// for the query parameters. Response is `text/event-stream`, `Cache-Control: no-store`, with the
-/// same per-event framing as the client `/events-stream` (see [`EventEntity::to_sse_data`]).
-pub async fn feed_stream(
-    State(state): State<AppState>,
-    RawQuery(raw_query): RawQuery,
-) -> HttpResult<impl IntoResponse> {
-    let params = parse_admin_stream_query(raw_query.as_deref().unwrap_or(""))?;
-
-    // Resolve the optional user filter to user ids. None = all users (firehose).
-    let user_ids: Option<Vec<i32>> = if params.users.is_empty() {
+/// Resolve parsed params into a service-layer [`AllEventsFilter`]: `404` for an unknown `user=`,
+/// `400` for an invalid cursor. This is the route's only real work — the streaming itself lives in
+/// [`EventsService::all_events_stream`].
+async fn resolve_filter(state: &AppState, params: AdminStreamParams) -> HttpResult<AllEventsFilter> {
+    // None = all users (firehose); otherwise resolve each pubkey to its id.
+    let user_ids = if params.users.is_empty() {
         None
     } else {
         let mut ids = Vec::with_capacity(params.users.len());
@@ -181,7 +151,6 @@ pub async fn feed_stream(
         Some(ids)
     };
 
-    // Parse the starting cursor (None = from the beginning).
     let start_cursor = match params.cursor.as_deref() {
         Some(c) => Some(
             state
@@ -193,121 +162,40 @@ pub async fn feed_stream(
         None => None,
     };
 
-    let reverse = params.reverse;
-    let live = params.live;
-    let limit = params.limit;
-    let path = params.path;
+    Ok(AllEventsFilter {
+        start_cursor,
+        user_ids,
+        path: params.path,
+        reverse: params.reverse,
+        live: params.live,
+        limit: params.limit,
+    })
+}
 
-    let mut total_sent: usize = 0;
-    let mut last_cursor: Option<EventCursor> = start_cursor;
+/// Admin-only SSE stream over **all** events (public and private). See [`AdminStreamParams`] for the
+/// query parameters; the streaming lives in [`EventsService::all_events_stream`]. Response is
+/// `text/event-stream`, `Cache-Control: no-store`.
+pub async fn feed_stream(
+    State(state): State<AppState>,
+    RawQuery(raw_query): RawQuery,
+) -> HttpResult<impl IntoResponse> {
+    let params = parse_admin_stream_query(raw_query.as_deref().unwrap_or(""))?;
+    let filter = resolve_filter(&state, params).await?;
 
-    let stream = async_stream::stream! {
-        // Cleanup + connection metrics on any exit path.
-        let _guard = ConnectionGuard::new(state.metrics.clone());
-
-        // Subscribe up front so events that occur during Phase 1 are buffered, not missed.
-        let mut rx = state.events_service.subscribe();
-
-        // Phase 1: historical replay over a single advancing global cursor.
-        loop {
-            // Drain buffered events; they'll be covered by this or a later DB query.
-            while rx.try_recv().is_ok() {}
-
-            let query_start = Instant::now();
-            let events = match state
-                .events_service
-                .get_all_events(
-                    last_cursor,
-                    None,
-                    reverse,
-                    path.as_ref().map(|p| p.as_str()),
-                    user_ids.as_deref(),
-                    &mut state.sql_db.pool().into(),
-                )
-                .await
-            {
-                Ok(events) => events,
-                Err(e) => {
-                    tracing::error!("Database error while fetching admin events: {}", e);
-                    break;
-                }
-            };
-            state
-                .metrics
-                .record_event_stream_db_query(query_start.elapsed().as_millis());
-
-            let event_count = events.len();
-            for event in events {
-                // Check the limit before yielding so `limit=0` sends nothing.
-                if let Some(max) = limit {
-                    if total_sent >= max as usize {
-                        return;
-                    }
-                }
-                last_cursor = Some(event.cursor());
-                yield Ok::<_, Infallible>(
+    let sse = Sse::new(
+        state
+            .events_service
+            .all_events_stream(state.sql_db.clone(), state.metrics.clone(), filter)
+            .map(|event| {
+                Ok::<_, Infallible>(
                     Event::default()
                         .event(event.event_type.to_string())
                         .data(event.to_sse_data()),
-                );
-                total_sent += 1;
-            }
+                )
+            }),
+    )
+    .keep_alive(KeepAlive::default());
 
-            // A query with no events means we've replayed everything up to `last_cursor`.
-            if event_count == 0 {
-                if !live {
-                    return;
-                }
-                break;
-            }
-        }
-
-        // Phase 2: live mode (ascending only; reverse+live is rejected at parse time).
-        if live {
-            let half_capacity = state.events_service.channel_capacity() / 2;
-            loop {
-                match rx.recv().await {
-                    Ok(event) => {
-                        if rx.len() >= half_capacity {
-                            state.metrics.record_broadcast_half_full();
-                        }
-                        if !admin_should_include_live_event(
-                            &event,
-                            last_cursor,
-                            user_ids.as_deref(),
-                            path.as_ref(),
-                        ) {
-                            continue;
-                        }
-                        // Check the limit before yielding so `limit=0` sends nothing.
-                        if let Some(max) = limit {
-                            if total_sent >= max as usize {
-                                return;
-                            }
-                        }
-                        last_cursor = Some(event.cursor());
-                        yield Ok::<_, Infallible>(
-                            Event::default()
-                                .event(event.event_type.to_string())
-                                .data(event.to_sse_data()),
-                        );
-                        total_sent += 1;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        state.metrics.record_broadcast_lagged();
-                        tracing::warn!(
-                            "Slow admin client detected: broadcast channel lagged by {} events. Closing connection.",
-                            skipped
-                        );
-                        return;
-                    }
-                    Err(_) => break, // Channel closed
-                }
-            }
-        }
-    };
-
-    let sse = Sse::new(stream).keep_alive(KeepAlive::default());
     // The feed surfaces private paths; never cache it.
     Ok((
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
