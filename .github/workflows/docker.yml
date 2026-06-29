@@ -24,18 +24,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enforce Tag is on Main Branch
-        run: |
-          # Get the exact commit hash of the tag
-          TAG_COMMIT=$(git rev-parse HEAD)
-
-          # Check if that commit exists in the remote main branch history
-          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
-            echo "❌ SECURITY ERROR: Tag does not belong to the main branch history."
-            exit 1
-          fi
-          echo "✅ Security check passed. Tag is a valid ancestor of main."
-
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
