@@ -6,7 +6,9 @@ use tokio::sync::broadcast;
 
 use crate::metrics_server::routes::metrics::{ConnectionGuard, Metrics};
 use crate::persistence::{
-    files::events::{EventCursor, EventEntity, EventRepository, EventType, EventVisibility},
+    files::events::{
+        EventCursor, EventEntity, EventRepository, EventType, EventVisibility, PathFilter,
+    },
     sql::{SqlDb, UnifiedExecutor},
 };
 use crate::shared::webdav::{EntryPath, WebDavPath};
@@ -171,15 +173,17 @@ impl EventsService {
     /// ## Parameters
     /// - `user_cursors`: Vec of (user_id, optional_cursor) pairs
     /// - `reverse`: If true, return newest events first
-    /// - `path_prefix`: Optional path filter (e.g., "/pub/files/")
+    /// - `allowed_paths`: Authorized paths, an event is returned only if
+    ///   it matches at least one (see [`PathFilter`]). Expected non-empty, the
+    ///   route defaults to `/pub/`.
     pub async fn get_by_user_cursors<'a>(
         &self,
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
-        path_prefix: Option<&str>,
+        allowed_paths: &[PathFilter],
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
-        EventRepository::get_by_user_cursors(user_cursors, reverse, path_prefix, executor).await
+        EventRepository::get_by_user_cursors(user_cursors, reverse, allowed_paths, executor).await
     }
 
     /// Stream **all** events (the admin firehose): replay history over a single advancing global

@@ -2,8 +2,7 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    tags: ['v*']
 
 permissions:
     contents: read

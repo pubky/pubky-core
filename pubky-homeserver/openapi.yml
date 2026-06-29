@@ -634,6 +634,10 @@ paths:
         stream every user's events) and a single global `cursor` paginates the combined feed;
         `limit`, `live`, `reverse`, and `path` behave as below.
       operationId: getEventStream
+      security:
+        - {}
+        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: user
           in: query
@@ -673,9 +677,18 @@ paths:
             default: false
         - name: path
           in: query
-          description: Path prefix filter (e.g. `/pub/files/` or `pub/files/`).
+          description: Path filter. /priv/ paths require an authorized session.
           schema:
-            type: string
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          examples:
+            publicDir:
+              value: ["/pub/files/"]
+            mixed:
+              value: ["/pub/", "/priv/app/"]
       responses:
         "200":
           description: SSE event stream
@@ -687,6 +700,10 @@ paths:
           description: |
             Invalid user pubkey, missing user parameter, too many users,
             live + reverse combination, or invalid path.
+        "401":
+          description: A private path was requested without a session.
+        "403":
+          description: "Missing path read capability"
         "404":
           description: User not found
 

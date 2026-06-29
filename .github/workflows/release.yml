@@ -131,6 +131,23 @@ jobs:
       - name: Build and publish npm package
         working-directory: pubky-sdk/bindings/js/pkg
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [[ "$VERSION" != *-* ]]; then
+            NPM_TAG="latest"
+          else
+            PRERELEASE="${VERSION#*-}"
+            case "$PRERELEASE" in
+              alpha*|beta*|rc*)
+                NPM_TAG="${PRERELEASE%%.*}"
+                ;;
+              *)
+                NPM_TAG="next"
+                ;;
+            esac
+          fi
+
+          echo "Publishing npm package with dist-tag: $NPM_TAG"
           npm ci
           npm run build
-          npm publish --provenance
+          npm publish --provenance --tag "$NPM_TAG"

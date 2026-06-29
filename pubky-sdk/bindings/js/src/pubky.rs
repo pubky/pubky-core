@@ -139,11 +139,17 @@ impl Pubky {
 
     /// Resume a previously started **pubkyauth** flow from its saved `authorizationUrl`.
     ///
+    /// If the user refreshes or navigates away mid-flow, WASM memory is lost and
+    /// the original `AuthFlow` object is gone. You can reconnect to the same relay
+    /// channel by saving the `authorizationUrl` beforehand and calling this method
+    /// after reload.
+    ///
     /// The relay inbox retains messages for **~5 minutes**. Resume is only
     /// viable within that window; afterwards start a fresh flow.
     ///
     /// **Security:** The URL contains the `client_secret` in plaintext.
-    /// Delete it from storage as soon as the resumed flow completes.
+    /// Store it in `sessionStorage` (scoped to the tab), **not** `localStorage`,
+    /// and delete it as soon as the resumed flow completes or is abandoned.
     /// See `startCookieAuthFlow()` docs for full storage guidance.
     ///
     /// @param {string} authorizationUrl The `pubkyauth://…` URL from a previous flow.
@@ -151,6 +157,23 @@ impl Pubky {
     /// @throws {PubkyError}
     /// - `{ name: "AuthenticationError" }` if the URL is invalid or not a signin/signup link
     /// - `{ name: "RequestError" }` on network/relay failure
+    ///
+    /// @example
+    /// // 1) Before a potential refresh, persist the URL.
+    /// const flow = pubky.startCookieAuthFlow("/pub/my-cool-app/:rw", AuthFlowKind.signin());
+    /// sessionStorage.setItem("pubky-auth-url", flow.authorizationUrl);
+    /// renderQr(flow.authorizationUrl);
+    ///
+    /// // 2) After reload, resume from the saved URL.
+    /// const savedUrl = sessionStorage.getItem("pubky-auth-url");
+    /// if (savedUrl) {
+    ///   try {
+    ///     const resumed = pubky.resumeCookieAuthFlow(savedUrl);
+    ///     const session = await resumed.awaitApproval();
+    ///   } finally {
+    ///     sessionStorage.removeItem("pubky-auth-url");
+    ///   }
+    /// }
     #[wasm_bindgen(js_name = "resumeCookieAuthFlow")]
     pub fn resume_cookie_auth_flow(&self, authorization_url: String) -> JsResult<AuthFlow> {
         AuthFlow::resume_with_client(authorization_url, Some(self.0.client().clone()))
