@@ -46,10 +46,8 @@ async fn main() -> Result<()> {
             let data_dir = PersistentDataDir::new(args.data_dir);
             data_dir.init()?;
             println!(
-                "Data directory initialized at {}.\n\
-                 Edit {} to configure PostgreSQL and other settings, then run `pubky-homeserver` to start.",
-                data_dir.path().display(),
-                data_dir.get_config_file_path().display(),
+                "Data directory initialized at {}.",
+                data_dir.path().display()
             );
         }
         None => {
