@@ -14,7 +14,7 @@ pub mod embedded_postgres {
 }
 
 pub use ephemeral_testnet::{EphemeralTestnet, EphemeralTestnetBuilder};
-pub use static_testnet::StaticTestnet;
+pub use static_testnet::{StaticTestnet, StaticTestnetBuilder};
 pub use testnet::Testnet;
 
 // Re-export the core crates
