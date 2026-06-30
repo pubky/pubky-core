@@ -1,6 +1,6 @@
 # Install and Run Pubky Homeserver
 
-This guide is for running a standalone Pubky homeserver. For local app development against an ephemeral test network, see [Local Development](./LOCAL_DEVELOPMENT.md). For contributor test databases and CI setup, see [Testing](./TESTING.md).
+This guide is for running a standalone Pubky homeserver. For local app development against a local testnet, see [Local Development](./LOCAL_DEVELOPMENT.md). For contributor test databases and CI setup, see [Testing](./TESTING.md).
 
 ## Contents
 
@@ -48,9 +48,9 @@ Download the latest non-prerelease archive from the [Pubky Core releases page](h
 Requires `curl`. On Ubuntu/Debian: `apt install curl`.
 
 ```bash
-curl -LO https://github.com/pubky/pubky-core/releases/download/vX.Y.Z/pubky-core-vX.Y.Z-linux-amd64.tar.gz
-tar -xf pubky-core-vX.Y.Z-linux-amd64.tar.gz
-cp pubky-core-vX.Y.Z-linux-amd64/pubky-homeserver /usr/local/bin
+curl -LO https://github.com/pubky/pubky-core/releases/download/vx.x.x/pubky-core-vx.x.x-linux-amd64.tar.gz
+tar -xf pubky-core-vx.x.x-linux-amd64.tar.gz
+cp pubky-core-vx.x.x-linux-amd64/pubky-homeserver /usr/local/bin
 ```
 
 ### Build From Source
@@ -104,7 +104,11 @@ You can run the homeserver directly in Docker:
 docker run -it --network=host pubky-homeserver
 ```
 
-Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. See the Docker documentation for volume mounts and other options.
+Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints.
+
+> **macOS note:** Docker Desktop for macOS does not support `--network=host`. Use `-p 6286:6286 -p 6287:6287 -p 6288:6288 -p 6289:6289` instead to map the ports manually.
+
+See the Docker documentation for volume mounts and other options.
 
 Or copy the binary out of the image and place it on your `PATH`:
 
