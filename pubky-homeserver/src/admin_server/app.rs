@@ -704,4 +704,45 @@ mod tests {
         assert!(body.contains(&format!("pubky://{}/pub/alice.txt", alice.z32())));
         assert!(!body.contains(&format!("pubky://{}/pub/bob.txt", bob.z32())));
     }
+
+    /// Repeated `path=` unions the filters (file-vs-directory matching).
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_repeated_path_filter() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/pub/b.txt", "/priv/x.txt"]).await;
+
+        // Exact file `/pub/a.txt` OR the `/priv/` subtree — not the sibling `/pub/b.txt`.
+        let body = admin_stream_body(&server, "?path=/pub/a.txt&path=/priv/").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())));
+        assert!(body.contains(&format!("pubky://{}/priv/x.txt", pubkey.z32())));
+        assert!(
+            !body.contains("/pub/b.txt"),
+            "sibling file must be excluded: {body}"
+        );
+    }
+
+    /// A single global `cursor=` resumes after the given event id.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_cursor_resume() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // ids 1,2,3 in this fresh DB.
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/pub/b.txt", "/pub/c.txt"]).await;
+
+        // Resume after cursor 1 → only the later two events.
+        let body = admin_stream_body(&server, "?cursor=1").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(
+            !body.contains("/pub/a.txt"),
+            "cursor=1 must skip the first event: {body}"
+        );
+        assert!(body.contains(&format!("pubky://{}/pub/b.txt", pubkey.z32())));
+        assert!(body.contains(&format!("pubky://{}/pub/c.txt", pubkey.z32())));
+    }
 }
