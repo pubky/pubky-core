@@ -1,15 +1,13 @@
 # Local Development
 
-This guide helps you set up a local Pubky network for development, whether you're building an app on top of Pubky, contributing to the homeserver, or working on other crates in this repo.
-
-If you don't need to build from source or control individual components, see the [Docker Compose quick start](./INSTALL.md#quick-start-with-docker-compose) in the Install guide for the fastest way to get a homeserver running.
+This guide covers setting up a local testnet for developing and testing against Pubky. Use it when you're modifying crates in this repo or building an app that talks to a local homeserver.
 
 For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./INSTALL.md). For running Rust tests and CI, see [Testing](./TESTING.md).
 
 ## Contents
 
 - [Toolchain](#toolchain)
-- [Ephemeral Testnet](#ephemeral-testnet)
+- [Local Testnet](#local-testnet)
   - [Set Up PostgreSQL](#set-up-postgresql)
   - [Run the Testnet](#run-the-testnet)
 - [Run Examples](#run-examples) (keygen, signup, write, read)
@@ -18,10 +16,10 @@ For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./
 
 ## Toolchain
 
-For building from source and running the ephemeral testnet:
+For building from source and running the local testnet:
 
 - Rust `1.89` or newer.
-- PostgreSQL for tests and the ephemeral testnet (see [Set Up PostgreSQL](#set-up-postgresql)).
+- PostgreSQL for tests and the local testnet (see [Set Up PostgreSQL](#set-up-postgresql)).
 - Node.js `20` or newer for JS/WASM bindings.
 - `wasm-pack` when working on the JavaScript SDK bindings.
 
@@ -34,13 +32,13 @@ cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
 ```
 
 
-## Ephemeral Testnet
+## Local Testnet
 
-The ephemeral testnet starts a full local Pubky network from source: Homeserver, local DHT and relays. Data is cleaned up when the process exits.
+The local testnet starts a full Pubky network from source: homeserver, local DHT, and relays. The testnet is currently ephemeral: all data is cleaned up when the process exits. Persistent testnet support is planned.
 
 ### Set Up PostgreSQL
 
-The testnet requires a running PostgreSQL instance with a user that can create databases. You do **not** need to create a database manually, the testnet creates ephemeral `pubky_test_*` databases automatically and cleans them up on exit.
+The testnet requires a running PostgreSQL instance with a user that can create databases. You do **not** need to create a database manually — the testnet creates temporary `pubky_test_*` databases automatically and cleans them up on exit.
 
 The quickest option is Docker:
 
@@ -52,7 +50,7 @@ docker run --name pubky-postgres \
   -d postgres:18
 ```
 
-For native PostgreSQL or an existing instance, see [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql). Skip the database creation step if youre only using testnet.
+For native PostgreSQL or an existing instance, see [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql). Skip the database creation step if you're only using the testnet.
 
 ### Run the Testnet
 
@@ -65,7 +63,7 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 
 Replace the connection string if your PostgreSQL instance uses different credentials or host.
 
-The `?pubky-test=true` parameter tells the testnet to create an ephemeral `pubky_test_*` database inside the configured PostgreSQL instance. The database is cleaned up when the testnet exits.
+The `?pubky-test=true` parameter tells the testnet to create a temporary `pubky_test_*` database inside the configured PostgreSQL instance. The database is cleaned up when the testnet exits.
 
 It starts:
 
@@ -130,7 +128,7 @@ This signs in, writes the file, reads it back, and deletes it.
 
 ### Quick smoke test
 
-For a self-contained test (requires Docker) that starts its own ephemeral testnet, signs up a user, writes a file, and reads it back:
+For a self-contained test (requires Docker) that starts its own local testnet, signs up a user, writes a file, and reads it back:
 
 ```bash
 cargo run -p pubky-core-examples --bin testnet
