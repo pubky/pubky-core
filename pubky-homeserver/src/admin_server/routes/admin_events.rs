@@ -37,9 +37,10 @@ struct AdminStreamParams {
     live: bool,
     /// Reverse (newest-first) ordering; batch-only.
     reverse: bool,
-    /// Optional path filter. A trailing slash matches a directory and its descendants; without
-    /// one it matches that exact file (see [`PathFilter`]).
-    path: Option<WebDavPath>,
+    /// Path filters (repeatable; union — an event matches if it satisfies any). A trailing slash
+    /// matches a directory and its descendants; without one it matches that exact file (see
+    /// [`PathFilter`]).
+    paths: Vec<WebDavPath>,
 }
 
 /// Parse the raw query string, handling repeated `user=` params.
@@ -52,7 +53,7 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
     let mut limit = None;
     let mut live = false;
     let mut reverse = false;
-    let mut path: Option<String> = None;
+    let mut paths: Vec<WebDavPath> = Vec::new();
 
     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
         match key.as_ref() {
@@ -86,9 +87,18 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
             "live" => live = value == "true" || value == "1",
             "reverse" => reverse = value == "true" || value == "1",
             "path" => {
-                if !value.is_empty() {
-                    path = Some(value.to_string());
+                if value.is_empty() {
+                    continue;
                 }
+                // Prepend "/" if missing, for caller convenience.
+                let normalized = if value.starts_with('/') {
+                    value.into_owned()
+                } else {
+                    format!("/{value}")
+                };
+                let path = WebDavPath::new(&normalized)
+                    .map_err(|_| HttpError::bad_request(format!("Invalid path: {normalized}")))?;
+                paths.push(path);
             }
             _ => {} // Ignore unknown parameters
         }
@@ -105,29 +115,13 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
         )));
     }
 
-    let path = match path {
-        Some(p) => {
-            // Automatically prepend "/" if not present for caller convenience.
-            let normalized = if p.starts_with('/') {
-                p
-            } else {
-                format!("/{p}")
-            };
-            Some(
-                WebDavPath::new(&normalized)
-                    .map_err(|_| HttpError::bad_request(format!("Invalid path: {normalized}")))?,
-            )
-        }
-        None => None,
-    };
-
     Ok(AdminStreamParams {
         users,
         cursor,
         limit,
         live,
         reverse,
-        path,
+        paths,
     })
 }
 
@@ -169,7 +163,7 @@ async fn resolve_filter(
     Ok(AllEventsFilter {
         start_cursor,
         user_ids,
-        path: params.path.map(PathFilter::from),
+        paths: params.paths.into_iter().map(PathFilter::from).collect(),
         reverse: params.reverse,
         live: params.live,
         limit: params.limit,

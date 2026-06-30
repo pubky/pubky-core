@@ -1,3 +1,10 @@
+//! Metrics recorder and connection tracking.
+//!
+//! Neutral observability layer: the [`Metrics`] recorder (OpenTelemetry + Prometheus) and the
+//! [`ConnectionGuard`] RAII helper live here so any subsystem can record without depending on a
+//! server route. The `metrics_server` *serves* this over HTTP; subsystems (`persistence`,
+//! `client_server`, …) only *record* into it.
+
 use opentelemetry::metrics::{Counter, Histogram, Meter, MeterProvider, UpDownCounter};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry, TextEncoder};
@@ -166,8 +173,6 @@ fn init_metrics() -> Result<(Registry, SdkMeterProvider, Meter), MetricsInitErro
     Ok((registry, provider, meter))
 }
 
-/// RAII guard that tracks an active event-stream (SSE) connection.
-///
 /// Increments the active-connection gauge on creation and, on drop (any exit path),
 /// decrements it and records the connection duration. Shared by the public and admin
 /// event-stream endpoints so both record the same metrics.

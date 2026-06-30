@@ -4,7 +4,7 @@ use futures_util::Stream;
 use sqlx::PgPool;
 use tokio::sync::broadcast;
 
-use crate::metrics_server::routes::metrics::{ConnectionGuard, Metrics};
+use crate::observability::{ConnectionGuard, Metrics};
 use crate::persistence::{
     files::events::{
         EventCursor, EventEntity, EventRepository, EventType, EventVisibility, PathFilter,
@@ -36,9 +36,8 @@ pub(crate) struct AllEventsFilter {
     pub start_cursor: Option<EventCursor>,
     /// User filter. `None` = all users (firehose).
     pub user_ids: Option<Vec<i32>>,
-    /// Path filter (file-vs-directory matching: a trailing slash selects a directory and its
-    /// descendants, otherwise an exact file).
-    pub path: Option<PathFilter>,
+    /// Path filters
+    pub paths: Vec<PathFilter>,
     /// Newest-first ordering (batch only).
     pub reverse: bool,
     /// Stay open for live events after replaying history.
@@ -154,7 +153,7 @@ impl EventsService {
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         reverse: bool,
-        path_filter: Option<&PathFilter>,
+        path_filters: &[PathFilter],
         user_ids: Option<&[i32]>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
@@ -162,7 +161,7 @@ impl EventsService {
             cursor,
             limit,
             reverse,
-            path_filter,
+            path_filters,
             user_ids,
             executor,
         )
@@ -219,7 +218,7 @@ impl EventsService {
                         last_cursor,
                         None,
                         filter.reverse,
-                        filter.path.as_ref(),
+                        &filter.paths,
                         filter.user_ids.as_deref(),
                         &mut sql_db.pool().into(),
                     )
@@ -303,8 +302,9 @@ fn accept_live_event(
             return false;
         }
     }
-    if let Some(path) = filter.path.as_ref() {
-        if !path.matches(event.path.path().as_str()) {
+    if !filter.paths.is_empty() {
+        let path = event.path.path();
+        if !filter.paths.iter().any(|f| f.matches(path.as_str())) {
             return false;
         }
     }
@@ -446,7 +446,7 @@ mod tests {
 
         // No filters: every event, private ones included, in id order.
         let events = events_service
-            .get_all_events(None, None, false, None, None, &mut db.pool().into())
+            .get_all_events(None, None, false, &[], None, &mut db.pool().into())
             .await
             .unwrap();
         let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
@@ -457,7 +457,7 @@ mod tests {
 
         // reverse=true returns newest first.
         let events = events_service
-            .get_all_events(None, None, true, None, None, &mut db.pool().into())
+            .get_all_events(None, None, true, &[], None, &mut db.pool().into())
             .await
             .unwrap();
         let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
@@ -466,14 +466,14 @@ mod tests {
             vec!["/pub/c", "/priv/y", "/pub/b", "/priv/x", "/pub/a"]
         );
 
-        // A directory path filter scopes to a storage root (private included).
-        let priv_filter = PathFilter::from(WebDavPath::new("/priv/").unwrap());
+        // A union of path filters scopes to those roots (here a single private directory).
+        let path_filters = [PathFilter::from(WebDavPath::new("/priv/").unwrap())];
         let events = events_service
             .get_all_events(
                 None,
                 None,
                 false,
-                Some(&priv_filter),
+                &path_filters,
                 None,
                 &mut db.pool().into(),
             )
@@ -482,13 +482,32 @@ mod tests {
         let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
         assert_eq!(returned, vec!["/priv/x", "/priv/y"]);
 
+        // Multiple path filters union (any-match): an exact file OR a directory subtree.
+        let path_filters = [
+            PathFilter::from(WebDavPath::new("/pub/a").unwrap()),
+            PathFilter::from(WebDavPath::new("/priv/").unwrap()),
+        ];
+        let events = events_service
+            .get_all_events(
+                None,
+                None,
+                false,
+                &path_filters,
+                None,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        let returned: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(returned, vec!["/pub/a", "/priv/x", "/priv/y"]);
+
         // user_ids filters to those users.
         let events = events_service
             .get_all_events(
                 None,
                 None,
                 false,
-                None,
+                &[],
                 Some(&[user.id]),
                 &mut db.pool().into(),
             )

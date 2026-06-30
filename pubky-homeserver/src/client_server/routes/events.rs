@@ -28,7 +28,7 @@ use crate::{
         AppState,
     },
     constants::PUBLIC_ROOT,
-    metrics_server::routes::metrics::ConnectionGuard,
+    observability::ConnectionGuard,
     persistence::{
         files::events::{
             EventCursor, EventEntity, EventsService, PathFilter, MAX_EVENT_STREAM_USERS,

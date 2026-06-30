@@ -2,7 +2,7 @@
 
 use super::cookie::verifier::CookieAuthVerifier;
 use crate::app_context::AppContext;
-use crate::metrics_server::routes::metrics::Metrics;
+use crate::observability::Metrics;
 
 use super::cookie::service::CookieAuthService;
 use super::{GrantAuthService, SignupService};

@@ -313,14 +313,14 @@ impl EventRepository {
     }
 
     /// Get **all** events (public and private) by a single global cursor, with optional reverse,
-    /// path, and user-id filters. The path filter uses [`PathFilter`] (file-vs-directory matching).
-    /// Backs the admin events stream — it applies no `/pub`-vs-`/priv` visibility predicate, so
-    /// reach it only from admin-authenticated callers.
+    /// path, and user-id filters. `path_filters` is a union — an event is returned if it matches
+    /// **any** of them (empty = no path restriction); each uses [`PathFilter`] file-vs-directory
+    /// matching. Backs the admin events stream.
     pub async fn get_all_filtered_by_cursor<'a>(
         cursor: Option<EventCursor>,
         limit: Option<u16>,
         reverse: bool,
-        path_filter: Option<&PathFilter>,
+        path_filters: &[PathFilter],
         user_ids: Option<&[i32]>,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
@@ -364,8 +364,13 @@ impl EventRepository {
                 .to_owned();
         }
 
-        if let Some(filter) = path_filter {
-            statement = statement.and_where(filter.to_condition()).to_owned();
+        // Union of path filters: an event matches if it satisfies ANY of them.
+        if !path_filters.is_empty() {
+            let mut path_condition = Condition::any();
+            for filter in path_filters {
+                path_condition = path_condition.add(filter.to_condition());
+            }
+            statement = statement.cond_where(path_condition).to_owned();
         }
 
         if let Some(ids) = user_ids {
