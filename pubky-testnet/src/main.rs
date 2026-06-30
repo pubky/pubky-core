@@ -1,14 +1,29 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use pubky_testnet::StaticTestnet;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Optional path to a homeserver config file. This overrides the default config.
+    /// Optional path to a homeserver config file.
+    /// In ephemeral mode (default), this overrides the default config.
+    /// With `persist`, this writes the initial config.toml on first run.
     #[clap(long)]
     homeserver_config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run a persistent testnet with state stored in the given data directory.
+    Persist {
+        /// Path to the data directory (config, keypair, files).
+        /// Created automatically on first run.
+        data_dir: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -22,12 +37,19 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let testnet = if let Some(config_path) = args.homeserver_config {
-        StaticTestnet::start_with_homeserver_config(config_path).await?
-    } else {
-        StaticTestnet::start().await?
-    };
+    let mut builder = StaticTestnet::builder();
+    if let Some(config) = args.homeserver_config {
+        builder = builder.homeserver_config(config);
+    }
+    if let Some(Command::Persist { data_dir }) = args.command {
+        builder = builder.persistent(data_dir.clone());
+        tracing::info!(
+            "Persistent testnet configured. data dir: {}",
+            data_dir.display()
+        );
+    }
 
+    let testnet = builder.start().await?;
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",
@@ -54,10 +76,14 @@ async fn main() -> Result<()> {
     }
 
     tokio::signal::ctrl_c().await?;
-    drop(testnet); // Drop the testnet to trigger the drop of the homeserver and all databases.
+    let persistent = testnet.is_persistent();
+    drop(testnet);
 
-    // Cleanup all empheral test databases. Test database are only registered for the drop after the testnet is dropped.
-    pubky_testnet::drop_test_databases().await;
+    if !persistent {
+        // Cleanup all ephemeral test databases. Test databases are only registered
+        // for the drop after the testnet is dropped.
+        pubky_testnet::drop_test_databases().await;
+    }
 
     Ok(())
 }

@@ -2,13 +2,89 @@ use crate::pubky::Pubky;
 
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
 use crate::Testnet;
 use http_relay::HttpRelay;
-use pubky_homeserver::{ConfigToml, DomainPort, HomeserverApp, MockDataDir};
+use pubky_homeserver::{
+    AppContext, ConfigToml, DataDir, DomainPort, HomeserverApp, MockDataDir, PersistentDataDir,
+};
+
+/// How the testnet stores homeserver state.
+#[derive(Debug, Clone)]
+enum TestnetMode {
+    /// All state lives in memory / temp dirs and is lost on shutdown.
+    Ephemeral,
+    /// State is persisted to the given data directory across restarts.
+    Persistent(PathBuf),
+}
+
+/// Builder for configuring and starting a [`StaticTestnet`].
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn example() -> anyhow::Result<()> {
+/// use pubky_testnet::StaticTestnet;
+///
+/// // Ephemeral (default)
+/// let testnet = StaticTestnet::builder().start().await?;
+///
+/// // Ephemeral with custom config
+/// let testnet = StaticTestnet::builder()
+///     .homeserver_config("my-config.toml".into())
+///     .start()
+///     .await?;
+///
+/// // Persistent
+/// let testnet = StaticTestnet::builder()
+///     .persistent("./my-testnet".into())
+///     .start()
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct StaticTestnetBuilder {
+    homeserver_config: Option<PathBuf>,
+    mode: TestnetMode,
+}
+
+impl StaticTestnetBuilder {
+    fn new() -> Self {
+        Self {
+            homeserver_config: None,
+            mode: TestnetMode::Ephemeral,
+        }
+    }
+
+    /// Set a custom homeserver config file.
+    ///
+    /// In ephemeral mode, this overrides the default config.
+    /// In persistent mode, this seeds the initial `config.toml` on first run
+    /// (errors if one already exists in the data directory).
+    pub fn homeserver_config(mut self, path: PathBuf) -> Self {
+        self.homeserver_config = Some(path);
+        self
+    }
+
+    /// Enable persistent mode with the given data directory.
+    ///
+    /// The directory is auto-initialized on first run (config.toml, secret, data/files/).
+    /// On subsequent runs, the existing state is picked up.
+    pub fn persistent(mut self, data_dir: PathBuf) -> Self {
+        self.mode = TestnetMode::Persistent(data_dir);
+        self
+    }
+
+    /// Start the testnet with the configured options.
+    pub async fn start(self) -> anyhow::Result<StaticTestnet> {
+        let mut testnet = StaticTestnet::start_infra(self.homeserver_config, self.mode).await?;
+        testnet.run_homeserver().await?;
+        Ok(testnet)
+    }
+}
 
 /// A simple testnet with
 ///
@@ -21,7 +97,9 @@ pub struct StaticTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
     /// Optional path to the homeserver config file if set.
-    pub homeserver_config: Option<PathBuf>,
+    homeserver_config: Option<PathBuf>,
+    /// How the homeserver stores state.
+    mode: TestnetMode,
     #[allow(dead_code)]
     fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
@@ -29,18 +107,27 @@ pub struct StaticTestnet {
 }
 
 impl StaticTestnet {
-    /// Run a new static testnet with the default homeserver config.
+    /// Create a builder for configuring the testnet.
+    pub fn builder() -> StaticTestnetBuilder {
+        StaticTestnetBuilder::new()
+    }
+
+    /// Run an ephemeral testnet with the default homeserver config.
     pub async fn start() -> anyhow::Result<Self> {
-        Self::new(None).await
+        Self::builder().start().await
     }
 
-    /// Run a new static testnet with a custom homeserver config.
-    pub async fn start_with_homeserver_config(config_path: PathBuf) -> anyhow::Result<Self> {
-        Self::new(Some(config_path)).await
+    /// Whether this testnet is running in persistent mode.
+    pub fn is_persistent(&self) -> bool {
+        matches!(self.mode, TestnetMode::Persistent(_))
     }
 
-    /// Run a new simple testnet.
-    pub async fn new(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
+    /// Start the shared infrastructure (DHT bootstrap node, pkarr relay, http relay)
+    /// without a homeserver.
+    async fn start_infra(
+        homeserver_config: Option<PathBuf>,
+        mode: TestnetMode,
+    ) -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
@@ -49,7 +136,8 @@ impl StaticTestnet {
             testnet,
             fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
-            homeserver_config: config_path,
+            homeserver_config,
+            mode,
         };
 
         testnet
@@ -60,12 +148,22 @@ impl StaticTestnet {
             .run_fixed_http_relay()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
-        testnet
-            .run_fixed_homeserver()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
 
         Ok(testnet)
+    }
+
+    /// Start the homeserver based on the configured mode.
+    async fn run_homeserver(&mut self) -> anyhow::Result<()> {
+        match self.mode.clone() {
+            TestnetMode::Ephemeral => self
+                .run_ephemeral_homeserver()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e)),
+            TestnetMode::Persistent(data_dir) => self
+                .run_persistent_homeserver(data_dir)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to run persistent homeserver: {}", e)),
+        }
     }
 
     /// Create an additional homeserver with a random keypair
@@ -186,7 +284,43 @@ impl StaticTestnet {
         Ok(())
     }
 
-    async fn run_fixed_homeserver(&mut self) -> anyhow::Result<()> {
+    async fn run_persistent_homeserver(&mut self, data_dir: PathBuf) -> anyhow::Result<()> {
+        let persistent_dir = PersistentDataDir::new(data_dir);
+        let config_path = persistent_dir.get_config_file_path();
+
+        if let Some(source) = &self.homeserver_config {
+            if config_path.exists() {
+                anyhow::bail!(
+                    "config.toml already exists at {}. Remove --homeserver-config to use the existing config, \
+                     or delete the file to replace it.",
+                    config_path.display()
+                );
+            }
+            std::fs::create_dir_all(persistent_dir.path())?;
+            std::fs::copy(source, &config_path)?;
+            tracing::info!("Copied {} → {}", source.display(), config_path.display());
+        }
+
+        persistent_dir.init()?;
+
+        let bootstrap_nodes: Vec<DomainPort> = self
+            .bootstrap_nodes()
+            .iter()
+            .map(|node| DomainPort::from_str(node).unwrap())
+            .collect();
+
+        let testnet_dir = TestnetDataDir {
+            inner: persistent_dir,
+            dht_bootstrap_nodes: bootstrap_nodes,
+        };
+
+        let context = AppContext::read_from(testnet_dir).await?;
+        let homeserver = HomeserverApp::start(context).await?;
+        self.testnet.homeservers.push(homeserver);
+        Ok(())
+    }
+
+    async fn run_ephemeral_homeserver(&mut self) -> anyhow::Result<()> {
         let mut config = if let Some(config_path) = &self.homeserver_config {
             ConfigToml::from_file(config_path)?
         } else {
@@ -211,5 +345,36 @@ impl StaticTestnet {
         let homeserver = HomeserverApp::start_with_mock_data_dir(mock).await?;
         self.testnet.homeservers.push(homeserver);
         Ok(())
+    }
+}
+
+/// A [`PersistentDataDir`] wrapper that overrides DHT config for testnet use.
+///
+/// This ensures the homeserver connects to the testnet's local DHT bootstrap
+/// nodes rather than mainnet, while still using persistent on-disk storage.
+#[derive(Debug, Clone)]
+struct TestnetDataDir {
+    inner: PersistentDataDir,
+    dht_bootstrap_nodes: Vec<DomainPort>,
+}
+
+impl DataDir for TestnetDataDir {
+    fn path(&self) -> &Path {
+        self.inner.path()
+    }
+
+    fn ensure_data_dir_exists_and_is_writable(&self) -> anyhow::Result<()> {
+        self.inner.ensure_data_dir_exists_and_is_writable()
+    }
+
+    fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
+        let mut config = self.inner.read_or_create_config_file()?;
+        config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes.clone());
+        config.pkdns.dht_relay_nodes = None;
+        Ok(config)
+    }
+
+    fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
+        self.inner.read_or_create_keypair()
     }
 }
