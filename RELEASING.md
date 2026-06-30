@@ -104,7 +104,7 @@ git push origin v0.8.1
 
 ### 4. Back-port to main
 
-After the release, cherry-pick or merge the fix into `main` so it isn't lost:
+After the release, cherry-pick or merge the fix and version bump into `main` so it isn't lost:
 
 ```bash
 git checkout main
