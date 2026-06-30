@@ -2,17 +2,13 @@
 
 This guide helps you set up a local Pubky network for development, whether you're building an app on top of Pubky, contributing to the homeserver, or working on other crates in this repo.
 
-There are two local development options:
-
-- **Ephemeral testnet** — starts a full local network from source with disposable data. Data is cleaned up when the process exits. Good for quick iteration and testing.
-- **Persistent testnet (coming soon)** — a Docker Compose setup that persists data across restarts. Good for longer-lived development and app integration.
+If you don't need to build from source or control individual components, see the [Docker Compose quick start](./INSTALL.md#quick-start-with-docker-compose) in the Install guide for the fastest way to get a homeserver running.
 
 For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./INSTALL.md). For running Rust tests and CI, see [Testing](./TESTING.md).
 
 ## Contents
 
-- [Prerequisites](#prerequisites)
-- [Persistent Testnet (coming soon)](#persistent-testnet-coming-soon)
+- [Toolchain](#toolchain)
 - [Ephemeral Testnet](#ephemeral-testnet)
   - [Set Up PostgreSQL](#set-up-postgresql)
   - [Run the Testnet](#run-the-testnet)
@@ -20,10 +16,12 @@ For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./
 - [Custom Homeserver Config](#custom-homeserver-config)
 - [Troubleshooting](#troubleshooting)
 
-## Prerequisites
+## Toolchain
+
+For building from source and running the ephemeral testnet:
 
 - Rust `1.89` or newer.
-- PostgreSQL (see [Set Up PostgreSQL](#set-up-postgresql) below).
+- PostgreSQL for tests and the ephemeral testnet (see [Set Up PostgreSQL](#set-up-postgresql)).
 - Node.js `20` or newer for JS/WASM bindings.
 - `wasm-pack` when working on the JavaScript SDK bindings.
 
@@ -35,10 +33,6 @@ cargo fmt --check
 cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
 ```
 
-
-## Persistent Testnet (coming soon)
-
-A `docker-compose.yml` that runs the full local network (homeserver, PostgreSQL, DHT, relays) with persistent storage is planned. This will be the easiest way to develop against a stable local environment that survives restarts.
 
 ## Ephemeral Testnet
 
