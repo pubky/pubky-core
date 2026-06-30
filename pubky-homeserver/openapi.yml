@@ -676,7 +676,7 @@ paths:
           description: Maximum total events to send.
           schema:
             type: integer
-            minimum: 1
+            minimum: 0
             maximum: 65535
         - name: reverse
           in: query
@@ -1341,10 +1341,10 @@ components:
             - type: string
               enum: [unlimited]
         rate_read:
-          description: "Read bandwidth limit (e.g. `\"200mb/m\"`, `\"unlimited\"`, or `null`)."
+          description: 'Read bandwidth limit (e.g. `"200mb/m"`, `"unlimited"`, or `null`).'
           type: string
         rate_write:
-          description: "Write bandwidth limit (e.g. `\"100mb/m\"`, `\"unlimited\"`, or `null`)."
+          description: 'Write bandwidth limit (e.g. `"100mb/m"`, `"unlimited"`, or `null`).'
           type: string
         rate_read_burst:
           description: |
@@ -1387,10 +1387,10 @@ components:
               enum: [unlimited]
             - type: "null"
         rate_read:
-          description: "Read bandwidth limit string, `\"unlimited\"`, or `null` to reset."
+          description: 'Read bandwidth limit string, `"unlimited"`, or `null` to reset.'
           type: ["string", "null"]
         rate_write:
-          description: "Write bandwidth limit string, `\"unlimited\"`, or `null` to reset."
+          description: 'Write bandwidth limit string, `"unlimited"`, or `null` to reset.'
           type: ["string", "null"]
         rate_read_burst:
           description: "Burst for read rate limit (in rate's natural unit), or `null` to reset to default."

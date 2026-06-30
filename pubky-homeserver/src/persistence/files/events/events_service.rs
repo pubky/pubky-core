@@ -212,11 +212,20 @@ impl EventsService {
                 // Drain buffered events; they'll be covered by this or a later DB query.
                 while rx.try_recv().is_ok() {}
 
+                // Only fetch the events still owed under `limit`
+                let batch_limit = match filter.limit {
+                    Some(max) => match (max as usize).saturating_sub(total_sent) {
+                        0 => return,
+                        remaining => Some(remaining as u16),
+                    },
+                    None => None,
+                };
+
                 let query_start = Instant::now();
                 let events = match service
                     .get_all_events(
                         last_cursor,
-                        None,
+                        batch_limit,
                         filter.reverse,
                         &filter.paths,
                         filter.user_ids.as_deref(),
@@ -235,10 +244,6 @@ impl EventsService {
                 // An empty batch means we've replayed everything up to `last_cursor`.
                 let caught_up = events.is_empty();
                 for event in events {
-                    // Check the limit before yielding so `limit=0` sends nothing.
-                    if filter.limit.is_some_and(|max| total_sent >= max as usize) {
-                        return;
-                    }
                     last_cursor = Some(event.cursor());
                     yield event;
                     total_sent += 1;
