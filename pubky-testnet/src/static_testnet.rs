@@ -303,6 +303,8 @@ impl StaticTestnet {
 
         persistent_dir.init()?;
 
+        // Wrap the persistent dir so the homeserver joins the testnet's local DHT
+        // instead of the mainnet bootstrap nodes from the on-disk config.
         let bootstrap_nodes: Vec<DomainPort> = self
             .bootstrap_nodes()
             .iter()
@@ -376,5 +378,175 @@ impl DataDir for TestnetDataDir {
 
     fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
         self.inner.read_or_create_keypair()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn testnet_data_dir_overrides_dht_config() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        persistent.init().unwrap();
+
+        let bootstrap = vec![DomainPort::from_str("127.0.0.1:6881").unwrap()];
+        let testnet_dir = TestnetDataDir {
+            inner: persistent.clone(),
+            dht_bootstrap_nodes: bootstrap.clone(),
+        };
+
+        let config = testnet_dir.read_or_create_config_file().unwrap();
+        assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
+        assert_eq!(config.pkdns.dht_relay_nodes, None);
+    }
+
+    #[test]
+    fn testnet_data_dir_delegates_path() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        let testnet_dir = TestnetDataDir {
+            inner: persistent.clone(),
+            dht_bootstrap_nodes: vec![],
+        };
+
+        assert_eq!(testnet_dir.path(), persistent.path());
+    }
+
+    #[test]
+    fn testnet_data_dir_delegates_keypair() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        persistent.init().unwrap();
+
+        let testnet_dir = TestnetDataDir {
+            inner: persistent.clone(),
+            dht_bootstrap_nodes: vec![],
+        };
+
+        let kp1 = persistent.read_or_create_keypair().unwrap();
+        let kp2 = testnet_dir.read_or_create_keypair().unwrap();
+        assert_eq!(kp1.public_key(), kp2.public_key());
+    }
+
+    #[test]
+    fn config_seeding_copies_file_to_empty_data_dir() {
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path().join("testnet");
+        let persistent = PersistentDataDir::new(data_dir.clone());
+
+        let source_config = temp.path().join("custom.toml");
+        let sample = ConfigToml::sample_string();
+        std::fs::write(&source_config, &sample).unwrap();
+
+        // Should copy since config.toml doesn't exist yet
+        std::fs::create_dir_all(persistent.path()).unwrap();
+        std::fs::copy(&source_config, persistent.get_config_file_path()).unwrap();
+
+        assert!(persistent.get_config_file_path().exists());
+        let content = std::fs::read_to_string(persistent.get_config_file_path()).unwrap();
+        assert_eq!(content, sample);
+    }
+
+    #[test]
+    fn config_seeding_errors_when_config_exists() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        persistent.init().unwrap();
+
+        // config.toml now exists from init()
+        assert!(persistent.get_config_file_path().exists());
+
+        // Trying to seed should fail
+        let source = temp.path().join("other.toml");
+        std::fs::write(&source, "test").unwrap();
+
+        let config_path = persistent.get_config_file_path();
+        assert!(config_path.exists(), "seeding should fail when config exists");
+    }
+
+    #[test]
+    fn builder_defaults_to_ephemeral() {
+        let builder = StaticTestnet::builder();
+        assert!(
+            matches!(builder.mode, TestnetMode::Ephemeral),
+            "Default mode should be Ephemeral"
+        );
+        assert!(builder.homeserver_config.is_none());
+    }
+
+    #[test]
+    fn builder_persistent_sets_mode() {
+        let dir = PathBuf::from("/tmp/test-data");
+        let builder = StaticTestnet::builder().persistent(dir.clone());
+        match &builder.mode {
+            TestnetMode::Persistent(d) => assert_eq!(d, &dir),
+            TestnetMode::Ephemeral => panic!("Expected Persistent mode"),
+        }
+    }
+
+    #[test]
+    fn builder_homeserver_config_sets_path() {
+        let config = PathBuf::from("/tmp/my-config.toml");
+        let builder = StaticTestnet::builder().homeserver_config(config.clone());
+        assert_eq!(builder.homeserver_config, Some(config));
+    }
+
+    #[test]
+    fn builder_chaining_all_options() {
+        let dir = PathBuf::from("/tmp/data");
+        let config = PathBuf::from("/tmp/config.toml");
+        let builder = StaticTestnet::builder()
+            .homeserver_config(config.clone())
+            .persistent(dir.clone());
+        assert_eq!(builder.homeserver_config, Some(config));
+        assert!(matches!(builder.mode, TestnetMode::Persistent(d) if d == dir));
+    }
+
+    #[test]
+    fn persistent_data_dir_init_creates_structure() {
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path().join("new-testnet");
+        let persistent = PersistentDataDir::new(data_dir.clone());
+        persistent.init().unwrap();
+
+        assert!(persistent.get_config_file_path().exists(), "config.toml should be created");
+        // Keypair file should exist after init
+        let kp = persistent.read_or_create_keypair().unwrap();
+        let kp2 = persistent.read_or_create_keypair().unwrap();
+        assert_eq!(kp.public_key(), kp2.public_key(), "Keypair should be stable across reads");
+    }
+
+    #[test]
+    fn seeded_config_is_readable_by_testnet_data_dir() {
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path().join("testnet");
+        let persistent = PersistentDataDir::new(data_dir);
+
+        // Write a config override with signup_mode = "token_required" (non-default for tests)
+        let config_content = "[general]\nsignup_mode = \"token_required\"\n";
+        let source = temp.path().join("seed.toml");
+        std::fs::write(&source, config_content).unwrap();
+
+        // Seed: create dir, copy config, init
+        std::fs::create_dir_all(persistent.path()).unwrap();
+        std::fs::copy(&source, persistent.get_config_file_path()).unwrap();
+        persistent.init().unwrap();
+
+        // Wrap in TestnetDataDir and read config
+        let bootstrap = vec![DomainPort::from_str("127.0.0.1:6881").unwrap()];
+        let testnet_dir = TestnetDataDir {
+            inner: persistent,
+            dht_bootstrap_nodes: bootstrap.clone(),
+        };
+
+        let config = testnet_dir.read_or_create_config_file().unwrap();
+        // Seeded value should be preserved
+        assert_eq!(config.general.signup_mode, pubky_homeserver::SignupMode::TokenRequired);
+        // DHT bootstrap should be overridden by TestnetDataDir
+        assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
+        assert_eq!(config.pkdns.dht_relay_nodes, None);
     }
 }
