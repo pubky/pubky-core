@@ -42,11 +42,11 @@ async fn main() -> Result<()> {
         builder = builder.homeserver_config(config);
     }
     if let Some(Command::Persist { data_dir }) = args.command {
-        builder = builder.persistent(data_dir.clone());
         tracing::info!(
             "Persistent testnet configured. data dir: {}",
             data_dir.display()
         );
+        builder = builder.persistent(data_dir);
     }
 
     let testnet = builder.start().await?;
