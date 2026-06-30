@@ -664,6 +664,13 @@ paths:
               value: [o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo]
             withCursor:
               value: ["o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo:42"]
+        - name: cursor
+          in: query
+          description: |
+            Resume from a single global cursor (admin server). On the client server, append
+            `:cursor` to each `user` value instead.
+          schema:
+            type: string
         - name: limit
           in: query
           description: Maximum total events to send.
