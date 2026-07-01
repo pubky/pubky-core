@@ -1,6 +1,9 @@
 # Testing
 
-This guide is for contributors running Rust tests, integration tests, or CI jobs. For local app development with a testnet, see [Local Development](./LOCAL_DEVELOPMENT.md). For standalone homeserver operation, see [Install and Run Pubky Homeserver](./INSTALL.md).
+This guide is for contributors running Rust tests, integration tests, or CI jobs. 
+
+> **Looking for something else?** 
+See [Local Development](./LOCAL_DEVELOPMENT.md) for running a local development testnet and [Install and Run Pubky Homeserver](./INSTALL.md) for deploying a standalone homeserver.
 
 ## PostgreSQL for Tests
 

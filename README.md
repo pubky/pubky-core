@@ -1,7 +1,7 @@
 <h1 align="center"><a href="https://pubky.org/"><img alt="Pubky" src="./.svg/pubky-core-logo.svg" width="200" /></a></h1>
 
 <h3 align="center">
-  Reference Homeserver implementation for Pubky.
+  Homeserver and SDKs for Pubky.
 </h3>
 
 <div align="center">
@@ -21,9 +21,8 @@
   <a href="https://deepwiki.com/pubky/pubky-core"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </div>
 
-## What Is This Repository?
 
-This repository contains the reference Pubky homeserver implementation and the crates needed to run, test, and integrate with it - including the Rust and JavaScript SDKs, a local testnet, and examples.
+This repository contains the Pubky homeserver and the crates needed to run, test, and integrate with it - including the Rust and JavaScript SDKs, a local testnet, and examples.
 
 ## What Is a Homeserver?
 
@@ -32,7 +31,7 @@ A Pubky Homeserver stores and serves user data. It exposes HTTP APIs for authent
 - Public-key based signup and signin
 - Third-party authorization through Pubky auth flows
 - File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like)
-- PKDNS/Pkarr publishing for homeserver discovery
+- PKDNS/PKARR publishing for homeserver discovery
 - Admin and metrics endpoints for operators
 
 ## Repository Layout
@@ -49,11 +48,9 @@ A Pubky Homeserver stores and serves user data. It exposes HTTP APIs for authent
 
 ## Getting Started
 
-| I want to... | Guide |
-| --- | --- |
-| Run a homeserver | [Install and Run Pubky Homeserver](./docs/INSTALL.md) |
-| Develop locally against a testnet | [Local Development](./docs/LOCAL_DEVELOPMENT.md) |
-| Run tests and CI | [Testing](./docs/TESTING.md) |
+- [Install and run a homeserver](./docs/INSTALL.md) |
+- [Develop locally against a testnet](./docs/LOCAL_DEVELOPMENT.md) |
+- [Run tests and CI](./docs/TESTING.md) |
 
 ## Use the SDK
 
@@ -76,12 +73,6 @@ See the [`pubky-sdk` README](./pubky-sdk) for API details or browse the [example
 
 ## Links
 
-- [Pubky website](https://pubky.org/)
-- [Documentation](https://docs.pubky.org/)
-- [Pkarr](https://pkarr.org/)
-- [Contributors Guide](./CONTRIBUTORS.md)
+- [Pubky Documentation website](https://pubky.org/)
+- [PKARR](https://github.com/pubky/pkarr)
 - [Release Process](./RELEASING.md)
-
----
-
-May the power ⚡ be with you. Powered by [pkarr](https://github.com/pubky/pkarr).

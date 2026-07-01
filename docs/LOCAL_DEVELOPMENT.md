@@ -2,7 +2,8 @@
 
 This guide covers setting up a local testnet for developing and testing against Pubky. Use it when you're modifying crates in this repo or building an app that talks to a local homeserver.
 
-For deploying a standalone homeserver, see [Install and Run Pubky Homeserver](./INSTALL.md). For running Rust tests and CI, see [Testing](./TESTING.md).
+> **Looking for something else?** 
+See [Install and Run Pubky Homeserver](./INSTALL.md) for deploying a standalone homeserver and [Testing](./TESTING.md) for test databases and CI setup.
 
 ## Contents
 
