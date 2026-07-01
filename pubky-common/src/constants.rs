@@ -9,10 +9,16 @@ pub mod reserved_param_keys {
 
 /// Local test network's hardcoded port numbers for local development.
 pub mod testnet_ports {
-    /// The local test network's hardcorded DHT bootstrapping node's port number.
+    /// The local test network's hardcoded DHT bootstrapping node's port number.
     pub const BOOTSTRAP: u16 = 6881;
-    /// The local test network's hardcorded Pkarr Relay port number.
+    /// The local test network's hardcoded Pkarr Relay port number.
     pub const PKARR_RELAY: u16 = 15411;
-    /// The local test network's hardcorded HTTP Relay port number.
+    /// The local test network's hardcoded HTTP Relay port number.
     pub const HTTP_RELAY: u16 = 15412;
+    /// The local test network's hardcoded Homeserver ICANN HTTP port number.
+    pub const HOMESERVER_ICANN_HTTP: u16 = 6286;
+    /// The local test network's hardcoded Homeserver Pubky HTTPS port number.
+    pub const HOMESERVER_PUBKY_HTTPS: u16 = 6287;
+    /// The local test network's hardcoded Homeserver admin port number.
+    pub const HOMESERVER_ADMIN: u16 = 6288;
 }
