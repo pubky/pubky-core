@@ -1,6 +1,6 @@
 # Pubky Homeserver
 
-Reference homeserver implementation for Pubky. Stores and serves user data via HTTP APIs with public-key authentication.
+A homeserver for Pubky. Stores and serves user data via HTTP APIs with public-key authentication.
 
 For standalone installation and operation, see [Install and Run Pubky Homeserver](../docs/INSTALL.md). For local app development, use the [local testnet guide](../docs/LOCAL_DEVELOPMENT.md).
 
