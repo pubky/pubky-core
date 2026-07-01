@@ -524,6 +524,91 @@ mod tests {
         assert_eq!(user_usage, 0);
     }
 
+    /// A `/priv/` write increments `used_bytes`
+    /// exactly like a `/pub/` write, and deleting it frees the bytes again.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_priv_write_increments_used_bytes() {
+        let db = SqlDb::test().await;
+        let layer = test_quota_layer(&db, None);
+        let operator = get_memory_operator().layer(layer);
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        let raw = pubkey.z32();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
+
+        operator
+            .write(format!("{raw}/priv/secret.txt").as_str(), vec![0; 10])
+            .await
+            .unwrap();
+        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
+        assert_eq!(usage, 10 + FILE_METADATA_SIZE);
+
+        operator
+            .delete(format!("{raw}/priv/secret.txt").as_str())
+            .await
+            .unwrap();
+        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
+        assert_eq!(usage, 0);
+    }
+
+    /// A `/priv/` write that exceeds the storage
+    /// quota is rejected, and the rejected write consumes no quota.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_priv_write_rejected_at_quota() {
+        let db = SqlDb::test().await;
+        let layer = test_quota_layer(&db, None);
+        let operator = get_memory_operator().layer(layer);
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        let raw = pubkey.z32();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
+
+        let one_mb: usize = 1024 * 1024;
+        let max_content = one_mb - FILE_METADATA_SIZE as usize;
+
+        operator
+            .write(
+                format!("{raw}/priv/big.txt").as_str(),
+                vec![0; max_content + 1],
+            )
+            .await
+            .expect_err("A /priv write over quota should be rejected");
+        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
+        assert_eq!(usage, 0, "Rejected /priv write must not consume quota");
+    }
+
+    /// `/priv/` and `/pub/` writes draw from the same per-user storage bucket,
+    /// so combined usage across both namespaces is enforced against one quota.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_priv_and_pub_share_quota_bucket() {
+        let db = SqlDb::test().await;
+        let layer = test_quota_layer(&db, None);
+        let operator = get_memory_operator().layer(layer);
+
+        let pubkey = pubky_common::crypto::Keypair::random().public_key();
+        let raw = pubkey.z32();
+        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await; // 1 MB
+
+        // 600 KB in /pub → fits within 1 MB.
+        operator
+            .write(format!("{raw}/pub/a.txt").as_str(), vec![0; 600_000])
+            .await
+            .expect("600 KB /pub write fits within 1 MB");
+
+        // Another 600 KB in /priv → combined 1.2 MB exceeds the shared quota.
+        operator
+            .write(format!("{raw}/priv/b.txt").as_str(), vec![0; 600_000])
+            .await
+            .expect_err("Combined /pub + /priv usage must exceed the shared quota");
+
+        // Usage reflects only the successful /pub write.
+        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
+        assert_eq!(usage, 600_000 + FILE_METADATA_SIZE);
+    }
+
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_quota_rechead() {

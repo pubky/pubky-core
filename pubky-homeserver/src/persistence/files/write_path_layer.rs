@@ -263,6 +263,38 @@ mod tests {
         assert_eq!(err.kind(), opendal::ErrorKind::PermissionDenied);
     }
 
+    /// `allowed_write_paths: ["/priv/app/"]` permits
+    /// `/priv/app/x`, and denies both `/priv/other/x` and `/pub/...`.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_priv_scoped_write_path_allows_and_denies() {
+        let db = SqlDb::test().await;
+        let operator = build_test_operator(&db);
+
+        let pubkey = create_user_with_write_paths(&db, Some(vec![wdp("/priv/app/")])).await;
+        let raw = pubkey.z32();
+
+        // Permitted: a path under the allowed `/priv/app/` directory.
+        operator
+            .write(&format!("{raw}/priv/app/x.json"), vec![0; 10])
+            .await
+            .expect("Write to allowed /priv/app/ path should succeed");
+
+        // Denied: a sibling `/priv/` directory outside the allow list.
+        let err = operator
+            .write(&format!("{raw}/priv/other/x.json"), vec![0; 10])
+            .await
+            .expect_err("Write to disallowed /priv sibling should fail");
+        assert_eq!(err.kind(), opendal::ErrorKind::PermissionDenied);
+
+        // Denied: `/pub/...` is not covered by a `/priv/`-scoped allow list.
+        let err = operator
+            .write(&format!("{raw}/pub/app/x.json"), vec![0; 10])
+            .await
+            .expect_err("A /priv-scoped allow list must deny /pub writes");
+        assert_eq!(err.kind(), opendal::ErrorKind::PermissionDenied);
+    }
+
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_empty_write_paths_blocks_all_writes() {
