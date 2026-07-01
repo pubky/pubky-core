@@ -1204,6 +1204,38 @@ mod tests {
     }
 
     #[test]
+    fn test_is_write_path_allowed_priv_prefix_match() {
+        // An allow list scoped to a `/priv/` directory
+        // permits paths under it and denies sibling `/priv/` dirs as well as `/pub/`.
+        // Path matching is namespace-agnostic — `/priv/` behaves exactly like `/pub/`.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/priv/app/")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/priv/app/x"));
+        assert!(q.is_write_path_allowed("/priv/app/sub/deep.json"));
+        assert!(!q.is_write_path_allowed("/priv/other/x"));
+        assert!(!q.is_write_path_allowed("/pub/app/x"));
+        // Prefix-but-not-child must not match (`/priv/apple/` shares a prefix).
+        assert!(!q.is_write_path_allowed("/priv/apple/x"));
+        // Directory entry does not match the bare path without a trailing slash.
+        assert!(!q.is_write_path_allowed("/priv/app"));
+    }
+
+    #[test]
+    fn test_is_write_path_allowed_mixed_pub_and_priv() {
+        // An allow list can span both namespaces at once.
+        let q = UserQuota {
+            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/priv/app/")]),
+            ..Default::default()
+        };
+        assert!(q.is_write_path_allowed("/pub/tokens/foo.json"));
+        assert!(q.is_write_path_allowed("/priv/app/foo.json"));
+        assert!(!q.is_write_path_allowed("/priv/other/foo.json"));
+        assert!(!q.is_write_path_allowed("/pub/other/foo.json"));
+    }
+
+    #[test]
     fn test_is_write_path_allowed_prefix_not_child_rejected() {
         // "/pub/tokenstore/" shares a prefix with "/pub/tokens/" but is NOT a child.
         let q = UserQuota {
