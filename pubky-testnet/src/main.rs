@@ -7,7 +7,7 @@ use pubky_testnet::StaticTestnet;
 #[derive(Parser, Debug)]
 struct Cli {
     /// Optional path to a homeserver config file.
-    /// In ephemeral mode (default), this overrides the default config.
+    /// In in-memory mode (default), this overrides the default config.
     /// With `persist`, this writes the initial config.toml on first run.
     #[clap(long)]
     homeserver_config: Option<PathBuf>,

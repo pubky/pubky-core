@@ -2,7 +2,12 @@
 
 A local test network for developing Pubky Core or applications depending on it.
 
-All resources are ephemeral, including the database, and all servers are cleaned up when the testnet is dropped.
+Two testnet types are provided:
+
+| Type | Ports | Storage | Use case |
+|------|-------|---------|----------|
+| [`EphemeralTestnet`] | Random | In-memory | Automated tests (`#[tokio::test]`) — parallel-safe, no port conflicts |
+| [`StaticTestnet`] | Fixed, well-known | In-memory or persistent | Interactive / CLI use - browser tests, mobile apps, manual debugging |
 
 ## Quickstart
 
@@ -188,9 +193,31 @@ Once cached locally, subsequent test runs won't pull again.
 
 ## Binary (Static Testnet)
 
-If you need to run the testnet in a separate process (e.g., to test Pubky Core in browsers), run the binary which creates these components with hardcoded configurations:
+If you need to run the testnet in a separate process (e.g., to test Pubky Core in browsers), run the binary which creates a `StaticTestnet` with fixed ports:
 
-1. A local DHT with bootstrapping nodes: `&["localhost:6881"]`
-2. A Pkarr Relay running on port [15411](pubky_common::constants::testnet_ports::PKARR_RELAY)
-3. A Homeserver with address `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
-4. An HTTP relay running on port [15412](pubky_common::constants::testnet_ports::HTTP_RELAY)
+| Component | Port |
+|-----------|------|
+| DHT bootstrap node | `6881` |
+| Pkarr relay | `15411` |
+| HTTP relay | `15412` |
+| Homeserver ICANN HTTP | `6286` |
+| Homeserver Pubky HTTPS | `6287` |
+| Homeserver admin | `6288` |
+
+Homeserver address: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`
+
+```bash
+# In-memory (state lost on shutdown)
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+  cargo run -p pubky-testnet
+
+# Persistent (state survives restarts)
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+  cargo run -p pubky-testnet -- persist ./my-testnet-data
+
+# Seed a custom config on first run
+TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
+  cargo run -p pubky-testnet -- --homeserver-config my-config.toml persist ./my-testnet-data
+```
+
+In persistent mode, the data directory is auto-initialized on first run with a `config.toml` and a server keypair. On subsequent runs, the existing state is picked up. The homeserver keeps the same identity across restarts.
