@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         builder = builder.persistent(data_dir);
     }
 
-    let testnet = builder.start().await?;
+    let testnet = builder.build().await?;
     tracing::info!("Testnet running");
     tracing::info!(
         "DHT Bootstrap Nodes: {}",

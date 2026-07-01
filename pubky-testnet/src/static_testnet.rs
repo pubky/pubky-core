@@ -14,9 +14,9 @@ use pubky_homeserver::{
 
 /// How the testnet stores homeserver state.
 #[derive(Debug)]
-enum TestnetMode {
+enum StorageMode {
     /// All state lives in memory / temp dirs and is lost on shutdown.
-    Ephemeral,
+    InMemory,
     /// State is persisted to the given data directory across restarts.
     Persistent(PathBuf),
 }
@@ -29,39 +29,39 @@ enum TestnetMode {
 /// # async fn example() -> anyhow::Result<()> {
 /// use pubky_testnet::StaticTestnet;
 ///
-/// // Ephemeral (default)
-/// let testnet = StaticTestnet::builder().start().await?;
+/// // In-memory (default)
+/// let testnet = StaticTestnet::builder().build().await?;
 ///
-/// // Ephemeral with custom config
+/// // In-memory with custom config
 /// let testnet = StaticTestnet::builder()
 ///     .homeserver_config("my-config.toml".into())
-///     .start()
+///     .build()
 ///     .await?;
 ///
 /// // Persistent
 /// let testnet = StaticTestnet::builder()
 ///     .persistent("./my-testnet".into())
-///     .start()
+///     .build()
 ///     .await?;
 /// # Ok(())
 /// # }
 /// ```
 pub struct StaticTestnetBuilder {
     homeserver_config: Option<PathBuf>,
-    mode: TestnetMode,
+    mode: StorageMode,
 }
 
 impl StaticTestnetBuilder {
     fn new() -> Self {
         Self {
             homeserver_config: None,
-            mode: TestnetMode::Ephemeral,
+            mode: StorageMode::InMemory,
         }
     }
 
     /// Set a custom homeserver config file.
     ///
-    /// In ephemeral mode, this overrides the default config.
+    /// In in-memory mode, this overrides the default config.
     /// In persistent mode, this seeds the initial `config.toml` on first run
     /// (errors if one already exists in the data directory).
     pub fn homeserver_config(mut self, path: PathBuf) -> Self {
@@ -74,14 +74,32 @@ impl StaticTestnetBuilder {
     /// The directory is auto-initialized on first run (config.toml, secret, data/files/).
     /// On subsequent runs, the existing state is picked up.
     pub fn persistent(mut self, data_dir: PathBuf) -> Self {
-        self.mode = TestnetMode::Persistent(data_dir);
+        self.mode = StorageMode::Persistent(data_dir);
         self
     }
 
-    /// Start the testnet with the configured options.
-    pub async fn start(self) -> anyhow::Result<StaticTestnet> {
-        let mut testnet = StaticTestnet::start_infra(self.homeserver_config, self.mode).await?;
-        testnet.run_homeserver().await?;
+    /// Build and start the testnet with the configured options.
+    pub async fn build(self) -> anyhow::Result<StaticTestnet> {
+        let mut testnet = StaticTestnet::start_infra().await?;
+
+        let persistent = match self.mode {
+            StorageMode::InMemory => {
+                testnet
+                    .run_in_memory_homeserver(self.homeserver_config.as_deref())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
+                false
+            }
+            StorageMode::Persistent(data_dir) => {
+                testnet
+                    .run_persistent_homeserver(data_dir, self.homeserver_config.as_deref())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to run persistent homeserver: {}", e))?;
+                true
+            }
+        };
+        testnet.persistent = persistent;
+
         Ok(testnet)
     }
 }
@@ -96,10 +114,8 @@ impl StaticTestnetBuilder {
 pub struct StaticTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
-    /// Optional path to the homeserver config file if set.
-    homeserver_config: Option<PathBuf>,
-    /// How the homeserver stores state.
-    mode: TestnetMode,
+    /// Whether the homeserver is using persistent on-disk storage.
+    persistent: bool,
     #[allow(dead_code)]
     fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
@@ -112,22 +128,19 @@ impl StaticTestnet {
         StaticTestnetBuilder::new()
     }
 
-    /// Run an ephemeral testnet with the default homeserver config.
+    /// Run an in-memory testnet with the default homeserver config.
     pub async fn start() -> anyhow::Result<Self> {
-        Self::builder().start().await
+        Self::builder().build().await
     }
 
     /// Whether this testnet is running in persistent mode.
     pub fn is_persistent(&self) -> bool {
-        matches!(self.mode, TestnetMode::Persistent(_))
+        self.persistent
     }
 
     /// Start the shared infrastructure (DHT bootstrap node, pkarr relay, http relay)
     /// without a homeserver.
-    async fn start_infra(
-        homeserver_config: Option<PathBuf>,
-        mode: TestnetMode,
-    ) -> anyhow::Result<Self> {
+    async fn start_infra() -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
             .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
@@ -136,8 +149,7 @@ impl StaticTestnet {
             testnet,
             fixed_bootstrap_node: fixed_boostrap,
             temp_dirs: vec![],
-            homeserver_config,
-            mode,
+            persistent: false,
         };
 
         testnet
@@ -152,27 +164,7 @@ impl StaticTestnet {
         Ok(testnet)
     }
 
-    /// Start the homeserver based on the configured mode.
-    async fn run_homeserver(&mut self) -> anyhow::Result<()> {
-        // Extract the persistent dir before matching so the borrow on self.mode
-        // is released before the &mut self calls below.
-        let persistent_dir = match &self.mode {
-            TestnetMode::Persistent(dir) => Some(dir.clone()),
-            TestnetMode::Ephemeral => None,
-        };
-        match persistent_dir {
-            None => self
-                .run_ephemeral_homeserver()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e)),
-            Some(dir) => self
-                .run_persistent_homeserver(dir)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to run persistent homeserver: {}", e)),
-        }
-    }
-
-    /// Create an additional homeserver with a random keypair
+    /// Create an additional homeserver with a random keypair.
     pub async fn create_random_homeserver(
         &mut self,
     ) -> anyhow::Result<&pubky_homeserver::HomeserverApp> {
@@ -282,7 +274,7 @@ impl StaticTestnet {
     /// Creates a fixed http relay on port 15412.
     async fn run_fixed_http_relay(&mut self) -> anyhow::Result<()> {
         let relay = HttpRelay::builder()
-            .http_port(15412) // Random available port
+            .http_port(15412)
             .cors_allow_all(true)
             .run()
             .await?;
@@ -290,10 +282,25 @@ impl StaticTestnet {
         Ok(())
     }
 
-    async fn run_persistent_homeserver(&mut self, data_dir: PathBuf) -> anyhow::Result<()> {
+    fn parse_bootstrap_nodes(&self) -> anyhow::Result<Vec<DomainPort>> {
+        self.bootstrap_nodes()
+            .iter()
+            .map(|node| {
+                DomainPort::from_str(node).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse bootstrap node '{}': {}", node, e)
+                })
+            })
+            .collect()
+    }
+
+    async fn run_persistent_homeserver(
+        &mut self,
+        data_dir: PathBuf,
+        config_path: Option<&Path>,
+    ) -> anyhow::Result<()> {
         let persistent_dir = PersistentDataDir::new(data_dir);
 
-        if let Some(source) = &self.homeserver_config {
+        if let Some(source) = config_path {
             seed_config(source, &persistent_dir)?;
         }
 
@@ -301,18 +308,9 @@ impl StaticTestnet {
 
         // Wrap the persistent dir so the homeserver joins the testnet's local DHT
         // instead of the mainnet bootstrap nodes from the on-disk config.
-        let bootstrap_nodes: Vec<DomainPort> = self
-            .bootstrap_nodes()
-            .iter()
-            .map(|node| {
-                DomainPort::from_str(node)
-                    .map_err(|e| anyhow::anyhow!("Failed to parse bootstrap node '{}': {}", node, e))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
         let testnet_dir = TestnetDataDir {
             inner: persistent_dir,
-            dht_bootstrap_nodes: bootstrap_nodes,
+            dht_bootstrap_nodes: self.parse_bootstrap_nodes()?,
         };
 
         let context = AppContext::read_from(testnet_dir).await?;
@@ -321,22 +319,14 @@ impl StaticTestnet {
         Ok(())
     }
 
-    async fn run_ephemeral_homeserver(&mut self) -> anyhow::Result<()> {
-        let mut config = if let Some(config_path) = &self.homeserver_config {
+    async fn run_in_memory_homeserver(&mut self, config_path: Option<&Path>) -> anyhow::Result<()> {
+        let mut config = if let Some(config_path) = config_path {
             ConfigToml::from_file(config_path)?
         } else {
             ConfigToml::default_test_config()
         };
         let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
-        config.pkdns.dht_bootstrap_nodes = Some(
-            self.bootstrap_nodes()
-                .iter()
-                .map(|node| {
-                    DomainPort::from_str(node)
-                        .map_err(|e| anyhow::anyhow!("Failed to parse bootstrap node '{}': {}", node, e))
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?,
-        );
+        config.pkdns.dht_bootstrap_nodes = Some(self.parse_bootstrap_nodes()?);
         config.pkdns.dht_relay_nodes = None;
         config.drive.icann_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
@@ -392,15 +382,14 @@ impl DataDir for TestnetDataDir {
         let mut config = self.inner.read_or_create_config_file()?;
         config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes.clone());
         config.pkdns.dht_relay_nodes = None;
-        // Apply the same fixed ports as the ephemeral path so the "static"
-        // testnet contract (well-known ports) holds regardless of mode.
+        // Apply the same fixed ports as the in-memory path so the "static"
+        // testnet contract (well-known ports) holds regardless of storage mode.
         config.drive.icann_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
         config.drive.pubky_listen_socket =
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
         config.admin.enabled = true;
-        config.admin.listen_socket =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
+        config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
         Ok(config)
     }
 
@@ -486,7 +475,10 @@ mod tests {
         std::fs::write(&source, "[general]\nsignup_mode = \"open\"\n").unwrap();
 
         let result = seed_config(&source, &persistent);
-        assert!(result.is_err(), "Seeding should be rejected when config.toml already exists");
+        assert!(
+            result.is_err(),
+            "Seeding should be rejected when config.toml already exists"
+        );
         assert!(
             result.unwrap_err().to_string().contains("already exists"),
             "Error message should mention existing config"
@@ -494,11 +486,11 @@ mod tests {
     }
 
     #[test]
-    fn builder_defaults_to_ephemeral() {
+    fn builder_defaults_to_in_memory() {
         let builder = StaticTestnet::builder();
         assert!(
-            matches!(builder.mode, TestnetMode::Ephemeral),
-            "Default mode should be Ephemeral"
+            matches!(builder.mode, StorageMode::InMemory),
+            "Default mode should be InMemory"
         );
         assert!(builder.homeserver_config.is_none());
     }
@@ -508,8 +500,8 @@ mod tests {
         let dir = PathBuf::from("/tmp/test-data");
         let builder = StaticTestnet::builder().persistent(dir.clone());
         match &builder.mode {
-            TestnetMode::Persistent(d) => assert_eq!(d, &dir),
-            TestnetMode::Ephemeral => panic!("Expected Persistent mode"),
+            StorageMode::Persistent(d) => assert_eq!(d, &dir),
+            StorageMode::InMemory => panic!("Expected Persistent mode"),
         }
     }
 
@@ -528,7 +520,7 @@ mod tests {
             .homeserver_config(config.clone())
             .persistent(dir.clone());
         assert_eq!(builder.homeserver_config, Some(config));
-        assert!(matches!(builder.mode, TestnetMode::Persistent(d) if d == dir));
+        assert!(matches!(builder.mode, StorageMode::Persistent(d) if d == dir));
     }
 
     #[test]
@@ -538,11 +530,18 @@ mod tests {
         let persistent = PersistentDataDir::new(data_dir.clone());
         persistent.init().unwrap();
 
-        assert!(persistent.get_config_file_path().exists(), "config.toml should be created");
+        assert!(
+            persistent.get_config_file_path().exists(),
+            "config.toml should be created"
+        );
         // Keypair file should exist after init
         let kp = persistent.read_or_create_keypair().unwrap();
         let kp2 = persistent.read_or_create_keypair().unwrap();
-        assert_eq!(kp.public_key(), kp2.public_key(), "Keypair should be stable across reads");
+        assert_eq!(
+            kp.public_key(),
+            kp2.public_key(),
+            "Keypair should be stable across reads"
+        );
     }
 
     #[test]
@@ -570,7 +569,10 @@ mod tests {
 
         let config = testnet_dir.read_or_create_config_file().unwrap();
         // Seeded value should be preserved
-        assert_eq!(config.general.signup_mode, pubky_homeserver::SignupMode::TokenRequired);
+        assert_eq!(
+            config.general.signup_mode,
+            pubky_homeserver::SignupMode::TokenRequired
+        );
         // DHT bootstrap should be overridden by TestnetDataDir
         assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
         assert_eq!(config.pkdns.dht_relay_nodes, None);
@@ -612,12 +614,19 @@ mod tests {
         let kp2 = dir2.read_or_create_keypair().unwrap();
         let config2 = dir2.read_or_create_config_file().unwrap();
 
-        assert_eq!(kp1.public_key(), kp2.public_key(), "Keypair should persist across restarts");
+        assert_eq!(
+            kp1.public_key(),
+            kp2.public_key(),
+            "Keypair should persist across restarts"
+        );
         assert_eq!(
             config1.general.signup_mode, config2.general.signup_mode,
             "Config should persist across restarts"
         );
-        assert_eq!(config2.general.signup_mode, pubky_homeserver::SignupMode::TokenRequired);
+        assert_eq!(
+            config2.general.signup_mode,
+            pubky_homeserver::SignupMode::TokenRequired
+        );
     }
 
     /// Integration test: start a persistent-mode testnet with a test DB config,
@@ -663,7 +672,7 @@ type = "file_system"
         let testnet = StaticTestnet::builder()
             .homeserver_config(config_path)
             .persistent(data_dir.clone())
-            .start()
+            .build()
             .await
             .expect("persistent testnet should start");
 
@@ -675,8 +684,14 @@ type = "file_system"
 
         // Verify the data dir was initialized with config + keypair on disk.
         let persistent_dir = PersistentDataDir::new(data_dir.clone());
-        assert!(persistent_dir.get_config_file_path().exists(), "config.toml should exist on disk");
-        assert!(persistent_dir.get_secret_file_path().exists(), "secret key should exist on disk");
+        assert!(
+            persistent_dir.get_config_file_path().exists(),
+            "config.toml should exist on disk"
+        );
+        assert!(
+            persistent_dir.get_secret_file_path().exists(),
+            "secret key should exist on disk"
+        );
 
         // Verify the keypair on disk is stable (same as what the homeserver uses).
         let kp = persistent_dir.read_or_create_keypair().unwrap();
