@@ -6,10 +6,16 @@ use pubky_homeserver::{ConfigToml, ConnectionString, HomeserverApp, MockDataDir}
 #[cfg(feature = "docker-postgres")]
 use crate::docker_postgres::DockerPostgres;
 
-/// A simple testnet with random ports assigned for all components.
+/// A testnet for **automated tests** — all ports are random and all state is in-memory.
 ///
-/// Components included:
-/// - A local DHT with bootstrapping nodes.
+/// Use this when writing `#[tokio::test]` tests. Every instance gets its own
+/// isolated DHT and homeserver, so tests can run in parallel without port
+/// conflicts.
+///
+/// For interactive / CLI use with fixed well-known ports, see [`StaticTestnet`](crate::StaticTestnet).
+///
+/// # Components
+/// - A local DHT with bootstrapping nodes (random ports).
 /// - A homeserver (default pubkey: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`).
 /// - An HTTP relay (optional, use `.with_http_relay()` to enable).
 ///

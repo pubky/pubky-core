@@ -8,9 +8,32 @@ use std::{
 
 use crate::Testnet;
 use http_relay::HttpRelay;
+use pubky_common::constants::testnet_ports;
 use pubky_homeserver::{
     AppContext, ConfigToml, DataDir, DomainPort, HomeserverApp, MockDataDir, PersistentDataDir,
 };
+
+/// The bind address used for all static testnet listeners.
+const BIND_ALL: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+
+/// The deterministic keypair used by all static/ephemeral testnets.
+/// Produces pubkey `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
+fn testnet_keypair() -> pubky_common::crypto::Keypair {
+    pubky_common::crypto::Keypair::from_secret(&[0; 32])
+}
+
+/// Apply the fixed static-testnet port and DHT overrides to a config.
+fn apply_static_testnet_overrides(
+    config: &mut ConfigToml,
+    bootstrap_nodes: Vec<DomainPort>,
+) {
+    config.pkdns.dht_bootstrap_nodes = Some(bootstrap_nodes);
+    config.pkdns.dht_relay_nodes = None;
+    config.drive.icann_listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ICANN_HTTP);
+    config.drive.pubky_listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_PUBKY_HTTPS);
+    config.admin.enabled = true;
+    config.admin.listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ADMIN);
+}
 
 /// How the testnet stores homeserver state.
 #[derive(Debug)]
@@ -87,7 +110,7 @@ impl StaticTestnetBuilder {
                 testnet
                     .run_in_memory_homeserver(self.homeserver_config.as_deref())
                     .await
-                    .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Failed to run in-memory homeserver: {}", e))?;
                 false
             }
             StorageMode::Persistent(data_dir) => {
@@ -104,13 +127,28 @@ impl StaticTestnetBuilder {
     }
 }
 
-/// A simple testnet with:
+/// A testnet for **interactive / CLI use** — all ports are fixed and well-known.
 ///
-/// - A local DHT with a boostrap node on port 6881.
-/// - pkarr relay on port 15411.
-/// - http relay on port 15412.
-/// - A homeserver with address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
-/// - An admin server for the homeserver on port 6288.
+/// Use this when you need a long-running testnet that external processes can
+/// connect to (e.g. browser tests, mobile apps, or manual debugging). The fixed
+/// ports make it easy to hard-code endpoints in client configuration.
+///
+/// Supports two storage modes:
+/// - **In-memory** (default) — all state is lost on shutdown.
+/// - **Persistent** — state is stored on disk and survives restarts.
+///   Enable with `.persistent(data_dir)` on the builder.
+///
+/// For automated tests with random ports, see [`EphemeralTestnet`](crate::EphemeralTestnet).
+///
+/// # Fixed ports
+/// - DHT bootstrap node: `6881`
+/// - pkarr relay: `15411`
+/// - HTTP relay: `15412`
+/// - Homeserver ICANN HTTP: `6286`
+/// - Homeserver Pubky HTTPS: `6287`
+/// - Homeserver admin: `6288`
+///
+/// The homeserver address is hardcoded to `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
 pub struct StaticTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
@@ -133,6 +171,15 @@ impl StaticTestnet {
         Self::builder().build().await
     }
 
+    /// Run an in-memory testnet with a custom homeserver config.
+    #[deprecated(
+        since = "0.9.0",
+        note = "Use StaticTestnet::builder().homeserver_config(path).build() instead"
+    )]
+    pub async fn start_with_homeserver_config(config_path: PathBuf) -> anyhow::Result<Self> {
+        Self::builder().homeserver_config(config_path).build().await
+    }
+
     /// Whether this testnet is running in persistent mode.
     pub fn is_persistent(&self) -> bool {
         self.persistent
@@ -143,7 +190,7 @@ impl StaticTestnet {
     async fn start_infra() -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
         let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
-            .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port 6881: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port {}: {}", testnet_ports::BOOTSTRAP, e))?;
 
         let mut testnet = Self {
             testnet,
@@ -155,11 +202,11 @@ impl StaticTestnet {
         testnet
             .run_fixed_pkarr_relays()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port 15411: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port {}: {}", testnet_ports::PKARR_RELAY, e))?;
         testnet
             .run_fixed_http_relay()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to run http relay on port 15412: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to run http relay on port {}: {}", testnet_ports::HTTP_RELAY, e))?;
 
         Ok(testnet)
     }
@@ -237,28 +284,29 @@ impl StaticTestnet {
     fn run_fixed_boostrap_node(
         other_bootstrap_nodes: &[String],
     ) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
+        let port_suffix = format!(":{}", testnet_ports::BOOTSTRAP);
         if other_bootstrap_nodes
             .iter()
-            .any(|node| node.contains("6881"))
+            .any(|node| node.ends_with(&port_suffix))
         {
             return Ok(None);
         }
 
         let mut builder = pkarr::mainline::Dht::builder();
         let dht = builder
-            .port(6881)
+            .port(testnet_ports::BOOTSTRAP)
             .bootstrap(other_bootstrap_nodes)
             .server_mode()
             .build()?;
         Ok(Some(dht))
     }
 
-    /// Creates a fixed pkarr relay on port 15411 with a temporary storage directory.
+    /// Creates a fixed pkarr relay with a temporary storage directory.
     async fn run_fixed_pkarr_relays(&mut self) -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?; // Gets cleaned up automatically when it drops
         let mut builder = pkarr_relay::Relay::builder();
         builder
-            .http_port(15411)
+            .http_port(testnet_ports::PKARR_RELAY)
             .storage(temp_dir.path().to_path_buf())
             .disable_rate_limiter()
             .pkarr(|pkarr| {
@@ -271,10 +319,10 @@ impl StaticTestnet {
         Ok(())
     }
 
-    /// Creates a fixed http relay on port 15412.
+    /// Creates a fixed http relay.
     async fn run_fixed_http_relay(&mut self) -> anyhow::Result<()> {
         let relay = HttpRelay::builder()
-            .http_port(15412)
+            .http_port(testnet_ports::HTTP_RELAY)
             .cors_allow_all(true)
             .run()
             .await?;
@@ -304,7 +352,11 @@ impl StaticTestnet {
             seed_config(source, &persistent_dir)?;
         }
 
-        persistent_dir.init()?;
+        // Don't call persistent_dir.init() here — it would create a random
+        // keypair before TestnetDataDir gets a chance to seed the deterministic
+        // one. AppContext::read_from() below will call the DataDir methods on
+        // our TestnetDataDir wrapper, which seeds the correct keypair.
+        persistent_dir.ensure_data_dir_exists_and_is_writable()?;
 
         // Wrap the persistent dir so the homeserver joins the testnet's local DHT
         // instead of the mainnet bootstrap nodes from the on-disk config.
@@ -325,16 +377,8 @@ impl StaticTestnet {
         } else {
             ConfigToml::default_test_config()
         };
-        let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
-        config.pkdns.dht_bootstrap_nodes = Some(self.parse_bootstrap_nodes()?);
-        config.pkdns.dht_relay_nodes = None;
-        config.drive.icann_listen_socket =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
-        config.drive.pubky_listen_socket =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
-        config.admin.enabled = true; // Enable admin server for static testnet
-        config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
-        let mock = MockDataDir::new(config, Some(keypair))?;
+        apply_static_testnet_overrides(&mut config, self.parse_bootstrap_nodes()?);
+        let mock = MockDataDir::new(config, Some(testnet_keypair()))?;
 
         let homeserver = HomeserverApp::start_with_mock_data_dir(mock).await?;
         self.testnet.homeservers.push(homeserver);
@@ -380,20 +424,23 @@ impl DataDir for TestnetDataDir {
 
     fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
         let mut config = self.inner.read_or_create_config_file()?;
-        config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes.clone());
-        config.pkdns.dht_relay_nodes = None;
-        // Apply the same fixed ports as the in-memory path so the "static"
-        // testnet contract (well-known ports) holds regardless of storage mode.
-        config.drive.icann_listen_socket =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
-        config.drive.pubky_listen_socket =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
-        config.admin.enabled = true;
-        config.admin.listen_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
+        apply_static_testnet_overrides(&mut config, self.dht_bootstrap_nodes.clone());
         Ok(config)
     }
 
     fn read_or_create_keypair(&self) -> anyhow::Result<pubky_common::crypto::Keypair> {
+        let secret_file = self.inner.get_secret_file_path();
+        if !secret_file.exists() {
+            // Seed the deterministic keypair so the persistent testnet uses the
+            // same well-known identity as the in-memory one.
+            let keypair = testnet_keypair();
+            keypair.write_secret_key_file(&secret_file)?;
+            tracing::info!(
+                "Seeded deterministic keypair (pubkey {}) at {}",
+                keypair.public_key(),
+                secret_file.display()
+            );
+        }
         self.inner.read_or_create_keypair()
     }
 }
@@ -433,19 +480,53 @@ mod tests {
     }
 
     #[test]
-    fn testnet_data_dir_delegates_keypair() {
+    fn testnet_data_dir_seeds_deterministic_keypair() {
         let temp = TempDir::new().unwrap();
         let persistent = PersistentDataDir::new(temp.path().to_path_buf());
         persistent.init().unwrap();
+
+        // Remove the random keypair that init() created so TestnetDataDir
+        // seeds the deterministic one instead.
+        std::fs::remove_file(persistent.get_secret_file_path()).unwrap();
 
         let testnet_dir = TestnetDataDir {
             inner: persistent.clone(),
             dht_bootstrap_nodes: vec![],
         };
 
-        let kp1 = persistent.read_or_create_keypair().unwrap();
+        let expected = testnet_keypair();
+        let kp = testnet_dir.read_or_create_keypair().unwrap();
+        assert_eq!(
+            kp.public_key(),
+            expected.public_key(),
+            "TestnetDataDir should seed the deterministic keypair"
+        );
+
+        // Second call should return the same key (read from disk).
         let kp2 = testnet_dir.read_or_create_keypair().unwrap();
-        assert_eq!(kp1.public_key(), kp2.public_key());
+        assert_eq!(kp.public_key(), kp2.public_key());
+    }
+
+    #[test]
+    fn testnet_data_dir_preserves_existing_keypair() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        persistent.init().unwrap();
+
+        // init() created a random keypair — TestnetDataDir should NOT overwrite it.
+        let existing_kp = persistent.read_or_create_keypair().unwrap();
+
+        let testnet_dir = TestnetDataDir {
+            inner: persistent,
+            dht_bootstrap_nodes: vec![],
+        };
+
+        let kp = testnet_dir.read_or_create_keypair().unwrap();
+        assert_eq!(
+            kp.public_key(),
+            existing_kp.public_key(),
+            "TestnetDataDir should not overwrite an existing keypair"
+        );
     }
 
     #[test]
@@ -577,9 +658,9 @@ mod tests {
         assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
         assert_eq!(config.pkdns.dht_relay_nodes, None);
         // Fixed ports should be applied
-        assert_eq!(config.drive.icann_listen_socket.port(), 6286);
-        assert_eq!(config.drive.pubky_listen_socket.port(), 6287);
-        assert_eq!(config.admin.listen_socket.port(), 6288);
+        assert_eq!(config.drive.icann_listen_socket.port(), testnet_ports::HOMESERVER_ICANN_HTTP);
+        assert_eq!(config.drive.pubky_listen_socket.port(), testnet_ports::HOMESERVER_PUBKY_HTTPS);
+        assert_eq!(config.admin.listen_socket.port(), testnet_ports::HOMESERVER_ADMIN);
         assert!(config.admin.enabled);
     }
 
@@ -588,14 +669,18 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let data_dir = temp.path().join("testnet");
         let bootstrap = vec![DomainPort::from_str("127.0.0.1:6881").unwrap()];
+        let expected_key = testnet_keypair();
 
-        // First "run": seed config, init, record keypair
+        // First "run": seed config, let TestnetDataDir create the keypair
         let source = temp.path().join("seed.toml");
         std::fs::write(&source, "[general]\nsignup_mode = \"token_required\"\n").unwrap();
 
         let persistent1 = PersistentDataDir::new(data_dir.clone());
         seed_config(&source, &persistent1).unwrap();
-        persistent1.init().unwrap();
+        // Only init the dir structure + config, but NOT the keypair — let
+        // TestnetDataDir seed the deterministic one.
+        persistent1.ensure_data_dir_exists_and_is_writable().unwrap();
+        persistent1.read_or_create_config_file().unwrap();
 
         let dir1 = TestnetDataDir {
             inner: persistent1,
@@ -603,6 +688,11 @@ mod tests {
         };
         let kp1 = dir1.read_or_create_keypair().unwrap();
         let config1 = dir1.read_or_create_config_file().unwrap();
+        assert_eq!(
+            kp1.public_key(),
+            expected_key.public_key(),
+            "First run should use the deterministic keypair"
+        );
         drop(dir1);
 
         // Second "run": same dir, no seeding — simulates restart
