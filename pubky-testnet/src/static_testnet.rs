@@ -13,7 +13,7 @@ use pubky_homeserver::{
 };
 
 /// How the testnet stores homeserver state.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum TestnetMode {
     /// All state lives in memory / temp dirs and is lost on shutdown.
     Ephemeral,
@@ -86,7 +86,7 @@ impl StaticTestnetBuilder {
     }
 }
 
-/// A simple testnet with
+/// A simple testnet with:
 ///
 /// - A local DHT with a boostrap node on port 6881.
 /// - pkarr relay on port 15411.
@@ -154,13 +154,19 @@ impl StaticTestnet {
 
     /// Start the homeserver based on the configured mode.
     async fn run_homeserver(&mut self) -> anyhow::Result<()> {
-        match &self.mode {
-            TestnetMode::Ephemeral => self
+        // Extract the persistent dir before matching so the borrow on self.mode
+        // is released before the &mut self calls below.
+        let persistent_dir = match &self.mode {
+            TestnetMode::Persistent(dir) => Some(dir.clone()),
+            TestnetMode::Ephemeral => None,
+        };
+        match persistent_dir {
+            None => self
                 .run_ephemeral_homeserver()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to run homeserver on port 6288: {}", e)),
-            TestnetMode::Persistent(data_dir) => self
-                .run_persistent_homeserver(data_dir.clone())
+            Some(dir) => self
+                .run_persistent_homeserver(dir)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to run persistent homeserver: {}", e)),
         }
@@ -286,19 +292,9 @@ impl StaticTestnet {
 
     async fn run_persistent_homeserver(&mut self, data_dir: PathBuf) -> anyhow::Result<()> {
         let persistent_dir = PersistentDataDir::new(data_dir);
-        let config_path = persistent_dir.get_config_file_path();
 
         if let Some(source) = &self.homeserver_config {
-            if config_path.exists() {
-                anyhow::bail!(
-                    "config.toml already exists at {}. Remove --homeserver-config to use the existing config, \
-                     or delete the file to replace it.",
-                    config_path.display()
-                );
-            }
-            std::fs::create_dir_all(persistent_dir.path())?;
-            std::fs::copy(source, &config_path)?;
-            tracing::info!("Copied {} → {}", source.display(), config_path.display());
+            seed_config(source, &persistent_dir)?;
         }
 
         persistent_dir.init()?;
@@ -356,6 +352,23 @@ impl StaticTestnet {
     }
 }
 
+/// Copy the source config file into the persistent data directory.
+/// Errors if a `config.toml` already exists at the destination.
+fn seed_config(source: &Path, persistent_dir: &PersistentDataDir) -> anyhow::Result<()> {
+    let config_path = persistent_dir.get_config_file_path();
+    if config_path.exists() {
+        anyhow::bail!(
+            "config.toml already exists at {}. Remove --homeserver-config to use the existing config, \
+             or delete the file to replace it.",
+            config_path.display()
+        );
+    }
+    std::fs::create_dir_all(persistent_dir.path())?;
+    std::fs::copy(source, &config_path)?;
+    tracing::info!("Copied {} → {}", source.display(), config_path.display());
+    Ok(())
+}
+
 /// A [`PersistentDataDir`] wrapper that overrides DHT config for testnet use.
 ///
 /// This ensures the homeserver connects to the testnet's local DHT bootstrap
@@ -379,6 +392,15 @@ impl DataDir for TestnetDataDir {
         let mut config = self.inner.read_or_create_config_file()?;
         config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes.clone());
         config.pkdns.dht_relay_nodes = None;
+        // Apply the same fixed ports as the ephemeral path so the "static"
+        // testnet contract (well-known ports) holds regardless of mode.
+        config.drive.icann_listen_socket =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6286);
+        config.drive.pubky_listen_socket =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6287);
+        config.admin.enabled = true;
+        config.admin.listen_socket =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6288);
         Ok(config)
     }
 
@@ -441,15 +463,13 @@ mod tests {
     fn config_seeding_copies_file_to_empty_data_dir() {
         let temp = TempDir::new().unwrap();
         let data_dir = temp.path().join("testnet");
-        let persistent = PersistentDataDir::new(data_dir.clone());
+        let persistent = PersistentDataDir::new(data_dir);
 
         let source_config = temp.path().join("custom.toml");
         let sample = ConfigToml::sample_string();
         std::fs::write(&source_config, &sample).unwrap();
 
-        // Should copy since config.toml doesn't exist yet
-        std::fs::create_dir_all(persistent.path()).unwrap();
-        std::fs::copy(&source_config, persistent.get_config_file_path()).unwrap();
+        seed_config(&source_config, &persistent).unwrap();
 
         assert!(persistent.get_config_file_path().exists());
         let content = std::fs::read_to_string(persistent.get_config_file_path()).unwrap();
@@ -462,20 +482,14 @@ mod tests {
         let persistent = PersistentDataDir::new(temp.path().to_path_buf());
         persistent.init().unwrap();
 
-        // config.toml now exists from init()
-        let config_path = persistent.get_config_file_path();
-        assert!(config_path.exists());
-
-        // Simulate the same check that run_persistent_homeserver performs:
-        // if homeserver_config is set AND config.toml already exists, it should be an error.
         let source = temp.path().join("other.toml");
         std::fs::write(&source, "[general]\nsignup_mode = \"open\"\n").unwrap();
 
-        let has_homeserver_config = true;
-        let would_error = has_homeserver_config && config_path.exists();
+        let result = seed_config(&source, &persistent);
+        assert!(result.is_err(), "Seeding should be rejected when config.toml already exists");
         assert!(
-            would_error,
-            "Seeding should be rejected when config.toml already exists in the data directory"
+            result.unwrap_err().to_string().contains("already exists"),
+            "Error message should mention existing config"
         );
     }
 
@@ -560,6 +574,50 @@ mod tests {
         // DHT bootstrap should be overridden by TestnetDataDir
         assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
         assert_eq!(config.pkdns.dht_relay_nodes, None);
+        // Fixed ports should be applied
+        assert_eq!(config.drive.icann_listen_socket.port(), 6286);
+        assert_eq!(config.drive.pubky_listen_socket.port(), 6287);
+        assert_eq!(config.admin.listen_socket.port(), 6288);
+        assert!(config.admin.enabled);
+    }
+
+    #[test]
+    fn persistent_state_survives_restart() {
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path().join("testnet");
+        let bootstrap = vec![DomainPort::from_str("127.0.0.1:6881").unwrap()];
+
+        // First "run": seed config, init, record keypair
+        let source = temp.path().join("seed.toml");
+        std::fs::write(&source, "[general]\nsignup_mode = \"token_required\"\n").unwrap();
+
+        let persistent1 = PersistentDataDir::new(data_dir.clone());
+        seed_config(&source, &persistent1).unwrap();
+        persistent1.init().unwrap();
+
+        let dir1 = TestnetDataDir {
+            inner: persistent1,
+            dht_bootstrap_nodes: bootstrap.clone(),
+        };
+        let kp1 = dir1.read_or_create_keypair().unwrap();
+        let config1 = dir1.read_or_create_config_file().unwrap();
+        drop(dir1);
+
+        // Second "run": same dir, no seeding — simulates restart
+        let persistent2 = PersistentDataDir::new(data_dir);
+        let dir2 = TestnetDataDir {
+            inner: persistent2,
+            dht_bootstrap_nodes: bootstrap,
+        };
+        let kp2 = dir2.read_or_create_keypair().unwrap();
+        let config2 = dir2.read_or_create_config_file().unwrap();
+
+        assert_eq!(kp1.public_key(), kp2.public_key(), "Keypair should persist across restarts");
+        assert_eq!(
+            config1.general.signup_mode, config2.general.signup_mode,
+            "Config should persist across restarts"
+        );
+        assert_eq!(config2.general.signup_mode, pubky_homeserver::SignupMode::TokenRequired);
     }
 
     /// Integration test: start a persistent-mode testnet with a test DB config,
@@ -587,20 +645,13 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let data_dir = temp.path().join("persistent-testnet");
 
-        // Write a config that uses the test DB, ephemeral ports, and in-memory storage.
+        // Write a seed config with the test DB. Listen ports and admin settings
+        // are overridden by TestnetDataDir to the fixed static-testnet ports.
         let config_content = format!(
             r#"
 [general]
 database_url = "{db_url}"
 signup_mode = "open"
-
-[drive]
-pubky_listen_socket = "127.0.0.1:0"
-icann_listen_socket = "127.0.0.1:0"
-
-[admin]
-enabled = true
-listen_socket = "127.0.0.1:0"
 
 [storage]
 type = "file_system"
