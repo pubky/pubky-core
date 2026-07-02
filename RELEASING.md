@@ -1,5 +1,20 @@
 # Releasing pubky-core
 
+## Release Strategy: Release Early, Release Often
+
+- Release per feature, or per small batch of related features.
+- Deploy each release promptly. Batching deployments is acceptable when releases are tightly grouped, but avoid letting unreleased work accumulate.
+
+### Deploying
+
+To deploy a release create a PR in the `pubky-stack` repo targeting the `staging` branch with `pubky-core` checked-out at your release version. The PR description should:
+
+1. List the changes included in the release.
+2. Call out anything that should be specifically tested or checked.
+3. Be sent to QA for review.
+
+Here's an [example deploy PR](https://github.com/pubky/pubky-stack/pull/260).
+
 ## Prerequisites
 
 - Push access to the repository (to create tags)
