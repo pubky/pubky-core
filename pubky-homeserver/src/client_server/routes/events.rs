@@ -28,7 +28,7 @@ use crate::{
         AppState,
     },
     constants::PUBLIC_ROOT,
-    metrics_server::routes::metrics::Metrics,
+    observability::ConnectionGuard,
     persistence::{
         files::events::{
             EventCursor, EventEntity, EventsService, PathFilter, MAX_EVENT_STREAM_USERS,
@@ -212,34 +212,22 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
     }
 }
 
-/// Format an event entity as SSE event data.
-/// Returns the multiline data field content.
-/// Each line will be prefixed with "data: " by the SSE library.
+/// Render a batch of events as the plain-text feed body used by `GET /events/`.
 ///
-/// ## Format
-/// ```text
-/// data: pubky://user_pubkey/pub/example.txt
-/// data: cursor: 42
-/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
-/// ```
-fn formatted_event_path(entity: &EventEntity) -> String {
-    // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
-    // once the homeserver crate depends on it directly, so we avoid ad-hoc string
-    // reconstruction here.
-    format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
-}
+/// One line per event (`<TYPE> pubky://<user>/<path>`), followed by a trailing
+/// `cursor: <id>` line pointing at the last event so the caller can resume.
+/// Returns an empty string when there are no events (and therefore no cursor line).
+fn format_events_feed(events: &[EventEntity]) -> String {
+    let mut result = events
+        .iter()
+        .map(|event| format!("{} {}", event.event_type, event.pubky_uri()))
+        .collect::<Vec<String>>();
 
-fn event_to_sse_data(entity: &EventEntity) -> String {
-    let path = formatted_event_path(entity);
-    let cursor_line = format!("cursor: {}", entity.cursor());
-
-    let mut lines = vec![path, cursor_line];
-    if let Some(hash) = entity.event_type.content_hash() {
-        let hash_base64 =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
-        lines.push(format!("content_hash: {}", hash_base64));
+    if let Some(next_cursor) = events.last().map(|event| event.id.to_string()) {
+        result.push(format!("cursor: {}", next_cursor));
     }
-    lines.join("\n")
+
+    result.join("\n")
 }
 
 /// Legacy text-based endpoint for fetching historical events.
@@ -287,20 +275,10 @@ pub async fn feed(
         .metrics
         .record_events_db_query(query_start.elapsed().as_millis());
 
-    let mut result = events
-        .iter()
-        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
-        .collect::<Vec<String>>();
-    let next_cursor = events.last().map(|event| event.id.to_string());
-
-    if let Some(next_cursor) = next_cursor {
-        result.push(format!("cursor: {}", next_cursor));
-    }
-
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(result.join("\n")))
+        .body(Body::from(format_events_feed(&events)))
         .unwrap())
 }
 
@@ -385,7 +363,7 @@ pub async fn feed_stream(
 
                 yield Ok(Event::default()
                     .event(event.event_type.to_string())
-                    .data(event_to_sse_data(&event)));
+                    .data(event.to_sse_data()));
 
                 total_sent += 1;
 
@@ -433,7 +411,7 @@ pub async fn feed_stream(
 
                         yield Ok(Event::default()
                             .event(event.event_type.to_string())
-                            .data(event_to_sse_data(&event)));
+                            .data(event.to_sse_data()));
 
                         total_sent += 1;
 
@@ -564,30 +542,6 @@ fn should_include_live_event(
     allowed_paths.iter().any(|filter| filter.matches(path))
 }
 
-/// Guard to ensure connection cleanup on any exit path
-struct ConnectionGuard {
-    metrics: Metrics,
-    start: Instant,
-}
-
-impl ConnectionGuard {
-    fn new(metrics: Metrics) -> Self {
-        metrics.increment_active_connections();
-        Self {
-            metrics,
-            start: Instant::now(),
-        }
-    }
-}
-
-impl Drop for ConnectionGuard {
-    fn drop(&mut self) {
-        self.metrics.decrement_active_connections();
-        self.metrics
-            .record_connection_closed(self.start.elapsed().as_millis());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,86 +580,6 @@ mod tests {
             .expect_err("expected the subscription to be rejected")
             .into_response()
             .status()
-    }
-
-    #[test]
-    fn connection_guard_drops_on_early_return() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
-
-        // Create guard and return early - guard should still decrement
-        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
-            let _guard = ConnectionGuard::new(metrics.clone());
-            // Simulate early return (e.g., error condition)
-            return Err("early exit");
-            #[allow(unreachable_code)]
-            {
-                Ok(())
-            }
-        }
-
-        let result = early_return_fn(metrics.clone());
-        assert!(result.is_err(), "Should have returned early");
-
-        // Verify guard cleaned up properly despite early return
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after early return: {}",
-            output
-        );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count"),
-            "Should have recorded connection duration: {}",
-            output
-        );
-    }
-
-    #[tokio::test]
-    async fn connection_guard_concurrent() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
-
-        // Create 5 concurrent guards using tokio::spawn
-        let handles: Vec<_> = (0..5)
-            .map(|i| {
-                let metrics_clone = metrics.clone();
-                tokio::spawn(async move {
-                    let _guard = ConnectionGuard::new(metrics_clone);
-                    // Simulate some work
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10 * i)).await;
-                    // Guard will be dropped here
-                })
-            })
-            .collect();
-
-        // While tasks are running, check active connections
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        let output = metrics.render().expect("Failed to render metrics");
-        // We should have some active connections (implementation dependent on timing)
-        assert!(
-            output.contains("event_stream_active_connections"),
-            "Should have active connections metric: {}",
-            output
-        );
-
-        // Wait for all tasks to complete
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        // All guards should be cleaned up
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after all concurrent guards dropped: {}",
-            output
-        );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count") && output.contains("} 5"),
-            "Should have recorded 5 connection durations: {}",
-            output
-        );
     }
 
     #[test]

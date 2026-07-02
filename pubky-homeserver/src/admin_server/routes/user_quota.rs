@@ -88,6 +88,8 @@ mod tests {
                 FileService::new_from_context(context).unwrap(),
                 "",
                 context.user_service.clone(),
+                context.events_service.clone(),
+                context.metrics.clone(),
             ),
             "test",
         ))
@@ -103,6 +105,8 @@ mod tests {
             FileService::new_from_context(context).unwrap(),
             "",
             context.user_service.clone(),
+            context.events_service.clone(),
+            context.metrics.clone(),
         );
         state.default_storage_mb = Some(100);
         state.default_quotas = DefaultQuotasToml {

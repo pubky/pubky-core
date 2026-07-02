@@ -15,7 +15,7 @@ mod path_filter;
 pub use events_entity::EventEntity;
 pub use events_layer::EventsLayer;
 pub use events_repository::{EventIden, EventRepository, EventVisibility};
-pub(crate) use events_service::PG_NOTIFY_CHANNEL;
+pub(crate) use events_service::{AllEventsFilter, PG_NOTIFY_CHANNEL};
 pub use events_service::{EventsService, MAX_EVENT_STREAM_USERS};
 pub use path_filter::PathFilter;
 
