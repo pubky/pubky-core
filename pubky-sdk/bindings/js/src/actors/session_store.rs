@@ -20,12 +20,30 @@ const PUBKY_SESSIONS_DB_VERSION = 1;
 const PUBKY_SESSIONS_STORE_NAME = "storedSessions";
 const PUBKY_SESSIONS_DELEGATED_KEYS_STORE_NAME = "delegatedGrantKeys";
 
+/** Assert that IndexedDB is available for browser session persistence. */
 function requireIndexedDb() {
   if (!globalThis.indexedDB) {
     throw new Error("Pubky session persistence requires IndexedDB.");
   }
 }
 
+/** Create an operation-specific error while preserving the IndexedDB cause. 
+ * Used for backwards compatability because old browsers don't support the cause property.
+ */
+function contextualSessionStoreError(message, cause) {
+  const error = new Error(message, { cause });
+  if (cause !== undefined && error.cause === undefined) {
+    error.cause = cause;
+  }
+  return error;
+}
+
+/**
+ * Open the IndexedDB database used for browser auth persistence.
+ *
+ * The database contains session records and delegated WebCrypto key handles so
+ * both stores are created here even though single-store helpers use only one.
+ */
 function openSessionStoreDb() {
   requireIndexedDb();
   return new Promise((resolve, reject) => {
@@ -44,26 +62,42 @@ function openSessionStoreDb() {
   });
 }
 
-async function withSessionStore(mode, fn) {
+/**
+ * Run an IndexedDB operation against the stored-session object store.
+ *
+ * The callback receives the object store and returns a request. This wrapper
+ * resolves only after the transaction commits, not when the request succeeds.
+ */
+async function withSessionStore(mode, operation) {
   const db = await openSessionStoreDb();
   try {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(PUBKY_SESSIONS_STORE_NAME, mode);
       const store = tx.objectStore(PUBKY_SESSIONS_STORE_NAME);
-      let done = false;
-      function finish(value) {
-        done = true;
-        resolve(value);
-      }
-      try {
-        fn(store, finish, reject);
-      } catch (error) {
+      let result;
+      let settled = false;
+
+      function fail(error) {
+        if (settled) return;
+        settled = true;
         reject(error);
       }
-      tx.onerror = () => reject(tx.error ?? new Error("Pubky session store transaction failed."));
-      tx.onabort = () => reject(tx.error ?? new Error("Pubky session store transaction aborted."));
+
+      try {
+        const request = operation(store);
+        request.onsuccess = () => {
+          result = request.result;
+        };
+        request.onerror = () => fail(request.error ?? new Error("Pubky session store request failed."));
+      } catch (error) {
+        fail(error);
+      }
+      tx.onerror = () => fail(tx.error ?? new Error("Pubky session store transaction failed."));
+      tx.onabort = () => fail(tx.error ?? new Error("Pubky session store transaction aborted."));
       tx.oncomplete = () => {
-        if (!done) resolve(undefined);
+        if (settled) return;
+        settled = true;
+        resolve(result);
       };
     });
   } finally {
@@ -71,6 +105,7 @@ async function withSessionStore(mode, fn) {
   }
 }
 
+/** Return whether browser session persistence can open its IndexedDB database. */
 export async function __pubkySessionStoreIsAvailable() {
   if (!globalThis.indexedDB) return false;
   try {
@@ -82,46 +117,52 @@ export async function __pubkySessionStoreIsAvailable() {
   }
 }
 
+/** Persist or replace a browser session record. */
 export async function __pubkySessionStorePut(record) {
   requireIndexedDb();
-  await withSessionStore("readwrite", (store, resolve, reject) => {
-    const request = store.put(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error("Saving Pubky session failed."));
-  });
+  try {
+    await withSessionStore("readwrite", (store) => store.put(record));
+  } catch (error) {
+    throw contextualSessionStoreError("Saving Pubky session failed.", error);
+  }
 }
 
+/** Load a browser session record by id. */
 export async function __pubkySessionStoreGet(id) {
   requireIndexedDb();
-  return await withSessionStore("readonly", (store, resolve, reject) => {
-    const request = store.get(id);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Reading Pubky session failed."));
-  });
+  try {
+    return await withSessionStore("readonly", (store) => store.get(id));
+  } catch (error) {
+    throw contextualSessionStoreError("Reading Pubky session failed.", error);
+  }
 }
 
+/** List all browser session records, returning an empty list if storage is unavailable. */
 export async function __pubkySessionStoreList() {
   if (!globalThis.indexedDB) return [];
   try {
-    return await withSessionStore("readonly", (store, resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result ?? []);
-      request.onerror = () => reject(request.error ?? new Error("Listing Pubky sessions failed."));
-    });
+    return (await withSessionStore("readonly", (store) => store.getAll())) ?? [];
   } catch (_error) {
     return [];
   }
 }
 
+/** Remove one browser session record by id. */
 export async function __pubkySessionStoreDelete(id) {
   requireIndexedDb();
-  await withSessionStore("readwrite", (store, resolve, reject) => {
-    const request = store.delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error("Removing Pubky session failed."));
-  });
+  try {
+    await withSessionStore("readwrite", (store) => store.delete(id));
+  } catch (error) {
+    throw contextualSessionStoreError("Removing Pubky session failed.", error);
+  }
 }
 
+/**
+ * Clear saved session records and the delegated keys referenced by those records.
+ *
+ * Delegated keys not referenced by the supplied ids are intentionally preserved,
+ * because they may belong to pending or unsaved grant flows.
+ */
 export async function __pubkySessionStoreClear(delegatedKeyIds) {
   requireIndexedDb();
   const db = await openSessionStoreDb();
@@ -146,6 +187,7 @@ export async function __pubkySessionStoreClear(delegatedKeyIds) {
   }
 }
 
+/** Clear all browser auth records, including all delegated key handles. */
 export async function __pubkySessionStoreClearAll() {
   requireIndexedDb();
   const db = await openSessionStoreDb();

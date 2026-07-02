@@ -38,6 +38,14 @@ function requireBrowserCrypto() {
   }
 }
 
+function contextualError(message, cause) {
+  const error = new Error(message, { cause });
+  if (cause !== undefined && error.cause === undefined) {
+    error.cause = cause;
+  }
+  return error;
+}
+
 /**
  * Return whether this runtime appears able to use delegated grant keys.
  *
@@ -115,30 +123,39 @@ function openGrantKeyDb() {
 /**
  * Run an IndexedDB operation against the delegated-key object store.
  *
- * The callback receives the object store plus resolve/reject helpers. This
- * wrapper centralizes transaction lifecycle handling and always closes the DB
- * connection after the operation settles.
+ * The callback receives the object store and returns a request. This wrapper
+ * resolves only after the transaction commits, not when the request succeeds.
  */
-async function withGrantKeyStore(mode, fn) {
+async function withGrantKeyStore(mode, operation) {
   const db = await openGrantKeyDb();
   try {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(PUBKY_GRANT_KEYS_STORE_NAME, mode);
       const store = tx.objectStore(PUBKY_GRANT_KEYS_STORE_NAME);
-      let done = false;
-      function finish(value) {
-        done = true;
-        resolve(value);
-      }
-      try {
-        fn(store, finish, reject);
-      } catch (error) {
+      let result;
+      let settled = false;
+
+      function fail(error) {
+        if (settled) return;
+        settled = true;
         reject(error);
       }
-      tx.onerror = () => reject(tx.error ?? new Error("Delegated grant key transaction failed."));
-      tx.onabort = () => reject(tx.error ?? new Error("Delegated grant key transaction aborted."));
+
+      try {
+        const request = operation(store);
+        request.onsuccess = () => {
+          result = request.result;
+        };
+        request.onerror = () => fail(request.error ?? new Error("Delegated grant key request failed."));
+      } catch (error) {
+        fail(error);
+      }
+      tx.onerror = () => fail(tx.error ?? new Error("Delegated grant key transaction failed."));
+      tx.onabort = () => fail(tx.error ?? new Error("Delegated grant key transaction aborted."));
       tx.oncomplete = () => {
-        if (!done) resolve(undefined);
+        if (settled) return;
+        settled = true;
+        resolve(result);
       };
     });
   } finally {
@@ -153,11 +170,11 @@ async function withGrantKeyStore(mode, fn) {
  * should create a new key or surface a restore/signing error.
  */
 async function getRecord(keyId) {
-  return await withGrantKeyStore("readonly", (store, resolve, reject) => {
-    const request = store.get(keyId);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Reading delegated grant key failed."));
-  });
+  try {
+    return await withGrantKeyStore("readonly", (store) => store.get(keyId));
+  } catch (error) {
+    throw contextualError("Reading delegated grant key failed.", error);
+  }
 }
 
 /**
@@ -167,19 +184,19 @@ async function getRecord(keyId) {
  * handle rather than raw private key bytes.
  */
 async function putRecord(record) {
-  await withGrantKeyStore("readwrite", (store, resolve, reject) => {
-    const request = store.put(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error("Saving delegated grant key failed."));
-  });
+  try {
+    await withGrantKeyStore("readwrite", (store) => store.put(record));
+  } catch (error) {
+    throw contextualError("Saving delegated grant key failed.", error);
+  }
 }
 
 async function deleteRecord(keyId) {
-  await withGrantKeyStore("readwrite", (store, resolve, reject) => {
-    const request = store.delete(keyId);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error("Deleting delegated grant key failed."));
-  });
+  try {
+    await withGrantKeyStore("readwrite", (store) => store.delete(keyId));
+  } catch (error) {
+    throw contextualError("Deleting delegated grant key failed.", error);
+  }
 }
 
 /**
