@@ -635,6 +635,7 @@ mod tests {
             "?cursor=notanumber",
             "?live=true&reverse=true",
             "?limit=abc",
+            "?limit=0",
         ] {
             let response = server
                 .get(&format!("/events-stream{query}"))
@@ -678,10 +679,6 @@ mod tests {
         assert_eq!(count_sse_events(&body), 1);
         assert!(body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())));
         assert!(!body.contains("/priv/app/secret.txt"));
-
-        // `limit=0` sends nothing.
-        let body = admin_stream_body(&server, "?limit=0").await;
-        assert_eq!(count_sse_events(&body), 0);
     }
 
     /// `user=` is an optional filter: it restricts the stream to the named users.

@@ -78,11 +78,13 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
                 }
             }
             "limit" => {
-                limit = Some(
-                    value
-                        .parse::<u16>()
-                        .map_err(|_| HttpError::bad_request(format!("Invalid limit: {value}")))?,
-                );
+                let parsed = value
+                    .parse::<u16>()
+                    .map_err(|_| HttpError::bad_request(format!("Invalid limit: {value}")))?;
+                if parsed == 0 {
+                    return Err(HttpError::bad_request("limit must be at least 1"));
+                }
+                limit = Some(parsed);
             }
             "live" => live = value == "true" || value == "1",
             "reverse" => reverse = value == "true" || value == "1",
