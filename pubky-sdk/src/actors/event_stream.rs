@@ -384,6 +384,19 @@ impl EventStreamBuilder {
         Ok(url)
     }
 
+    /// Resolve a user's homeserver via Pkarr, mapping a resolution failure to a
+    /// typed validation error.
+    async fn resolve_homeserver(&self, user: &PublicKey) -> Result<PublicKey> {
+        Pkdns::with_client(self.client.clone())
+            .get_homeserver_of(user)
+            .await
+            .ok_or_else(|| {
+                Error::from(RequestError::Validation {
+                    message: format!("Could not resolve homeserver for user {user}"),
+                })
+            })
+    }
+
     /// Internal helper that contains the shared subscription logic.
     async fn subscribe_internal(self) -> Result<impl Stream<Item = Result<Event>>> {
         if self.live && self.reverse {
@@ -403,19 +416,33 @@ impl EventStreamBuilder {
             }));
         }
 
-        // Use pre-set homeserver or resolve from first user
-        let homeserver = if let Some(hs) = &self.homeserver {
+        // The session owner (the user the credential authenticates as), if any.
+        let session_owner = self
+            .credential
+            .as_ref()
+            .map(|credential| credential.info().public_key().clone());
+
+        // Resolve the homeserver we will send the request to.
+        //
+        // When a session credential is attached it must ONLY ever be transmitted
+        // to its owner's homeserver. We resolve the owner's homeserver and, if the
+        // caller also pinned one explicitly, require the two to match.
+        let homeserver = if let Some(owner) = &session_owner {
+            let owner_homeserver = self.resolve_homeserver(owner).await?;
+            if let Some(pinned) = &self.homeserver
+                && *pinned != owner_homeserver
+            {
+                return Err(Error::from(RequestError::Validation {
+                    message: format!(
+                        "refusing to attach the session credential: target homeserver {pinned} is not the session owner's homeserver {owner_homeserver}"
+                    ),
+                }));
+            }
+            owner_homeserver
+        } else if let Some(hs) = &self.homeserver {
             hs.clone()
         } else {
-            let (first_user, _) = &self.users[0];
-            Pkdns::with_client(self.client.clone())
-                .get_homeserver_of(first_user)
-                .await
-                .ok_or_else(|| {
-                    Error::from(RequestError::Validation {
-                        message: format!("Could not resolve homeserver for user {first_user}"),
-                    })
-                })?
+            self.resolve_homeserver(&self.users[0].0).await?
         };
 
         cross_log!(

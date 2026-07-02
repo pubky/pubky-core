@@ -497,3 +497,40 @@ async fn events_stream_sdk_private_wrong_user_is_forbidden() {
         "expected a typed 403 Server error, got: {err}"
     );
 }
+
+/// The session credential must never be sent to a homeserver that
+/// isn't the session owner's. Pointing the builder at a foreign homeserver
+/// fails early, client-side, before any request is issued.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_session_rejects_foreign_homeserver() {
+    let testnet = build_full_testnet().await;
+    let pubky = testnet.sdk().unwrap();
+    let (user, session) = signed_in_user(&testnet, "sdk-leak.test").await;
+
+    // A homeserver pubkey that is NOT the session owner's.
+    let foreign_homeserver = Keypair::random().public_key();
+
+    let result = pubky
+        .event_stream_for(&foreign_homeserver)
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = match result {
+        Ok(_) => panic!("must refuse to send the session credential to a foreign homeserver"),
+        Err(e) => e,
+    };
+    // Rejected client-side (no server was contacted), so there is no HTTP status.
+    assert!(
+        server_status(&err).is_none(),
+        "should fail before contacting any server, got: {err}"
+    );
+    assert!(
+        err.to_string().contains("homeserver"),
+        "error should explain the homeserver mismatch, got: {err}"
+    );
+}
