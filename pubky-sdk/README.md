@@ -179,7 +179,7 @@ use pubky::{Pubky, PublicKey, Keypair};
 let pubky = Pubky::new()?;
 
 // read-only homeserver resolver
-let host = pubky.get_homeserver_of(&other).await;
+let host: Option<PublicKey> = pubky.get_homeserver_of(&other).await?;
 
 // publish with your key
 let signer = pubky.signer(Keypair::random());
