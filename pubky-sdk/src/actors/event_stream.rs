@@ -36,7 +36,7 @@
 //! let user2 = PublicKey::try_from("pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy").unwrap();
 //!
 //! // When subscribing to multiple users, specify the homeserver directly
-//! let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+//! let homeserver = pubky.get_homeserver_of(&user1).await?.unwrap();
 //!
 //! let mut stream = pubky.event_stream_for(&homeserver)
 //!     .add_users([(&user1, None), (&user2, Some(EventCursor::new(100)))])?
@@ -157,7 +157,7 @@ impl EventStreamBuilder {
     ///
     /// // When subscribing to multiple users on the same homeserver,
     /// // specify the homeserver directly to avoid redundant Pkarr lookups
-    /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+    /// let homeserver = pubky.get_homeserver_of(&user1).await?.unwrap();
     ///
     /// let mut stream = pubky.event_stream_for(&homeserver)
     ///     .add_users([(&user1, None), (&user2, None)])?
@@ -351,7 +351,7 @@ impl EventStreamBuilder {
             let (first_user, _) = &self.users[0];
             Pkdns::with_client(self.client.clone())
                 .get_homeserver_of(first_user)
-                .await
+                .await?
                 .ok_or_else(|| {
                     Error::from(RequestError::Validation {
                         message: format!("Could not resolve homeserver for user {first_user}"),

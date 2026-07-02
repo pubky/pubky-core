@@ -32,7 +32,7 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
 /// ```no_run
 /// # async fn example() -> pubky::Result<()> {
 /// let pkdns = pubky::Pkdns::new()?;
-/// if let Some(host) = pkdns.get_homeserver_of(&"o4dk…uyy".try_into().unwrap()).await {
+/// if let Some(host) = pkdns.get_homeserver_of(&"o4dk…uyy".try_into().unwrap()).await? {
 ///     println!("homeserver: {host}");
 /// }
 /// # Ok(()) }
@@ -139,45 +139,57 @@ impl Pkdns {
 
     // -------------------- Reads --------------------
 
-    /// Resolve current homeserver host for a user public key via Pkarr (no keypair required).
+    /// Resolve current homeserver for a user public key via Pkarr (no keypair required).
     ///
-    /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
-    /// or `None` if the record is missing/unresolvable.
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
+    /// Returns:
+    /// - `Ok(Some(host))` when the `_pubky` record resolves to a valid homeserver public key,
+    /// - `Ok(None)` when no Pkarr record exists, or the record carries no `_pubky` target.
+    /// - `Err(_)` when a record *is* present but its `_pubky` target cannot be parsed as a
+    ///   public key.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Pkarr`] ([`PkarrError::InvalidRecord`]) if the resolved `_pubky`
+    ///   target is not a valid public key (e.g. a bare domain or corrupted data).
+    pub async fn get_homeserver_of(
+        &self,
+        user_public_key: &PublicKey,
+    ) -> Result<Option<PublicKey>> {
         cross_log!(
             info,
             "Resolving homeserver for public key {} via PKARR",
             user_public_key
         );
-        let packet = self.client.pkarr().resolve(user_public_key).await?;
-        let s = extract_host_from_packet(&packet)?;
-        let result = PublicKey::try_from_z32(&s).ok();
+        let Some(packet) = self.client.pkarr().resolve(user_public_key).await else {
+            cross_log!(debug, "No PKARR record found for {}", user_public_key);
+            return Ok(None);
+        };
+        let result = homeserver_pubkey_from_packet(&packet)?;
         cross_log!(
             debug,
             "Homeserver resolution for {} yielded {:?}",
             user_public_key,
             result
         );
-        result
+        Ok(result)
     }
 
     /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
     ///
     /// Returns:
     /// - `Ok(Some(host))` if resolvable,
-    /// - `Ok(None)` if no record is found,
-    /// - `Err(_)` only for transport errors.
+    /// - `Ok(None)` if no record is found or no homeserver is configured,
+    /// - `Err(_)` if the resolved `_pubky` record is malformed.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if called without an attached keypair.
-    /// - Propagates transport failures from PKARR resolution.
+    /// - Returns [`crate::errors::Error::Pkarr`] if the resolved `_pubky` record is malformed
     pub async fn get_homeserver(&self) -> Result<Option<PublicKey>> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
                 "get_homeserver() requires a keypair; use Pkdns::new_with_keypair() or signer.pkdns()".into(),
             ))
         })?;
-        Ok(self.get_homeserver_of(&kp.public_key()).await)
+        self.get_homeserver_of(&kp.public_key()).await
     }
 
     // -------------------- Publishing (requires keypair) --------------------
@@ -421,6 +433,23 @@ fn determine_host(
     dht_packet.and_then(extract_host_from_packet)
 }
 
+/// Resolve the `_pubky` homeserver pointer from a signed Pkarr packet into a [`PublicKey`].
+///
+/// Returns `Ok(None)` when the packet has no `_pubky` SVCB/HTTPS record, and
+/// [`PkarrError::InvalidRecord`] when the record is present but its target is not a valid
+/// public key.
+fn homeserver_pubkey_from_packet(packet: &SignedPacket) -> Result<Option<PublicKey>> {
+    let Some(host) = extract_host_from_packet(packet) else {
+        return Ok(None);
+    };
+    PublicKey::try_from_z32(&host).map(Some).map_err(|e| {
+        PkarrError::InvalidRecord(format!(
+            "`_pubky` target `{host}` is not a valid homeserver public key: {e}"
+        ))
+        .into()
+    })
+}
+
 /// Extract `_pubky` SVCB/HTTPS target from a signed Pkarr packet.
 pub fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
     packet
@@ -492,5 +521,69 @@ mod tests {
 
         assert_eq!(republished_dnslink.ttl, original_dnslink.ttl);
         assert_eq!(republished_dnslink.rdata, original_dnslink.rdata);
+    }
+
+    #[test]
+    fn homeserver_pubkey_from_packet_returns_valid_host() {
+        let user = Keypair::random();
+        let host = Keypair::random().public_key();
+        let host_z32 = host.z32();
+
+        let packet = SignedPacket::builder()
+            .https(
+                "_pubky".try_into().expect("_pubky name"),
+                SVCB::new(0, host_z32.as_str().try_into().expect("host name")),
+                3600,
+            )
+            .sign(&user)
+            .expect("signed packet");
+
+        let resolved = homeserver_pubkey_from_packet(&packet).expect("parse should succeed");
+        assert_eq!(resolved, Some(host));
+    }
+
+    #[test]
+    fn homeserver_pubkey_from_packet_without_pubky_record_is_none() {
+        let user = Keypair::random();
+
+        let mut dnslink_txt = TXT::new();
+        dnslink_txt
+            .add_string("dnslink=/ipfs/example")
+            .expect("valid dnslink string");
+
+        let packet = SignedPacket::builder()
+            .txt(
+                "_dnslink".try_into().expect("_dnslink name"),
+                dnslink_txt,
+                3600,
+            )
+            .sign(&user)
+            .expect("signed packet");
+
+        assert_eq!(
+            homeserver_pubkey_from_packet(&packet).expect("parse should succeed"),
+            None
+        );
+    }
+
+    #[test]
+    fn homeserver_pubkey_from_packet_with_malformed_target_errors() {
+        let user = Keypair::random();
+
+        let packet = SignedPacket::builder()
+            .https(
+                "_pubky".try_into().expect("_pubky name"),
+                SVCB::new(0, "example.com".try_into().expect("host name")),
+                3600,
+            )
+            .sign(&user)
+            .expect("signed packet");
+
+        let err =
+            homeserver_pubkey_from_packet(&packet).expect_err("malformed target must be rejected");
+        assert!(
+            matches!(err, Error::Pkarr(PkarrError::InvalidRecord(_))),
+            "expected PkarrError::InvalidRecord, got {err:?}"
+        );
     }
 }

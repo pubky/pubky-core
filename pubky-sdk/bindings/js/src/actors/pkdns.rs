@@ -28,13 +28,16 @@ impl Pkdns {
     /// Resolve the homeserver for a given public key (read-only).
     ///
     /// @param {PublicKey} user
-    /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key, or `undefined` when the
+    ///   user has no resolvable homeserver record.
+    /// @throws When a record is present but its `_pubky` target is malformed.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
-    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> Option<PublicKey> {
-        self.0
+    pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> JsResult<Option<PublicKey>> {
+        Ok(self
+            .0
             .get_homeserver_of(pubky.as_inner())
-            .await
-            .map(Into::into)
+            .await?
+            .map(Into::into))
     }
 
     /// Resolve the homeserver for **this** user (requires keypair).

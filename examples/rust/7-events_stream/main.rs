@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         let (first_user, _) = &users[0];
         let homeserver = pubky
             .get_homeserver_of(first_user)
-            .await
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Could not resolve homeserver for user {first_user}"))?;
 
         let users_refs: Vec<_> = users.iter().map(|(u, c)| (u, *c)).collect();

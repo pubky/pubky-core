@@ -314,7 +314,7 @@ impl PubkyGrantAuthFlow {
         let GrantApproval { jws, claims } = approval;
 
         let pkdns = Pkdns::with_client(client.clone());
-        let hs_pk = pkdns.get_homeserver_of(&claims.iss).await.ok_or_else(|| {
+        let hs_pk = pkdns.get_homeserver_of(&claims.iss).await?.ok_or_else(|| {
             AuthError::Validation(format!(
                 "could not resolve homeserver for {}",
                 claims.iss.z32()
