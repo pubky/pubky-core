@@ -22,16 +22,25 @@
 </div>
 
 
-This repository contains the Pubky homeserver and the crates needed to run, test, and integrate with it - including the Rust and JavaScript SDKs, a local testnet, and examples.
+[Pubky](https://pubky.org) is an open protocol for building censorship-resistant applications where users own their identity, data, and connections. No platform lock-in, no algorithmic feeds you don't control, no losing everything when a service shuts down. Your keys are your identity, and you choose where your data lives.
+
+To learn more about the vision, see [What is Pubky?](https://pubky.org/tldr/), [Censorship Resistance](https://pubky.org/explore/concepts/censorship/), and [Credible Exit](https://pubky.org/explore/concepts/credible-exit/).
+
+This repository contains the core infrastructure: a homeserver that stores and serves user data, Rust and JavaScript SDKs for building apps, a local testnet, and examples.
+
+## Who Is This For?
+
+- **App developers**: Use the [SDK](https://pubky.org/explore/pubkycore/sdk/) to build apps that read and write user data on homeservers. Start with [Local Development](./docs/LOCAL_DEVELOPMENT.md) and the [examples](./examples).
+- **Operators**: [Install and run a homeserver](./docs/INSTALL.md) to host user data.
+- **Contributors** [Set up a local testnet](./docs/LOCAL_DEVELOPMENT.md) and [run the tests](./docs/TESTING.md) to develop on pubky-core itself.
 
 ## What Is a Homeserver?
 
-A Pubky Homeserver stores and serves user data. It exposes HTTP APIs for authenticated writes and public reads, and publishes DNS records so other clients can discover where a user's data lives.
+A Pubky homeserver stores and serves user data. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated writes and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
 
-- Public-key based signup and signin
-- Third-party authorization through Pubky auth flows
+- Public-key based signup, signin and third-party app authorization
 - File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like)
-- PKDNS/PKARR publishing for homeserver discovery
+- PKARR/PKDNS publishing for homeserver discovery
 - Admin and metrics endpoints for operators
 
 ## Repository Layout
@@ -45,34 +54,3 @@ A Pubky Homeserver stores and serves user data. It exposes HTTP APIs for authent
 | [`examples`](./examples) | Rust and JavaScript examples for signup, auth, storage, and requests. |
 | [`e2e`](./e2e) | End-to-end tests covering cross-crate workflows. |
 | [`docs`](./docs) | Install guides, local development, and testing docs. |
-
-## Getting Started
-
-- [Install and run a homeserver](./docs/INSTALL.md) |
-- [Develop locally against a testnet](./docs/LOCAL_DEVELOPMENT.md) |
-- [Run tests and CI](./docs/TESTING.md) |
-
-## Use the SDK
-
-The SDK is the easiest way to interact with a homeserver from your app.
-
-Rust:
-
-```toml
-[dependencies]
-pubky = "0.9"  # see https://crates.io/crates/pubky for latest
-```
-
-JavaScript and TypeScript:
-
-```bash
-npm install @synonymdev/pubky
-```
-
-See the [`pubky-sdk` README](./pubky-sdk) for API details or browse the [examples](./examples).
-
-## Links
-
-- [Pubky Documentation website](https://pubky.org/)
-- [PKARR](https://github.com/pubky/pkarr)
-- [Release Process](./RELEASING.md)
