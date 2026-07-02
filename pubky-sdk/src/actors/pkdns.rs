@@ -146,6 +146,10 @@ impl Pkdns {
     /// - `Ok(None)` when no Pkarr record exists, or the record carries no `_pubky` target.
     /// - `Err(_)` when a record *is* present but its `_pubky` target cannot be parsed as a
     ///   public key.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Pkarr`] ([`PkarrError::InvalidRecord`]) if the resolved `_pubky`
+    ///   target is not a valid public key (e.g. a bare domain or corrupted data).
     pub async fn get_homeserver_of(
         &self,
         user_public_key: &PublicKey,
