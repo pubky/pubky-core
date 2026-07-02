@@ -38,7 +38,7 @@ let session = await signer.signin("example.com");
 
 // 3b) Or, if you do not have the keypair available, authenticate on a 3rd-party app
 // by delegating the authentication to a signer with a QR code.
-const authFlow = pubky.startGrantAuthFlow(
+const authFlow = await pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
   AuthFlowKind.signin(),
   { clientId: "my-cool-app.example" },
@@ -93,7 +93,7 @@ const pubkyLocal = Pubky.testnet("localhost");
 const signer = pubky.signer(Keypair.random());
 
 // Grant Pubky Auth flow (with capabilities)
-const authFlow = pubky.startGrantAuthFlow(
+const authFlow = await pubky.startGrantAuthFlow(
   "/pub/my-cool-app/:rw",
   AuthFlowKind.signin(),
   { clientId: "my-cool-app.example" },
@@ -187,16 +187,37 @@ const storage = session.storage; // -> This User's storage API (absolute paths)
 **Persist a grant session**
 
 ```js
-// Save the session secret. Treat this string like a bearer token.
-const secret = await session.exportSecret();
-localStorage.setItem("pubky-session", secret);
+// Persist explicitly when your app wants reload/returning-user restore.
+// In browsers, this uses IndexedDB and supports multiple accounts.
+const stored = await pubky.browserSessionStore.save(session);
 
-// Later, restore by minting a fresh short-lived bearer.
-const restored = await pubky.restoreSession(localStorage.getItem("pubky-session")!);
+const accounts = await pubky.browserSessionStore.list();
+const restored = await pubky.browserSessionStore.restore(stored.id);
 ```
 
+`pubky.startGrantAuthFlow(...)` chooses delegated browser PoP keys
+when the runtime supports them, then falls back to local PoP keys. Delegated
+sessions keep the private PoP key non-extractable in browser storage; local
+sessions store bearer-equivalent secret material in IndexedDB.
+
+```js
+const flow = await pubky.startGrantAuthFlow(
+  "/pub/example.com/:rw",
+  AuthFlowKind.signin(),
+  { clientId: "example.com" },
+);
+const session = await flow.awaitApproval();
+await pubky.browserSessionStore.save(session);
+```
+
+For advanced/manual storage, local grant sessions still expose
+`exportLocalSecret()` and `pubky.restoreSession(secret)`. Treat that string
+like a bearer token. Delegated browser grant sessions should use
+`browserSessionStore` because their PoP keys are non-extractable.
+
 > `session.export()` is still available for legacy cookie sessions, but new
-> applications should use grant auth plus `exportSecret()`.
+> applications should use grant auth plus `browserSessionStore` or
+> `exportLocalSecret()`.
 
 **Approve a pubkyauth request URL**
 
@@ -221,7 +242,7 @@ const caps = "/pub/my-cool-app/:rw,/pub/another-app/folder/:w";
 const relay = "https://httprelay.pubky.app/inbox/"; // optional (defaults to this)
 
 // Start grant auth polling
-const flow = pubky.startGrantAuthFlow(
+const flow = await pubky.startGrantAuthFlow(
   caps,
   AuthFlowKind.signin(),
   { clientId: "my-cool-app.example", relay },
@@ -273,7 +294,7 @@ const rawCaps = formData.get("caps");
 
 try {
   const caps = validateCapabilities(rawCaps ?? "");
-  const flow = pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
+  const flow = await pubky.startGrantAuthFlow(caps, AuthFlowKind.signin(), {
     clientId: "my-cool-app.example",
   });
   renderQr(flow.authorizationUrl);

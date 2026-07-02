@@ -2,9 +2,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::actors::{
     auth_flow::{AuthFlow, AuthFlowKind},
+    browser_grant_key_store::BrowserGrantKeyStore,
     event_stream::EventStreamBuilder,
     grant_auth_flow::{GrantAuthFlow, GrantAuthFlowOptions},
     session::Session,
+    session_store::BrowserSessionStore,
     signer::Signer,
     storage::PublicStorage,
 };
@@ -117,23 +119,36 @@ impl Pubky {
     /// @param {string} capabilities Comma-separated caps, e.g. `"/pub/app/:rw,/pub/foo/file:r"`.
     /// @param {AuthFlowKind} kind The kind of authentication flow to perform.
     /// @param {GrantAuthFlowOptions} options Options for the grant flow: `{ clientId, relay? }`.
-    /// @returns {GrantAuthFlow}
+    /// @returns {Promise<GrantAuthFlow>}
     /// A running grant auth flow. Show `authorizationUrl` as QR/deeplink,
     /// then `awaitApproval()` to obtain a grant-backed `Session`.
     ///
     /// @example
-    /// const flow = pubky.startGrantAuthFlow(
+    /// const flow = await pubky.startGrantAuthFlow(
     ///   "/pub/my-cool-app/:rw",
     ///   AuthFlowKind.signin(),
     ///   { clientId: "my-cool-app.example" },
     /// );
     #[wasm_bindgen(js_name = "startGrantAuthFlow")]
-    pub fn start_grant_auth_flow(
+    pub async fn start_grant_auth_flow(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
         kind: AuthFlowKind,
         options: GrantAuthFlowOptions,
     ) -> JsResult<GrantAuthFlow> {
+        if BrowserGrantKeyStore::can_use_delegation().await {
+            let delegated = GrantAuthFlow::start_delegated_with_client(
+                capabilities.clone(),
+                kind.clone(),
+                options.clone(),
+                Some(self.0.client().clone()),
+            )
+            .await;
+            if delegated.is_ok() {
+                return delegated;
+            }
+        }
+
         GrantAuthFlow::start_with_client(capabilities, kind, options, Some(self.0.client().clone()))
     }
 
@@ -184,11 +199,26 @@ impl Pubky {
     /// **Security:** `savedState` contains the relay secret and PoP client private key.
     /// Delete it from storage as soon as the resumed flow completes.
     ///
-    /// @param {string} savedState A string produced by `grantFlow.save()`.
+    /// @param {string} savedState A string produced by `grantFlow.saveLocal()`.
     /// @returns {GrantAuthFlow} A flow reconnected to the original relay channel.
     #[wasm_bindgen(js_name = "resumeGrantAuthFlow")]
     pub fn resume_grant_auth_flow(&self, saved_state: String) -> JsResult<GrantAuthFlow> {
         GrantAuthFlow::resume_with_client(saved_state, Some(self.0.client().clone()))
+    }
+
+    /// Resume a previously saved pending delegated grant auth flow.
+    ///
+    /// Runtime: delegated grant keys require a secure browser context with
+    /// WebCrypto `crypto.subtle` and IndexedDB. The saved `keyId` must still
+    /// exist in IndexedDB for the same origin. Unsupported runtimes reject with
+    /// `ClientStateError`.
+    #[wasm_bindgen(js_name = "resumeDelegatedGrantAuthFlow")]
+    pub async fn resume_delegated_grant_auth_flow(
+        &self,
+        saved_state: String,
+    ) -> JsResult<GrantAuthFlow> {
+        GrantAuthFlow::resume_delegated_with_client(saved_state, Some(self.0.client().clone()))
+            .await
     }
 
     /// Create a `Signer` from an existing `Keypair`.
@@ -216,6 +246,16 @@ impl Pubky {
     #[wasm_bindgen(js_name = "publicStorage", getter)]
     pub fn public_storage(&self) -> PublicStorage {
         PublicStorage(self.0.public_storage())
+    }
+
+    /// Browser-backed store for explicitly persisted completed grant sessions.
+    ///
+    /// Use `browserSessionStore.save(session)` after a successful grant auth flow to make
+    /// the session restorable after reload. The store supports multiple accounts
+    /// and multiple grants per account.
+    #[wasm_bindgen(js_name = "browserSessionStore", getter)]
+    pub fn browser_session_store(&self) -> BrowserSessionStore {
+        BrowserSessionStore(self.0.clone())
     }
 
     /// Resolve the homeserver for a given public key (read-only).
@@ -246,11 +286,11 @@ impl Pubky {
 
     /// Restore a session from a previously exported token or snapshot, using this instance's client.
     ///
-    /// Accepts grant secret tokens from `session.exportSecret()` and legacy cookie
+    /// Accepts grant secret tokens from `session.exportLocalSecret()` and legacy cookie
     /// secret tokens. Also accepts legacy cookie metadata snapshots from `session.export()`.
     /// Grant restore mints a fresh short-lived bearer.
     ///
-    /// @param {string} exported A string produced by `session.exportSecret()` or legacy `session.export()`.
+    /// @param {string} exported A string produced by `session.exportLocalSecret()` or legacy `session.export()`.
     /// @returns {Promise<Session>}
     /// A rehydrated session bound to this SDK's HTTP client.
     ///

@@ -58,6 +58,9 @@ type _GrantManagerList = Assert<
 type _CookieExportSecret = Assert<
   IsExact<ReturnType<CookieSession["exportSecret"]>, Promise<string>>
 >;
+type _GrantExportLocalSecret = Assert<
+  IsExact<ReturnType<GrantSession["exportLocalSecret"]>, Promise<string>>
+>;
 
 const PATH_AUTH_BASIC: Path = "/pub/example.com/auth-basic.txt";
 
@@ -176,7 +179,7 @@ test("Session: grant-only view exposes metadata; GrantManager manages grants", a
   t.ok(info.createdAt > 0, "created timestamp is present");
   t.equal(await grant.grantId(), info.grantId, "grantId() matches sessionInfo()");
 
-  const exported = await grant.exportSecret();
+  const exported = await grant.exportLocalSecret();
   const restored = await sdk.restoreSession(exported);
   const restoredGrant = restored.grant;
   t.ok(restoredGrant, "restored grant session exposes grant view");
@@ -235,7 +238,7 @@ test("Session: non-root grant management calls return homeserver 403", async (t)
   const signupToken = await createSignupToken();
   const capabilities = "/pub/pubky.app/:r";
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     capabilities,
     AuthFlowKind.signin(),
     { clientId: "grant-non-root-js.test", relay: TESTNET_HTTP_RELAY },
@@ -302,16 +305,16 @@ test("Session: invalid grant id throws InvalidInput", async (t) => {
   t.end();
 });
 
-test("Session: grant exportSecret restores with fresh bearer", async (t) => {
+test("Session: grant exportLocalSecret restores with fresh bearer", async (t) => {
   const sdk = Pubky.testnet();
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
 
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
   const session = await signer.signin("grant-restore-js.test");
-  const exported = await session.exportSecret();
+  const exported = await session.exportLocalSecret();
 
-  t.equal(typeof exported, "string", "exportSecret() returns a string token");
+  t.equal(typeof exported, "string", "exportLocalSecret() returns a string token");
 
   const restored = await sdk.restoreSession(exported);
   t.equal(

@@ -2,6 +2,19 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error::{JsResult, PubkyError, PubkyErrorName};
 use crate::wrappers::keys::PublicKey;
+use serde::{Deserialize, Serialize};
+
+const DELEGATED_GRANT_CREDENTIAL_VERSION: &str = "pubky-delegated-grant-credential-v1";
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DelegatedGrantCredentialJson {
+    version: String,
+    grant_jws: String,
+    homeserver_public_key: String,
+    client_public_key: String,
+    key_id: String,
+}
 
 /// Grant-only view over a grant-backed `Session`.
 ///
@@ -30,16 +43,21 @@ impl GrantSession {
         Ok(grant.grant_id().await.to_string())
     }
 
-    /// Export the durable refresh material needed to restore this grant session.
+    /// Export the portable local secret material needed to restore this grant session.
     ///
     /// Treat the returned string as bearer-equivalent secret material until the
     /// grant expires or is revoked.
     ///
     /// @returns {Promise<string>}
-    #[wasm_bindgen(js_name = "exportSecret")]
-    pub async fn export_secret(&self) -> JsResult<String> {
+    #[wasm_bindgen(js_name = "exportLocalSecret")]
+    pub async fn export_local_secret(&self) -> JsResult<String> {
         let grant = self.as_grant()?;
-        Ok(grant.export_secret().await)
+        grant.export_local_secret().await.ok_or_else(|| {
+            PubkyError::new(
+                PubkyErrorName::ClientStateError,
+                "Delegated grant sessions cannot export raw secret material. Use BrowserSessionStore.",
+            )
+        })
     }
 }
 
@@ -52,6 +70,49 @@ impl GrantSession {
             )
         })
     }
+}
+
+pub(crate) fn encode_delegated_grant_state(
+    state: pubky::DelegatedGrantCredentialState,
+) -> JsResult<String> {
+    let json = DelegatedGrantCredentialJson {
+        version: DELEGATED_GRANT_CREDENTIAL_VERSION.to_string(),
+        grant_jws: state.grant_jws,
+        homeserver_public_key: state.homeserver_pk.z32(),
+        client_public_key: state.client_pk.z32(),
+        key_id: state.key_id,
+    };
+    serde_json::to_string(&json).map_err(|e| {
+        PubkyError::new(
+            PubkyErrorName::InternalError,
+            format!("Failed to serialize delegated grant state: {e}"),
+        )
+    })
+}
+
+pub(crate) fn decode_delegated_grant_state(
+    saved_state: &str,
+) -> JsResult<pubky::DelegatedGrantCredentialState> {
+    let json: DelegatedGrantCredentialJson = serde_json::from_str(saved_state).map_err(|e| {
+        PubkyError::new(
+            PubkyErrorName::InvalidInput,
+            format!("Invalid delegated grant state: {e}"),
+        )
+    })?;
+    if json.version != DELEGATED_GRANT_CREDENTIAL_VERSION {
+        return Err(PubkyError::new(
+            PubkyErrorName::InvalidInput,
+            "Unsupported delegated grant state version.",
+        ));
+    }
+    Ok(pubky::DelegatedGrantCredentialState {
+        grant_jws: json.grant_jws,
+        homeserver_pk: pubky::PublicKey::try_from_z32(&json.homeserver_public_key)
+            .map_err(|e| PubkyError::new(PubkyErrorName::InvalidInput, e))?,
+        client_pk: pubky::PublicKey::try_from_z32(&json.client_public_key)
+            .map_err(|e| PubkyError::new(PubkyErrorName::InvalidInput, e))?,
+        key_id: json.key_id,
+    })
 }
 
 /// Summary of an active grant returned by `GrantManager.list()`.

@@ -37,6 +37,17 @@ const CLIENT_ID_MAX_LENGTH: usize = 253;
 /// be passed straight into the homeserver's JSON request body or any RFC-7515
 /// JWS verifier (e.g. `jsonwebtoken::decode`).
 pub fn sign_jws<T: Serialize>(keypair: &Keypair, typ: &str, claims: &T) -> String {
+    let signing_input = jws_signing_input(typ, claims);
+    let signature = keypair.sign(signing_input.as_bytes());
+    finish_jws(signing_input, signature.to_bytes())
+}
+
+/// Build the canonical JWS signing input `base64url(header).base64url(payload)`.
+///
+/// This is useful for runtimes where the private key is held by an external
+/// signer, such as WebCrypto, while keeping the JWS bytes identical to
+/// [`sign_jws`].
+pub fn jws_signing_input<T: Serialize>(typ: &str, claims: &T) -> String {
     let header = serde_json::json!({ "alg": "EdDSA", "typ": typ });
     let header_b64 = URL_SAFE_NO_PAD.encode(
         serde_json::to_vec(&header)
@@ -46,10 +57,16 @@ pub fn sign_jws<T: Serialize>(keypair: &Keypair, typ: &str, claims: &T) -> Strin
         serde_json::to_vec(claims).expect("invariant: claims must be serde_json-serializable"),
     );
 
-    let signing_input = format!("{header_b64}.{payload_b64}");
-    let signature = keypair.sign(signing_input.as_bytes());
-    let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
+    format!("{header_b64}.{payload_b64}")
+}
 
+/// Finish compact JWS serialization from a signing input and raw signature.
+/// Merges the signing input with the base64url-encoded signature to produce the final
+/// JWS string. This is useful for runtimes where the signing step is separate from
+/// the signing input construction, such as when using an external signer.
+#[must_use]
+pub fn finish_jws(signing_input: String, signature: impl AsRef<[u8]>) -> String {
+    let signature_b64 = URL_SAFE_NO_PAD.encode(signature);
     format!("{signing_input}.{signature_b64}")
 }
 
