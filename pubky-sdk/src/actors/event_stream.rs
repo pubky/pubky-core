@@ -53,8 +53,38 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! # Example: Private events (authenticated)
+//!
+//! Attach a session with [`EventStreamBuilder::session`] and request a
+//! `/priv/...` [`path`](EventStreamBuilder::path). The homeserver authorizes the
+//! private scope against the session's read capabilities; public subscriptions
+//! need no session.
+//! ```no_run
+//! use pubky::{Pubky, PubkySession};
+//! use futures_util::StreamExt;
+//!
+//! # async fn example(session: PubkySession) -> pubky::Result<()> {
+//! let pubky = Pubky::new()?;
+//! let user = session.public_key();
+//!
+//! let mut stream = pubky.event_stream_for_user(&user, None)
+//!     .session(&session)
+//!     .path("/priv/app/")
+//!     .live()
+//!     .subscribe()
+//!     .await?;
+//!
+//! while let Some(result) = stream.next().await {
+//!     let event = result?;
+//!     println!("Private event: {:?} at {}", event.event_type, event.resource);
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
 use std::pin::Pin;
+use std::sync::Arc;
 
 use crate::PublicKey;
 use base64::Engine;
@@ -67,8 +97,11 @@ use url::Url;
 pub use pubky_common::events::{EventCursor, EventType};
 
 use crate::{
-    Pkdns, PubkyHttpClient, PubkyResource, cross_log,
+    Pkdns, PubkyHttpClient, PubkyResource, PubkySession,
+    actors::session::credential::SessionCredential,
+    cross_log,
     errors::{Error, RequestError, Result},
+    util::check_http_status,
 };
 
 /// A single event from the event stream.
@@ -93,7 +126,8 @@ pub struct EventStreamBuilder {
     limit: Option<u16>,
     live: bool,
     reverse: bool,
-    path: Option<String>,
+    paths: Vec<String>,
+    credential: Option<Arc<dyn SessionCredential>>,
 }
 
 impl EventStreamBuilder {
@@ -136,7 +170,8 @@ impl EventStreamBuilder {
             limit: None,
             live: false,
             reverse: false,
-            path: None,
+            paths: Vec::new(),
+            credential: None,
         }
     }
 
@@ -181,7 +216,8 @@ impl EventStreamBuilder {
             limit: None,
             live: false,
             reverse: false,
-            path: None,
+            paths: Vec::new(),
+            credential: None,
         }
     }
 
@@ -283,12 +319,35 @@ impl EventStreamBuilder {
         self
     }
 
-    /// Filter events by path prefix.
+    /// Filter events by path. Repeatable: call once per path to receive the
+    /// union of several scopes (e.g. `/pub/` plus a private `/priv/app/`).
     ///
-    /// Format: Path WITHOUT `pubky://` scheme or user pubkey (e.g., "/pub/files/" or "/pub/").
+    /// Format: a path WITHOUT the `pubky://` scheme or user pubkey. A trailing
+    /// slash matches a directory and all its descendants (`/pub/files/`); no
+    /// trailing slash matches an exact file (`/pub/notes.txt`).
+    ///
+    /// Private (`/priv/...`) paths require a session attached via
+    /// [`Self::session`]; without one the homeserver rejects the subscription
+    /// with `401 Unauthorized`.
     #[must_use]
     pub fn path<S: Into<String>>(mut self, path: S) -> Self {
-        self.path = Some(path.into());
+        self.paths.push(path.into());
+        self
+    }
+
+    /// Authenticate the subscription with a user session.
+    ///
+    /// Required to receive private (`/priv/...`) events: the session credential
+    /// (cookie or bearer token) is attached to the request so the homeserver can
+    /// authorize each private [`path`](Self::path) against the session's read
+    /// capabilities. Public subscriptions don't need this.
+    ///
+    /// The homeserver only authorizes private paths when the subscription names
+    /// exactly the session's own user (a single `user=`); otherwise it responds
+    /// with `403 Forbidden`.
+    #[must_use]
+    pub fn session(mut self, session: &PubkySession) -> Self {
+        self.credential = Some(Arc::clone(session.credential()));
         self
     }
 
@@ -317,12 +376,25 @@ impl EventStreamBuilder {
             if self.reverse {
                 query.append_pair("reverse", "true");
             }
-            if let Some(path) = &self.path {
+            for path in &self.paths {
                 query.append_pair("path", path);
             }
         }
         cross_log!(debug, "Event stream URL: {}", url);
         Ok(url)
+    }
+
+    /// Resolve a user's homeserver via Pkarr, mapping a resolution failure to a
+    /// typed validation error.
+    async fn resolve_homeserver(&self, user: &PublicKey) -> Result<PublicKey> {
+        Pkdns::with_client(self.client.clone())
+            .get_homeserver_of(user)
+            .await
+            .ok_or_else(|| {
+                Error::from(RequestError::Validation {
+                    message: format!("Could not resolve homeserver for user {user}"),
+                })
+            })
     }
 
     /// Internal helper that contains the shared subscription logic.
@@ -344,19 +416,33 @@ impl EventStreamBuilder {
             }));
         }
 
-        // Use pre-set homeserver or resolve from first user
-        let homeserver = if let Some(hs) = &self.homeserver {
+        // The session owner (the user the credential authenticates as), if any.
+        let session_owner = self
+            .credential
+            .as_ref()
+            .map(|credential| credential.info().public_key().clone());
+
+        // Resolve the homeserver we will send the request to.
+        //
+        // When a session credential is attached it must ONLY ever be transmitted
+        // to its owner's homeserver. We resolve the owner's homeserver and, if the
+        // caller also pinned one explicitly, require the two to match.
+        let homeserver = if let Some(owner) = &session_owner {
+            let owner_homeserver = self.resolve_homeserver(owner).await?;
+            if let Some(pinned) = &self.homeserver
+                && *pinned != owner_homeserver
+            {
+                return Err(Error::from(RequestError::Validation {
+                    message: format!(
+                        "refusing to attach the session credential: target homeserver {pinned} is not the session owner's homeserver {owner_homeserver}"
+                    ),
+                }));
+            }
+            owner_homeserver
+        } else if let Some(hs) = &self.homeserver {
             hs.clone()
         } else {
-            let (first_user, _) = &self.users[0];
-            Pkdns::with_client(self.client.clone())
-                .get_homeserver_of(first_user)
-                .await
-                .ok_or_else(|| {
-                    Error::from(RequestError::Validation {
-                        message: format!("Could not resolve homeserver for user {first_user}"),
-                    })
-                })?
+            self.resolve_homeserver(&self.users[0].0).await?
         };
 
         cross_log!(
@@ -367,18 +453,18 @@ impl EventStreamBuilder {
         );
 
         let url = self.build_request_url(&homeserver)?;
-        let response = self
-            .client
-            .cross_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let message = format!("Event stream request failed with status {status}");
-            return Err(Error::from(RequestError::Server { status, message }));
+        let mut request = self.client.cross_request(Method::GET, url).await?;
+        // Attach the session credential (cookie or bearer) when present so the
+        // homeserver can authorize any private `/priv/...` path filters.
+        if let Some(credential) = &self.credential {
+            request = credential.attach(request, &self.client).await?;
         }
+        let response = request.send().await?;
+
+        // Surface homeserver rejections (e.g. 401/403/400 for private-path
+        // authorization) as a typed `RequestError::Server` carrying the status
+        // and the server's message, rather than a hand-rolled string.
+        let response = check_http_status(response).await?;
 
         let sse_stream = response.bytes_stream().eventsource();
         let event_stream = sse_stream.filter_map(|result| async move {
@@ -871,7 +957,8 @@ mod tests {
         assert_eq!(builder.limit, Some(100));
         assert!(builder.live);
         assert!(!builder.reverse);
-        assert_eq!(builder.path, Some("/pub/posts/".to_string()));
+        assert_eq!(builder.paths, vec!["/pub/posts/".to_string()]);
+        assert!(builder.credential.is_none());
 
         // Builder chaining with reverse mode
         let builder = EventStreamBuilder::for_user(client, &keys[0], None)
@@ -881,7 +968,28 @@ mod tests {
         assert_eq!(builder.limit, Some(50));
         assert!(!builder.live);
         assert!(builder.reverse);
-        assert_eq!(builder.path, Some("/pub/files/".to_string()));
+        assert_eq!(builder.paths, vec!["/pub/files/".to_string()]);
+    }
+
+    #[test]
+    fn path_is_repeatable_and_accumulates() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(1);
+
+        // No path by default.
+        let builder = EventStreamBuilder::for_user(client.clone(), &keys[0], None);
+        assert!(builder.paths.is_empty());
+
+        // Each `.path()` call appends, preserving order (union of scopes).
+        let builder = builder.path("/pub/").path("/priv/app/").path("/priv/file");
+        assert_eq!(
+            builder.paths,
+            vec![
+                "/pub/".to_string(),
+                "/priv/app/".to_string(),
+                "/priv/file".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -969,6 +1077,34 @@ mod tests {
         assert!(
             !query_reverse.iter().any(|(k, _)| k == "live"),
             "Should not have live param when reverse is set"
+        );
+    }
+
+    #[test]
+    fn build_request_url_emits_repeated_path_params() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(2);
+        let homeserver = &keys[0];
+        let user = &keys[1];
+
+        // A mixed public + private subscription emits one `path=` per filter,
+        // matching the server's repeatable `path` query from #429.
+        let builder = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users([(user, None)])
+            .unwrap()
+            .path("/pub/")
+            .path("/priv/app/");
+
+        let url = builder.build_request_url(homeserver).unwrap();
+        let path_params: Vec<String> = url
+            .query_pairs()
+            .filter(|(k, _)| k == "path")
+            .map(|(_, v)| v.to_string())
+            .collect();
+
+        assert_eq!(
+            path_params,
+            vec!["/pub/".to_string(), "/priv/app/".to_string()]
         );
     }
 

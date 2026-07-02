@@ -1,4 +1,32 @@
 use super::*;
+use pubky_testnet::pubky::errors::{Error, RequestError};
+use pubky_testnet::pubky::{ClientId, PubkySession, PublicKey};
+
+/// Sign up a fresh user and return its public key plus an authenticated
+/// (root-capability) grant session.
+async fn signed_in_user(
+    testnet: &pubky_testnet::EphemeralTestnet,
+    client_id: &str,
+) -> (PublicKey, PubkySession) {
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer
+        .signin(ClientId::new(client_id).unwrap())
+        .await
+        .unwrap();
+    (signer.public_key(), session)
+}
+
+/// Extract the HTTP status from a typed server-rejection error, so tests assert
+/// against `RequestError::Server { status, .. }` rather than a raw string.
+fn server_status(err: &Error) -> Option<StatusCode> {
+    match err {
+        Error::Request(RequestError::Server { status, .. }) => Some(*status),
+        _ => None,
+    }
+}
 
 /// Test the SDK builder API: `event_stream_for()` and `add_users()`
 /// This tests the high-level SDK interface rather than raw HTTP requests.
@@ -297,5 +325,212 @@ async fn events_stream_sdk_builder_api() {
         err.contains("50 users"),
         "add_users: Error should mention 50 user limit, got: {}",
         err
+    );
+}
+
+/// An authenticated owner subscribing via the SDK builder with
+/// `.session()` + a `/priv/` path receives that user's private events, scoped
+/// to the requested filter.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_private_authorized_receives() {
+    use futures::StreamExt;
+
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let (user, session) = signed_in_user(&testnet, "sdk-owner.test").await;
+
+    session.storage().put("/pub/a.txt", vec![1]).await.unwrap();
+    session
+        .storage()
+        .put("/priv/app/secret.txt", vec![2])
+        .await
+        .unwrap();
+    session
+        .storage()
+        .put("/priv/other/z.txt", vec![3])
+        .await
+        .unwrap();
+
+    // Single-user, authenticated, filtered to `/priv/app/`.
+    let mut stream = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .limit(1)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let event = stream
+        .next()
+        .await
+        .expect("should receive the in-scope private event")
+        .unwrap();
+    assert_eq!(event.resource.owner.z32(), user.z32());
+    assert!(
+        event
+            .resource
+            .path
+            .as_str()
+            .contains("/priv/app/secret.txt"),
+        "expected the in-scope private event, got: {}",
+        event.resource.path
+    );
+}
+
+/// A mixed `/pub/` + `/priv/app/` subscription returns the union
+/// and never an unrequested private scope.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_private_union_excludes_unrequested() {
+    use futures::StreamExt;
+
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let (user, session) = signed_in_user(&testnet, "sdk-union.test").await;
+
+    session.storage().put("/pub/a.txt", vec![1]).await.unwrap();
+    session
+        .storage()
+        .put("/priv/app/secret.txt", vec![2])
+        .await
+        .unwrap();
+    session
+        .storage()
+        .put("/priv/other/z.txt", vec![3])
+        .await
+        .unwrap();
+
+    let mut stream = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/pub/")
+        .path("/priv/app/")
+        .limit(2)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let mut paths = Vec::new();
+    while let Some(result) = stream.next().await {
+        let event = result.unwrap();
+        let p = event.resource.path.to_string();
+        assert!(
+            !p.contains("/priv/other/"),
+            "union leaked an unrequested private scope: {p}"
+        );
+        paths.push(p);
+        if paths.len() >= 2 {
+            break;
+        }
+    }
+    assert!(paths.iter().any(|p| p.contains("/pub/a.txt")));
+    assert!(paths.iter().any(|p| p.contains("/priv/app/secret.txt")));
+}
+
+/// A private-path subscription with no session is rejected by the
+/// homeserver and surfaced as a typed `401 Unauthorized`.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_private_without_session_is_unauthorized() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+    let (user, _session) = signed_in_user(&testnet, "sdk-401.test").await;
+
+    // No `.session()` → the homeserver rejects the private path.
+    let result = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = match result {
+        Ok(_) => panic!("private path without a session must be rejected"),
+        Err(e) => e,
+    };
+    assert_eq!(
+        server_status(&err),
+        Some(StatusCode::UNAUTHORIZED),
+        "expected a typed 401 Server error, got: {err}"
+    );
+}
+
+/// A session may not read another user's private events; the homeserver
+/// rejection surfaces as a typed `403 Forbidden`.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_private_wrong_user_is_forbidden() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let (_a, session_a) = signed_in_user(&testnet, "sdk-403-a.test").await;
+    let (b, _session_b) = signed_in_user(&testnet, "sdk-403-b.test").await;
+
+    // A's session requesting B's private events → 403 (server-enforced).
+    let result = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&b, None)])
+        .unwrap()
+        .session(&session_a)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = match result {
+        Ok(_) => panic!("a session may not read another user's private events"),
+        Err(e) => e,
+    };
+    assert_eq!(
+        server_status(&err),
+        Some(StatusCode::FORBIDDEN),
+        "expected a typed 403 Server error, got: {err}"
+    );
+}
+
+/// The session credential must never be sent to a homeserver that
+/// isn't the session owner's. Pointing the builder at a foreign homeserver
+/// fails early, client-side, before any request is issued.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_session_rejects_foreign_homeserver() {
+    let testnet = build_full_testnet().await;
+    let pubky = testnet.sdk().unwrap();
+    let (user, session) = signed_in_user(&testnet, "sdk-leak.test").await;
+
+    // A homeserver pubkey that is NOT the session owner's.
+    let foreign_homeserver = Keypair::random().public_key();
+
+    let result = pubky
+        .event_stream_for(&foreign_homeserver)
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = match result {
+        Ok(_) => panic!("must refuse to send the session credential to a foreign homeserver"),
+        Err(e) => e,
+    };
+    // Rejected client-side (no server was contacted), so there is no HTTP status.
+    assert!(
+        server_status(&err).is_none(),
+        "should fail before contacting any server, got: {err}"
+    );
+    assert!(
+        err.to_string().contains("homeserver"),
+        "error should explain the homeserver mismatch, got: {err}"
     );
 }
