@@ -22,7 +22,8 @@ async fn put_quota_applied() {
         .unwrap();
 
     let p1 = "/pub/data";
-    let p2 = "/pub/data2";
+    // `/priv/` draws from the same quota bucket as `/pub/`.
+    let p2 = "/priv/data2";
 
     // First 600 KB → OK (201)
     let data_600k: Vec<u8> = vec![0; 600_000];
@@ -77,61 +78,6 @@ async fn put_quota_applied() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-/// A `/priv/` write is rejected with 507 once the shared bucket
-/// is exhausted, and freeing `/pub/` space lets the same `/priv/` write succeed.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn priv_writes_count_toward_quota() {
-    let mut testnet = Testnet::new().await.unwrap();
-    let pubky = testnet.sdk().unwrap();
-
-    let mut mock_dir = MockDataDir::test();
-    mock_dir.config_toml.storage.default_quota_mb = Some(1); // 1 MB
-    let server = testnet
-        .create_homeserver_app_with_mock(mock_dir)
-        .await
-        .unwrap();
-
-    let signer = pubky.signer(Keypair::random());
-    let session = signer
-        .signup_cookie(&server.public_key(), None)
-        .await
-        .unwrap();
-
-    let data_600k: Vec<u8> = vec![0; 600_000];
-
-    // 600 KB to /pub → OK (201).
-    let resp = session
-        .storage()
-        .put("/pub/data", data_600k.clone())
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::CREATED);
-
-    // 600 KB to /priv → combined 1.2 MB exceeds the shared 1 MB quota → 507.
-    let err = session
-        .storage()
-        .put("/priv/data", data_600k.clone())
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        Error::Request(RequestError::Server { status, .. })
-            if status == StatusCode::INSUFFICIENT_STORAGE
-    ));
-
-    // Free the /pub file → 204.
-    let resp = session.storage().delete("/pub/data").await.unwrap();
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-
-    // Now the same /priv write fits in the freed quota → 201.
-    let resp = session
-        .storage()
-        .put("/priv/data", data_600k)
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::CREATED);
-}
 /// Regression test: quota early-rejection still works when bandwidth throttling
 /// is active. The bandwidth middleware wraps the request body in a throttled
 /// stream that loses `body.size_hint()`. The fix reads Content-Length from

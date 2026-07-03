@@ -182,10 +182,14 @@ mod tests {
         let pk = Keypair::random().public_key();
         let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
 
-        // 100 bytes + FILE_METADATA_SIZE is well within 1 MB
+        // 100 bytes + FILE_METADATA_SIZE is well within 1 MB. The pre-check is
+        // namespace-agnostic, so a `/priv/` path is treated exactly like `/pub/`.
         check_hint(&db, &user, None, "/test.txt", Some(100))
             .await
             .expect("small file should be within 1 MB quota");
+        check_hint(&db, &user, None, "/priv/app/small.txt", Some(100))
+            .await
+            .expect("small /priv file should be within 1 MB quota");
     }
 
     #[tokio::test]
@@ -195,27 +199,10 @@ mod tests {
         let pk = Keypair::random().public_key();
         let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
 
-        // 1 MB content + FILE_METADATA_SIZE > 1 MB quota
+        // 1 MB content + FILE_METADATA_SIZE > 1 MB quota. Same rejection for a `/priv/` path.
         check_hint(&db, &user, None, "/test.txt", Some(1024 * 1024))
             .await
             .expect_err("content + metadata should exceed 1 MB quota");
-    }
-
-    /// The Content-Length pre-check is namespace-agnostic,
-    /// a `/priv/` path is checked against the storage quota exactly like `/pub/`.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_priv_path_checked_like_pub() {
-        let db = SqlDb::test().await;
-        let pk = Keypair::random().public_key();
-        let user = UserRepository::create_with_quota_mb(&db, &pk, 1).await;
-
-        // Small /priv file → within quota.
-        check_hint(&db, &user, None, "/priv/app/small.txt", Some(100))
-            .await
-            .expect("small /priv file should be within 1 MB quota");
-
-        // 1 MB /priv content + FILE_METADATA_SIZE > 1 MB quota → rejected.
         check_hint(&db, &user, None, "/priv/app/big.txt", Some(1024 * 1024))
             .await
             .expect_err("/priv content + metadata should exceed 1 MB quota");

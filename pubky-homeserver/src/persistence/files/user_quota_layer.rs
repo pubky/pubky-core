@@ -474,10 +474,10 @@ mod tests {
         // Create user with 1 MB quota
         UserRepository::create_with_quota_mb(&db, &user_pubkey1, 1).await;
 
-        // Write a file and see if the user usage is updated
+        // Write a /pub file and see if the user usage is updated
         operator
             .write(
-                format!("{}/test.txt1", user_pubkey1_raw).as_str(),
+                format!("{}/pub/a.txt", user_pubkey1_raw).as_str(),
                 vec![0; 10],
             )
             .await
@@ -488,7 +488,7 @@ mod tests {
         // Write the same file again but with a different size
         operator
             .write(
-                format!("{}/test.txt1", user_pubkey1_raw).as_str(),
+                format!("{}/pub/a.txt", user_pubkey1_raw).as_str(),
                 vec![0; 12],
             )
             .await
@@ -496,10 +496,10 @@ mod tests {
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 12 + FILE_METADATA_SIZE);
 
-        // Write a second file and see if the user usage is updated
+        // Write a second file under /priv — it draws from the same quota bucket.
         operator
             .write(
-                format!("{}/test.txt2", user_pubkey1_raw).as_str(),
+                format!("{}/priv/app/b.txt", user_pubkey1_raw).as_str(),
                 vec![0; 5],
             )
             .await
@@ -507,106 +507,21 @@ mod tests {
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 17 + 2 * FILE_METADATA_SIZE);
 
-        // Delete the first file and see if the user usage is updated
+        // Delete the /pub file and see if the user usage is updated
         operator
-            .delete(format!("{}/test.txt1", user_pubkey1_raw).as_str())
+            .delete(format!("{}/pub/a.txt", user_pubkey1_raw).as_str())
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 5 + FILE_METADATA_SIZE);
 
-        // Delete the second file and see if the user usage is updated
+        // Delete the /priv file and see if the user usage is updated
         operator
-            .delete(format!("{}/test.txt2", user_pubkey1_raw).as_str())
+            .delete(format!("{}/priv/app/b.txt", user_pubkey1_raw).as_str())
             .await
             .unwrap();
         let user_usage = get_user_data_usage(&db, &user_pubkey1).await.unwrap();
         assert_eq!(user_usage, 0);
-    }
-
-    /// A `/priv/` write increments `used_bytes`
-    /// exactly like a `/pub/` write, and deleting it frees the bytes again.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_priv_write_increments_used_bytes() {
-        let db = SqlDb::test().await;
-        let layer = test_quota_layer(&db, None);
-        let operator = get_memory_operator().layer(layer);
-
-        let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let raw = pubkey.z32();
-        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
-
-        operator
-            .write(format!("{raw}/priv/secret.txt").as_str(), vec![0; 10])
-            .await
-            .unwrap();
-        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
-        assert_eq!(usage, 10 + FILE_METADATA_SIZE);
-
-        operator
-            .delete(format!("{raw}/priv/secret.txt").as_str())
-            .await
-            .unwrap();
-        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
-        assert_eq!(usage, 0);
-    }
-
-    /// A `/priv/` write that exceeds the storage
-    /// quota is rejected, and the rejected write consumes no quota.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_priv_write_rejected_at_quota() {
-        let db = SqlDb::test().await;
-        let layer = test_quota_layer(&db, None);
-        let operator = get_memory_operator().layer(layer);
-
-        let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let raw = pubkey.z32();
-        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await;
-
-        let one_mb: usize = 1024 * 1024;
-        let max_content = one_mb - FILE_METADATA_SIZE as usize;
-
-        operator
-            .write(
-                format!("{raw}/priv/big.txt").as_str(),
-                vec![0; max_content + 1],
-            )
-            .await
-            .expect_err("A /priv write over quota should be rejected");
-        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
-        assert_eq!(usage, 0, "Rejected /priv write must not consume quota");
-    }
-
-    /// `/priv/` and `/pub/` writes draw from the same per-user storage bucket,
-    /// so combined usage across both namespaces is enforced against one quota.
-    #[tokio::test]
-    #[pubky_test_utils::test]
-    async fn test_priv_and_pub_share_quota_bucket() {
-        let db = SqlDb::test().await;
-        let layer = test_quota_layer(&db, None);
-        let operator = get_memory_operator().layer(layer);
-
-        let pubkey = pubky_common::crypto::Keypair::random().public_key();
-        let raw = pubkey.z32();
-        UserRepository::create_with_quota_mb(&db, &pubkey, 1).await; // 1 MB
-
-        // 600 KB in /pub → fits within 1 MB.
-        operator
-            .write(format!("{raw}/pub/a.txt").as_str(), vec![0; 600_000])
-            .await
-            .expect("600 KB /pub write fits within 1 MB");
-
-        // Another 600 KB in /priv → combined 1.2 MB exceeds the shared quota.
-        operator
-            .write(format!("{raw}/priv/b.txt").as_str(), vec![0; 600_000])
-            .await
-            .expect_err("Combined /pub + /priv usage must exceed the shared quota");
-
-        // Usage reflects only the successful /pub write.
-        let usage = get_user_data_usage(&db, &pubkey).await.unwrap();
-        assert_eq!(usage, 600_000 + FILE_METADATA_SIZE);
     }
 
     #[tokio::test]
@@ -636,9 +551,12 @@ mod tests {
         let one_mb: usize = 1024 * 1024;
         let max_content = one_mb - FILE_METADATA_SIZE as usize;
 
-        let file_name1 = format!("{}/test1.txt", user_pubkey1_raw);
-        let entry_path1 =
-            EntryPath::new(user_pubkey1.clone(), WebDavPath::new("/test1.txt").unwrap());
+        // Exercise the full write path (reject, accept, entry, event) on a `/priv/` file.
+        let file_name1 = format!("{}/priv/app/test1.txt", user_pubkey1_raw);
+        let entry_path1 = EntryPath::new(
+            user_pubkey1.clone(),
+            WebDavPath::new("/priv/app/test1.txt").unwrap(),
+        );
 
         // Write a file that exceeds quota (content + metadata > 1 MB) — should fail.
         operator
@@ -705,8 +623,8 @@ mod tests {
             "Event should be created after successful write"
         );
 
-        let file_name2 = format!("{}/test2.txt", user_pubkey1_raw);
-        // Write a second file — even 1 byte should exceed the (now full) quota
+        // A `/pub/` write is rejected too — the quota is shared across namespaces.
+        let file_name2 = format!("{}/pub/test2.txt", user_pubkey1_raw);
         operator
             .write(file_name2.as_str(), vec![0; 1])
             .await
