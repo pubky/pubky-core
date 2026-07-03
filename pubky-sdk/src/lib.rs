@@ -47,12 +47,13 @@ pub use actors::SessionInfo;
 pub use actors::deep_links;
 #[doc(inline)]
 pub use actors::{
-    CookieCredential, CookieSessionView, GrantCredential, GrantManager, GrantSessionView,
+    CookieCredential, CookieSessionView, DelegatedGrantCredentialState, GrantCredential,
+    GrantManager, GrantSessionView,
 };
 #[doc(inline)]
-pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
+pub use actors::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
 #[doc(inline)]
-pub use actors::{GrantAuthFlowState, PubkyGrantAuthFlow};
+pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
 #[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
@@ -77,6 +78,8 @@ pub use actors::DEFAULT_HTTP_RELAY;
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]
 pub use actors::{DEFAULT_HTTP_RELAY_INBOX, EncryptedHttpRelayInboxChannel, HttpRelayInboxChannel};
+#[doc(hidden)]
+pub use actors::{DelegatedSignFn, delegated_sign_callback};
 #[doc(inline)]
 pub use pkarr;
 

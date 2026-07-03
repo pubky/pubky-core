@@ -119,7 +119,12 @@ async fn grant_secret_restore_mints_fresh_bearer() {
         .unwrap();
 
     let original_bearer = session.as_grant().unwrap().current_bearer().await;
-    let secret_token = session.as_grant().unwrap().export_secret().await;
+    let secret_token = session
+        .as_grant()
+        .unwrap()
+        .export_local_secret()
+        .await
+        .unwrap();
 
     let restored = pubky.restore_session(&secret_token).await.unwrap();
     let restored_bearer = restored.as_grant().unwrap().current_bearer().await;
@@ -153,7 +158,12 @@ async fn grant_secret_restore_rejects_revoked_grant() {
         .await
         .unwrap();
 
-    let secret_token = session.as_grant().unwrap().export_secret().await;
+    let secret_token = session
+        .as_grant()
+        .unwrap()
+        .export_local_secret()
+        .await
+        .unwrap();
     session.signout().await.unwrap();
 
     let err = pubky.restore_session(&secret_token).await.unwrap_err();
