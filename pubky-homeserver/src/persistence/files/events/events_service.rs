@@ -29,6 +29,18 @@ pub struct EventsService {
     channel_capacity: usize,
 }
 
+/// Ordering + live behavior for the admin all-events stream. Encoding the mutually exclusive
+/// options as one enum makes the invalid reverse-and-live combination unrepresentable.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// Batch, oldest-first; close when caught up.
+    Forward,
+    /// Batch oldest-first, then stay open for live events.
+    ForwardLive,
+    /// Batch, newest-first; close when caught up.
+    Reverse,
+}
+
 /// Resolved filter for the admin all-events stream. The route builds this after authorizing the
 /// request (pubkeys → user ids, cursor parsed); it drives [`EventsService::all_events_stream`].
 pub(crate) struct AllEventsFilter {
@@ -38,10 +50,8 @@ pub(crate) struct AllEventsFilter {
     pub user_ids: Option<Vec<i32>>,
     /// Path filters
     pub paths: Vec<PathFilter>,
-    /// Newest-first ordering (batch only).
-    pub reverse: bool,
-    /// Stay open for live events after replaying history.
-    pub live: bool,
+    /// Ordering + live behavior.
+    pub mode: Mode,
     /// Maximum total events to send before closing.
     pub limit: Option<u16>,
 }
@@ -187,7 +197,7 @@ impl EventsService {
     }
 
     /// Stream **all** events (the admin firehose): replay history over a single advancing global
-    /// cursor, then — when `filter.live` — stay open on the broadcast channel. Yields domain
+    /// cursor, then — in `ForwardLive` mode — stay open on the broadcast channel. Yields domain
     /// [`EventEntity`]s for the caller to frame (e.g. SSE). Exposes private paths, so only
     /// admin-authenticated routes may call it.
     pub(crate) fn all_events_stream(
@@ -206,6 +216,8 @@ impl EventsService {
 
             let mut last_cursor = filter.start_cursor;
             let mut total_sent: usize = 0;
+            let reverse = filter.mode == Mode::Reverse;
+            let live = filter.mode == Mode::ForwardLive;
 
             // Phase 1: historical replay over a single advancing global cursor.
             loop {
@@ -226,7 +238,7 @@ impl EventsService {
                     .get_all_events(
                         last_cursor,
                         batch_limit,
-                        filter.reverse,
+                        reverse,
                         &filter.paths,
                         filter.user_ids.as_deref(),
                         &mut sql_db.pool().into(),
@@ -249,15 +261,15 @@ impl EventsService {
                     total_sent += 1;
                 }
                 if caught_up {
-                    if !filter.live {
+                    if !live {
                         return;
                     }
                     break;
                 }
             }
 
-            // Phase 2: live mode (reverse+live is rejected before we get here).
-            if filter.live {
+            // Phase 2: live mode (only `Mode::ForwardLive` reaches here).
+            if live {
                 loop {
                     match rx.recv().await {
                         Ok(event) => {

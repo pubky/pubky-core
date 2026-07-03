@@ -19,7 +19,7 @@ use url::form_urlencoded;
 use super::super::app_state::AppState;
 use crate::{
     persistence::{
-        files::events::{AllEventsFilter, PathFilter, MAX_EVENT_STREAM_USERS},
+        files::events::{AllEventsFilter, Mode, PathFilter, MAX_EVENT_STREAM_USERS},
         sql::user::UserRepository,
     },
     shared::{webdav::WebDavPath, HttpError, HttpResult},
@@ -33,10 +33,8 @@ struct AdminStreamParams {
     cursor: Option<String>,
     /// Maximum total events to send before closing.
     limit: Option<u16>,
-    /// Live streaming mode (cannot be combined with `reverse`).
-    live: bool,
-    /// Reverse (newest-first) ordering; batch-only.
-    reverse: bool,
+    /// Ordering + live behavior; the incompatible reverse-and-live combination is unrepresentable.
+    mode: Mode,
     /// Path filters (repeatable; union — an event matches if it satisfies any). A trailing slash
     /// matches a directory and its descendants; without one it matches that exact file (see
     /// [`PathFilter`]).
@@ -106,11 +104,18 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
         }
     }
 
-    if live && reverse {
-        return Err(HttpError::bad_request(
-            "Cannot use live mode with reverse ordering",
-        ));
-    }
+    // Collapse the two flags into a mode; the incompatible combination is rejected here so
+    // nothing downstream can represent it.
+    let mode = match (live, reverse) {
+        (false, false) => Mode::Forward,
+        (true, false) => Mode::ForwardLive,
+        (false, true) => Mode::Reverse,
+        (true, true) => {
+            return Err(HttpError::bad_request(
+                "Cannot use live mode with reverse ordering",
+            ))
+        }
+    };
     if users.len() > MAX_EVENT_STREAM_USERS {
         return Err(HttpError::bad_request(format!(
             "Too many users. Maximum allowed: {MAX_EVENT_STREAM_USERS}"
@@ -121,8 +126,7 @@ fn parse_admin_stream_query(query: &str) -> Result<AdminStreamParams, HttpError>
         users,
         cursor,
         limit,
-        live,
-        reverse,
+        mode,
         paths,
     })
 }
@@ -166,8 +170,7 @@ async fn resolve_filter(
         start_cursor,
         user_ids,
         paths: params.paths.into_iter().map(PathFilter::from).collect(),
-        reverse: params.reverse,
-        live: params.live,
+        mode: params.mode,
         limit: params.limit,
     })
 }
