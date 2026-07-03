@@ -1,6 +1,8 @@
 use super::*;
+use futures::StreamExt;
 use pubky_testnet::pubky::errors::{Error, RequestError};
-use pubky_testnet::pubky::{ClientId, PubkySession, PublicKey};
+use pubky_testnet::pubky::{ClientId, EventCursor, PubkySession, PublicKey};
+use tokio::time::{timeout, Duration};
 
 /// Sign up a fresh user and return its public key plus an authenticated
 /// (root-capability) grant session.
@@ -33,10 +35,6 @@ fn server_status(err: &Error) -> Option<StatusCode> {
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_builder_api() {
-    use futures::StreamExt;
-    use pubky_testnet::pubky::EventCursor;
-    use tokio::time::{timeout, Duration};
-
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
@@ -328,14 +326,13 @@ async fn events_stream_sdk_builder_api() {
     );
 }
 
-/// An authenticated owner subscribing via the SDK builder with
-/// `.session()` + a `/priv/` path receives that user's private events, scoped
-/// to the requested filter.
+/// An authenticated owner receives their own private events through the SDK
+/// builder: a single `/priv/app/` filter yields only the in-scope event, and a
+/// mixed `/pub/` + `/priv/app/` subscription returns the union without leaking
+/// an unrequested private scope.
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_sdk_private_authorized_receives() {
-    use futures::StreamExt;
-
+async fn events_stream_sdk_private_authorized_scoping() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
@@ -353,7 +350,7 @@ async fn events_stream_sdk_private_authorized_receives() {
         .await
         .unwrap();
 
-    // Single-user, authenticated, filtered to `/priv/app/`.
+    // A single `/priv/app/` filter yields only the in-scope private event.
     let mut stream = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&user, None)])
@@ -380,32 +377,10 @@ async fn events_stream_sdk_private_authorized_receives() {
         "expected the in-scope private event, got: {}",
         event.resource.path
     );
-}
+    drop(stream);
 
-/// A mixed `/pub/` + `/priv/app/` subscription returns the union
-/// and never an unrequested private scope.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_private_union_excludes_unrequested() {
-    use futures::StreamExt;
-
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-    let (user, session) = signed_in_user(&testnet, "sdk-union.test").await;
-
-    session.storage().put("/pub/a.txt", vec![1]).await.unwrap();
-    session
-        .storage()
-        .put("/priv/app/secret.txt", vec![2])
-        .await
-        .unwrap();
-    session
-        .storage()
-        .put("/priv/other/z.txt", vec![3])
-        .await
-        .unwrap();
-
+    // A mixed `/pub/` + `/priv/app/` subscription returns the union and never
+    // the unrequested `/priv/other/` scope.
     let mut stream = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&user, None)])
@@ -454,10 +429,9 @@ async fn events_stream_sdk_private_without_session_is_unauthorized() {
         .subscribe()
         .await;
 
-    let err = match result {
-        Ok(_) => panic!("private path without a session must be rejected"),
-        Err(e) => e,
-    };
+    let err = result
+        .err()
+        .expect("private path without a session must be rejected");
     assert_eq!(
         server_status(&err),
         Some(StatusCode::UNAUTHORIZED),
@@ -487,10 +461,9 @@ async fn events_stream_sdk_private_wrong_user_is_forbidden() {
         .subscribe()
         .await;
 
-    let err = match result {
-        Ok(_) => panic!("a session may not read another user's private events"),
-        Err(e) => e,
-    };
+    let err = result
+        .err()
+        .expect("a session may not read another user's private events");
     assert_eq!(
         server_status(&err),
         Some(StatusCode::FORBIDDEN),
@@ -520,10 +493,9 @@ async fn events_stream_sdk_session_rejects_foreign_homeserver() {
         .subscribe()
         .await;
 
-    let err = match result {
-        Ok(_) => panic!("must refuse to send the session credential to a foreign homeserver"),
-        Err(e) => e,
-    };
+    let err = result
+        .err()
+        .expect("must refuse to send the session credential to a foreign homeserver");
     // Rejected client-side (no server was contacted), so there is no HTTP status.
     assert!(
         server_status(&err).is_none(),
