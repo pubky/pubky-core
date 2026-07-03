@@ -10,9 +10,7 @@ How to set up and operate a Pubky homeserver.
 
 ## Contents
 
-- [Quick Start with Docker Compose](#quick-start-with-docker-compose)
-- [Manual Setup](#manual-setup)
-  - [Install the Homeserver](#install-the-homeserver)
+- [Install the Homeserver](#install-the-homeserver)
     - [Release Binary](#release-binary) | [Build From Source](#build-from-source) ([Cargo](#build-a-binary-with-cargo) | [Docker](#build-a-docker-image))
   - [Initialise the Data Directory](#initialise-the-data-directory)
   - [Set Up PostgreSQL](#set-up-postgresql)
@@ -23,27 +21,6 @@ How to set up and operate a Pubky homeserver.
 - [Production Notes](#production-notes)
 - [Troubleshooting](#troubleshooting)
 
-
-## Quick Start with Docker Compose
-
-The [pubky-docker](https://github.com/pubky/pubky-docker) repository provides a Docker Compose setup that runs the homeserver and PostgreSQL together using pre-built images. This is the fastest way to get a homeserver running.
-
-Requires [Docker Engine](https://docs.docker.com/engine/install/).
-
-```bash
-git clone https://github.com/pubky/pubky-docker.git
-cd pubky-docker
-cp .env-sample .env
-docker compose --profile backend up --no-build -d postgres homeserver
-```
-
-This starts PostgreSQL and the homeserver with persistent storage, networking, and healthchecks pre-configured. The homeserver is available at `http://localhost:6286` and the admin API at `http://localhost:6288`.
-
-To customise the homeserver, edit `homeserver.config.toml` in the pubky-docker directory. See [Configuration](#configuration) for available settings and [Production Notes](#production-notes) before exposing the server publicly.
-
-## Manual Setup
-
-The steps below walk through installing the homeserver binary, setting up PostgreSQL, and configuring everything individually. Use this path if you need full control over each component.
 
 ## Install the Homeserver
 
