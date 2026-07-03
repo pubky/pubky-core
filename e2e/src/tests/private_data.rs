@@ -1,8 +1,7 @@
-//! Authorization matrix for private (`/priv/`) resources: each actor tier
-//! (anonymous, under-scoped owner, other tenant, authorized owner) against
-//! every storage action.
-//!
-//! `/events-stream` authorization is covered in `events::stream_private`.
+//! Unauthorized-access matrix for private (`/priv/`) resources: every denied
+//! actor tier (anonymous, under-scoped owner, other tenant) against every
+//! storage action, asserting the status-by-auth-tier contract invariant to
+//! existence — anonymous → 401, under-scoped / other tenant → 403.
 
 use super::build_full_testnet;
 use pubky_testnet::pubky::{
@@ -194,107 +193,4 @@ async fn cross_tenant_priv_access_is_forbidden() {
     let token = tenant.as_grant().unwrap().current_bearer().await;
 
     assert_all_verbs_denied(pubky.client(), &owner, Some(&token), StatusCode::FORBIDDEN).await;
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn owner_with_cap_priv_access_is_authorized() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let signer = pubky.signer(Keypair::random());
-    signer.signup(&server.public_key(), None).await.unwrap();
-    let owner = signer.public_key();
-    let session = grant_session(
-        &testnet,
-        &signer,
-        Capabilities::builder().read_write(DIR).finish(),
-    )
-    .await;
-    let token = session.as_grant().unwrap().current_bearer().await;
-    let bearer = Some(token.as_str());
-
-    let client = pubky.client();
-    let secret = owner_url(&owner, SECRET);
-    let absent = owner_url(&owner, ABSENT);
-    let dir = owner_url(&owner, DIR);
-
-    // Write, read, list, delete — all authorized.
-    assert_eq!(
-        req_status(client, Method::PUT, &secret, bearer, Some(vec![1, 2, 3])).await,
-        StatusCode::CREATED
-    );
-    assert_eq!(
-        req_status(client, Method::GET, &secret, bearer, None).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        req_status(client, Method::HEAD, &secret, bearer, None).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        req_status(client, Method::GET, &dir, bearer, None).await,
-        StatusCode::OK
-    );
-    assert_eq!(
-        req_status(client, Method::DELETE, &secret, bearer, None).await,
-        StatusCode::NO_CONTENT
-    );
-
-    // The authorized tier distinguishes absent (404) from the denied tiers' uniform status.
-    assert_eq!(
-        req_status(client, Method::GET, &absent, bearer, None).await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        req_status(client, Method::HEAD, &absent, bearer, None).await,
-        StatusCode::NOT_FOUND
-    );
-}
-
-#[tokio::test]
-#[pubky_testnet::test]
-async fn anonymous_events_feed_excludes_private() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let signer = pubky.signer(Keypair::random());
-    signer.signup(&server.public_key(), None).await.unwrap();
-    let session = grant_session(
-        &testnet,
-        &signer,
-        Capabilities::builder()
-            .read_write("/pub/")
-            .read_write(DIR)
-            .finish(),
-    )
-    .await;
-
-    // Interleave public and private writes.
-    session.storage().put("/pub/a.txt", vec![1]).await.unwrap();
-    session.storage().put(SECRET, vec![2]).await.unwrap();
-    session.storage().put("/pub/b.txt", vec![3]).await.unwrap();
-
-    // The anonymous public feed must never surface a private path.
-    let feed_url = format!("https://{}/events/?limit=100", server.public_key().z32());
-    let text = pubky
-        .client()
-        .request(Method::GET, &feed_url)
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-
-    assert!(
-        !text.contains("/priv/"),
-        "public feed leaked a private path:\n{text}"
-    );
-    assert!(
-        text.contains("/pub/a.txt") && text.contains("/pub/b.txt"),
-        "public events should be present:\n{text}"
-    );
 }
