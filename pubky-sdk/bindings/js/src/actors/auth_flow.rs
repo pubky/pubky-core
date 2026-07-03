@@ -15,7 +15,7 @@ use wasm_bindgen_futures::JsFuture;
 use super::{in_flight::InFlightGuard, session::Session};
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
-    wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
+    wrappers::{auth_token::AuthToken, capabilities::validate_capabilities, keys::PublicKey},
 };
 
 /// Start and control a pubkyauth authorization flow.
@@ -85,7 +85,7 @@ impl AuthFlow {
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<AuthFlow> {
         // 1) Validate & normalize capability string
-        let normalized = validate_caps_for_start(capabilities.as_str())?;
+        let normalized = validate_capabilities(capabilities.as_str())?;
         // 2) Build native Capabilities
         let caps = Capabilities::try_from(normalized.as_str())?;
 

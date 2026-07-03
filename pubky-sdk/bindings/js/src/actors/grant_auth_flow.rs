@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
-    wrappers::capabilities::validate_caps_for_start,
+    wrappers::capabilities::validate_capabilities,
 };
 
 /// Options for starting a grant-backed pubkyauth flow.
@@ -50,16 +50,14 @@ impl GrantAuthFlow {
     ///
     /// This checks for a secure browser context with WebCrypto `crypto.subtle`
     /// and IndexedDB. It is a coarse synchronous feature-detection helper only;
-    /// some runtimes expose those primitives without Ed25519 support. Delegated
-    /// start/resume/restore can still fail if Ed25519 is unsupported, storage
-    /// access is denied, or a saved key id no longer exists.
+    /// some runtimes expose those primitives without Ed25519 support.
     #[wasm_bindgen(js_name = "isDelegationAvailable", getter)]
     pub fn is_delegation_available() -> bool {
         BrowserGrantKeyStore::is_available()
     }
 
-    /// Start a grant-backed flow (standalone).
-    /// Prefer `pubky.startGrantAuthFlow()` to reuse a facade client.
+    /// Start a grant-backed flow with a new DHT client.
+    /// Prefer `pubky.startGrantAuthFlow()` to reuse a facade DHT client.
     ///
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
@@ -90,7 +88,7 @@ impl GrantAuthFlow {
         options: GrantAuthFlowOptions,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<GrantAuthFlow> {
-        let normalized = validate_caps_for_start(capabilities.as_str())?;
+        let normalized = validate_capabilities(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
         let client_id = ClientId::new(&options.client_id).map_err(|e| {
             pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string()))
@@ -132,7 +130,7 @@ impl GrantAuthFlow {
         options: GrantAuthFlowOptions,
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<GrantAuthFlow> {
-        let normalized = validate_caps_for_start(capabilities.as_str())?;
+        let normalized = validate_capabilities(capabilities.as_str())?;
         let caps = Capabilities::try_from(normalized.as_str())?;
         let client_id = ClientId::new(&options.client_id).map_err(|e| {
             pubky::Error::Authentication(pubky::errors::AuthError::Validation(e.to_string()))
@@ -249,7 +247,11 @@ impl GrantAuthFlow {
         })
     }
 
-    /// Save non-secret state required to resume this delegated pending grant flow.
+    /// Save sensitive state required to resume this delegated pending grant flow.
+    ///
+    /// This does not export the delegated private key, but it includes the relay
+    /// secret in the authorization URL. Store it only temporarily and delete it
+    /// once the flow completes or is abandoned.
     #[wasm_bindgen(js_name = "saveDelegated")]
     pub fn save_delegated(&self) -> JsResult<String> {
         let flow = self.borrow_inner()?;

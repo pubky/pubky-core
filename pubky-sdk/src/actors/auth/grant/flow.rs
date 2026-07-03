@@ -199,7 +199,11 @@ impl PubkyGrantAuthFlow {
         })
     }
 
-    /// Save non-secret state required to resume a pending delegated grant flow.
+    /// Save sensitive state required to resume a pending delegated grant flow.
+    ///
+    /// This does not export the delegated private key, but it includes the relay
+    /// secret in [`DelegatedGrantAuthFlowState::authorization_url`]. Store it only
+    /// temporarily and delete it once the flow completes or is abandoned.
     #[must_use]
     pub fn save_delegated(&self) -> Option<DelegatedGrantAuthFlowState> {
         let signer = self.client_signer.delegated_state()?;
