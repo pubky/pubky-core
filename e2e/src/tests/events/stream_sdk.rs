@@ -471,38 +471,66 @@ async fn events_stream_sdk_private_wrong_user_is_forbidden() {
     );
 }
 
-/// The session credential must never be sent to a homeserver that
-/// isn't the session owner's. Pointing the builder at a foreign homeserver
-/// fails early, client-side, before any request is issued.
+/// Attaching a session must not hijack the subscription's target.
+/// With two homeservers, subscribing to a user on HS2 while holding a session on
+/// HS1 still targets HS2 — the session is simply not attached (owner ≠ target).
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_sdk_session_rejects_foreign_homeserver() {
-    let testnet = build_full_testnet().await;
-    let pubky = testnet.sdk().unwrap();
-    let (user, session) = signed_in_user(&testnet, "sdk-leak.test").await;
-
-    // A homeserver pubkey that is NOT the session owner's.
-    let foreign_homeserver = Keypair::random().public_key();
-
-    let result = pubky
-        .event_stream_for(&foreign_homeserver)
-        .add_users([(&user, None)])
+async fn events_stream_sdk_session_does_not_override_target_homeserver() {
+    let mut testnet = build_full_testnet().await;
+    let hs1 = testnet.homeserver_app().public_key();
+    let hs2 = testnet
+        .create_random_homeserver()
+        .await
         .unwrap()
-        .session(&session)
-        .path("/priv/app/")
-        .subscribe()
-        .await;
+        .public_key();
+    assert_ne!(hs1, hs2, "test needs two distinct homeservers");
 
-    let err = result
-        .err()
-        .expect("must refuse to send the session credential to a foreign homeserver");
-    // Rejected client-side (no server was contacted), so there is no HTTP status.
+    let pubky = testnet.sdk().unwrap();
+
+    // `me` holds a session on HS1.
+    let me = pubky.signer(Keypair::random());
+    me.signup(&hs1, None).await.unwrap();
+    let my_session = me
+        .signin(ClientId::new("sdk-override.test").unwrap())
+        .await
+        .unwrap();
+
+    // `other` lives on HS2 and writes a public event there.
+    let other_signer = pubky.signer(Keypair::random());
+    other_signer.signup(&hs2, None).await.unwrap();
+    let other = other_signer.public_key();
+    let other_session = other_signer
+        .signin(ClientId::new("sdk-override-other.test").unwrap())
+        .await
+        .unwrap();
+    other_session
+        .storage()
+        .put("/pub/hello.txt", vec![1])
+        .await
+        .unwrap();
+
+    // Subscribe to `other`'s public events with MY (HS1) session attached. The
+    // builder must resolve `other`'s homeserver (HS2), not mine (HS1), and stream
+    // `other`'s event; the mismatched session is silently not attached.
+    let mut stream = pubky
+        .event_stream_for_user(&other, None)
+        .session(&my_session)
+        .path("/pub/")
+        .limit(1)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let event = stream
+        .next()
+        .await
+        .expect("should receive other's public event from their own homeserver")
+        .unwrap();
+    assert_eq!(event.resource.owner.z32(), other.z32());
     assert!(
-        server_status(&err).is_none(),
-        "should fail before contacting any server, got: {err}"
-    );
-    assert!(
-        err.to_string().contains("homeserver"),
-        "error should explain the homeserver mismatch, got: {err}"
+        event.resource.path.as_str().contains("/pub/hello.txt"),
+        "expected other's public event, got: {}",
+        event.resource.path
     );
 }

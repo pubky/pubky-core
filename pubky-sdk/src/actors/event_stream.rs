@@ -417,29 +417,11 @@ impl EventStreamBuilder {
         }
 
         // The session owner (the user the credential authenticates as), if any.
-        let session_owner = self
-            .credential
-            .as_ref()
-            .map(|credential| credential.info().public_key().clone());
-
-        // Resolve the homeserver we will send the request to.
-        //
-        // When a session credential is attached it must ONLY ever be transmitted
-        // to its owner's homeserver. We resolve the owner's homeserver and, if the
-        // caller also pinned one explicitly, require the two to match.
-        let homeserver = if let Some(owner) = &session_owner {
-            let owner_homeserver = self.resolve_homeserver(owner).await?;
-            if let Some(pinned) = &self.homeserver
-                && *pinned != owner_homeserver
-            {
-                return Err(Error::from(RequestError::Validation {
-                    message: format!(
-                        "refusing to attach the session credential: target homeserver {pinned} is not the session owner's homeserver {owner_homeserver}"
-                    ),
-                }));
-            }
-            owner_homeserver
-        } else if let Some(hs) = &self.homeserver {
+        // Resolve the homeserver from the subscription itself: an explicit
+        // homeserver if given, otherwise the first user's. An attached session
+        // must never change WHERE the request goes, only WHETHER a credential is
+        // attached (below).
+        let homeserver = if let Some(hs) = &self.homeserver {
             hs.clone()
         } else {
             self.resolve_homeserver(&self.users[0].0).await?
@@ -454,10 +436,16 @@ impl EventStreamBuilder {
 
         let url = self.build_request_url(&homeserver)?;
         let mut request = self.client.cross_request(Method::GET, url).await?;
-        // Attach the session credential (cookie or bearer) when present so the
-        // homeserver can authorize any private `/priv/...` path filters.
+        // Attach the session credential (cookie or bearer) only when the target
+        // is the session owners own homeserver, so a session token is never sent
+        // to a homeserver that isn't its owners. On a mismatch the request stays
+        // unauthenticated and the homeserver rejects any private `/priv/...` path
+        // with 401.
         if let Some(credential) = &self.credential {
-            request = credential.attach(request, &self.client).await?;
+            let owner = credential.info().public_key().clone();
+            if self.resolve_homeserver(&owner).await? == homeserver {
+                request = credential.attach(request, &self.client).await?;
+            }
         }
         let response = request.send().await?;
 
