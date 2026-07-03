@@ -60,5 +60,3 @@ pub fn validate_capabilities(input: &str) -> JsResult<String> {
 
     Ok(normalized)
 }
-
-
