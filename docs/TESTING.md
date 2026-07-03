@@ -118,7 +118,7 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 
 ### PostgreSQL Connection Refused
 
-Make sure PostgreSQL is running and listening on the host and port in `TEST_PUBKY_CONNECTION_STRING`. See [Local Development - Troubleshooting](./LOCAL_DEVELOPMENT.md#postgresql-connection-refused).
+See [Install Guide — PostgreSQL Connection Refused](./INSTALL.md#postgresql-connection-refused) for detailed debugging steps.
 
 ### Stale Test Databases
 

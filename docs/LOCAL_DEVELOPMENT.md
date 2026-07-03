@@ -39,9 +39,9 @@ The local testnet starts a full Pubky network from source: homeserver, local DHT
 
 ### Set Up PostgreSQL
 
-The testnet requires a running PostgreSQL instance with a user that can create databases. You do **not** need to create a database manually — the testnet creates temporary `pubky_test_*` databases automatically and cleans them up on exit.
+The testnet requires a running PostgreSQL instance with a user that can create databases. The testnet creates temporary `pubky_test_*` databases automatically and cleans them up on exit.
 
-The quickest option is Docker:
+In this guide we'll use Docker:
 
 ```bash
 docker run --name pubky-postgres \
@@ -51,11 +51,11 @@ docker run --name pubky-postgres \
   -d postgres:18
 ```
 
-For native PostgreSQL or an existing instance, see [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql). Skip the database creation step if you're only using the testnet.
+For native PostgreSQL install or to use an existing instance see [INSTALL.md - Set Up PostgreSQL](./INSTALL.md#set-up-postgresql). You can skip the database creation step if you're only using the testnet.
 
 ### Run the Testnet
 
-Using the Docker PostgreSQL from above:
+Using the Docker PostgreSQL config from above:
 
 ```bash
 TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
@@ -63,8 +63,6 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 ```
 
 Replace the connection string if your PostgreSQL instance uses different credentials or host.
-
-The `?pubky-test=true` parameter tells the testnet to create a temporary `pubky_test_*` database inside the configured PostgreSQL instance. The database is cleaned up when the testnet exits.
 
 It starts:
 
@@ -176,8 +174,4 @@ Stop the process using the conflicting port or use a custom homeserver config fo
 
 ### PostgreSQL Connection Refused
 
-Make sure PostgreSQL is running and listening on the expected host and port. For the Docker example above:
-
-```bash
-docker ps --filter name=pubky-postgres
-```
+See [Install Guide — PostgreSQL Connection Refused](./INSTALL.md#postgresql-connection-refused) for detailed debugging steps.
