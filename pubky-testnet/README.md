@@ -221,3 +221,5 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 ```
 
 In persistent mode, the data directory is auto-initialized on first run with a `config.toml` and a server keypair. On subsequent runs, the existing state is picked up. The homeserver keeps the same identity across restarts.
+
+The `TEST_PUBKY_CONNECTION_STRING` environment variable is read on every startup and overrides the `database_url` in the on-disk config.

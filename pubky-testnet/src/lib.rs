@@ -1,4 +1,5 @@
 // Actual testnet exposed in the library
+mod common;
 mod ephemeral_testnet;
 mod static_testnet;
 mod testnet;

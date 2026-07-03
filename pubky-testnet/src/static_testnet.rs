@@ -6,31 +6,26 @@ use std::{
     str::FromStr,
 };
 
+use crate::common::testnet_keypair;
 use crate::Testnet;
 use http_relay::HttpRelay;
 use pubky_common::constants::testnet_ports;
 use pubky_homeserver::{
-    AppContext, ConfigToml, DataDir, DomainPort, HomeserverApp, MockDataDir, PersistentDataDir,
+    AppContext, ConfigToml, ConnectionString, DataDir, DomainPort, HomeserverApp, MockDataDir,
+    PersistentDataDir,
 };
 
 /// The bind address used for all static testnet listeners.
 const BIND_ALL: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
-/// The deterministic keypair used by all static/ephemeral testnets.
-/// Produces pubkey `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`.
-fn testnet_keypair() -> pubky_common::crypto::Keypair {
-    pubky_common::crypto::Keypair::from_secret(&[0; 32])
-}
-
 /// Apply the fixed static-testnet port and DHT overrides to a config.
-fn apply_static_testnet_overrides(
-    config: &mut ConfigToml,
-    bootstrap_nodes: Vec<DomainPort>,
-) {
+fn apply_static_testnet_overrides(config: &mut ConfigToml, bootstrap_nodes: Vec<DomainPort>) {
     config.pkdns.dht_bootstrap_nodes = Some(bootstrap_nodes);
     config.pkdns.dht_relay_nodes = None;
-    config.drive.icann_listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ICANN_HTTP);
-    config.drive.pubky_listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_PUBKY_HTTPS);
+    config.drive.icann_listen_socket =
+        SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ICANN_HTTP);
+    config.drive.pubky_listen_socket =
+        SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_PUBKY_HTTPS);
     config.admin.enabled = true;
     config.admin.listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ADMIN);
 }
@@ -189,8 +184,14 @@ impl StaticTestnet {
     /// without a homeserver.
     async fn start_infra() -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
-        let fixed_boostrap = Self::run_fixed_boostrap_node(&testnet.dht.bootstrap)
-            .map_err(|e| anyhow::anyhow!("Failed to run bootstrap node on port {}: {}", testnet_ports::BOOTSTRAP, e))?;
+        let fixed_boostrap =
+            Self::run_fixed_boostrap_node(&testnet.dht.bootstrap).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to run bootstrap node on port {}: {}",
+                    testnet_ports::BOOTSTRAP,
+                    e
+                )
+            })?;
 
         let mut testnet = Self {
             testnet,
@@ -199,14 +200,20 @@ impl StaticTestnet {
             persistent: false,
         };
 
-        testnet
-            .run_fixed_pkarr_relays()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to run pkarr relay on port {}: {}", testnet_ports::PKARR_RELAY, e))?;
-        testnet
-            .run_fixed_http_relay()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to run http relay on port {}: {}", testnet_ports::HTTP_RELAY, e))?;
+        testnet.run_fixed_pkarr_relays().await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to run pkarr relay on port {}: {}",
+                testnet_ports::PKARR_RELAY,
+                e
+            )
+        })?;
+        testnet.run_fixed_http_relay().await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to run http relay on port {}: {}",
+                testnet_ports::HTTP_RELAY,
+                e
+            )
+        })?;
 
         Ok(testnet)
     }
@@ -363,6 +370,7 @@ impl StaticTestnet {
         let testnet_dir = TestnetDataDir {
             inner: persistent_dir,
             dht_bootstrap_nodes: self.parse_bootstrap_nodes()?,
+            postgres_connection_string: self.testnet.postgres_connection_string.clone(),
         };
 
         let context = AppContext::read_from(testnet_dir).await?;
@@ -411,6 +419,7 @@ fn seed_config(source: &Path, persistent_dir: &PersistentDataDir) -> anyhow::Res
 struct TestnetDataDir {
     inner: PersistentDataDir,
     dht_bootstrap_nodes: Vec<DomainPort>,
+    postgres_connection_string: Option<ConnectionString>,
 }
 
 impl DataDir for TestnetDataDir {
@@ -425,6 +434,9 @@ impl DataDir for TestnetDataDir {
     fn read_or_create_config_file(&self) -> anyhow::Result<ConfigToml> {
         let mut config = self.inner.read_or_create_config_file()?;
         apply_static_testnet_overrides(&mut config, self.dht_bootstrap_nodes.clone());
+        if let Some(connection_string) = &self.postgres_connection_string {
+            config.general.database_url = connection_string.clone();
+        }
         Ok(config)
     }
 
@@ -460,6 +472,7 @@ mod tests {
         let testnet_dir = TestnetDataDir {
             inner: persistent.clone(),
             dht_bootstrap_nodes: bootstrap.clone(),
+            postgres_connection_string: None,
         };
 
         let config = testnet_dir.read_or_create_config_file().unwrap();
@@ -474,6 +487,7 @@ mod tests {
         let testnet_dir = TestnetDataDir {
             inner: persistent.clone(),
             dht_bootstrap_nodes: vec![],
+            postgres_connection_string: None,
         };
 
         assert_eq!(testnet_dir.path(), persistent.path());
@@ -492,6 +506,7 @@ mod tests {
         let testnet_dir = TestnetDataDir {
             inner: persistent.clone(),
             dht_bootstrap_nodes: vec![],
+            postgres_connection_string: None,
         };
 
         let expected = testnet_keypair();
@@ -519,6 +534,7 @@ mod tests {
         let testnet_dir = TestnetDataDir {
             inner: persistent,
             dht_bootstrap_nodes: vec![],
+            postgres_connection_string: None,
         };
 
         let kp = testnet_dir.read_or_create_keypair().unwrap();
@@ -646,6 +662,7 @@ mod tests {
         let testnet_dir = TestnetDataDir {
             inner: persistent,
             dht_bootstrap_nodes: bootstrap.clone(),
+            postgres_connection_string: None,
         };
 
         let config = testnet_dir.read_or_create_config_file().unwrap();
@@ -658,9 +675,18 @@ mod tests {
         assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap));
         assert_eq!(config.pkdns.dht_relay_nodes, None);
         // Fixed ports should be applied
-        assert_eq!(config.drive.icann_listen_socket.port(), testnet_ports::HOMESERVER_ICANN_HTTP);
-        assert_eq!(config.drive.pubky_listen_socket.port(), testnet_ports::HOMESERVER_PUBKY_HTTPS);
-        assert_eq!(config.admin.listen_socket.port(), testnet_ports::HOMESERVER_ADMIN);
+        assert_eq!(
+            config.drive.icann_listen_socket.port(),
+            testnet_ports::HOMESERVER_ICANN_HTTP
+        );
+        assert_eq!(
+            config.drive.pubky_listen_socket.port(),
+            testnet_ports::HOMESERVER_PUBKY_HTTPS
+        );
+        assert_eq!(
+            config.admin.listen_socket.port(),
+            testnet_ports::HOMESERVER_ADMIN
+        );
         assert!(config.admin.enabled);
     }
 
@@ -679,12 +705,15 @@ mod tests {
         seed_config(&source, &persistent1).unwrap();
         // Only init the dir structure + config, but NOT the keypair — let
         // TestnetDataDir seed the deterministic one.
-        persistent1.ensure_data_dir_exists_and_is_writable().unwrap();
+        persistent1
+            .ensure_data_dir_exists_and_is_writable()
+            .unwrap();
         persistent1.read_or_create_config_file().unwrap();
 
         let dir1 = TestnetDataDir {
             inner: persistent1,
             dht_bootstrap_nodes: bootstrap.clone(),
+            postgres_connection_string: None,
         };
         let kp1 = dir1.read_or_create_keypair().unwrap();
         let config1 = dir1.read_or_create_config_file().unwrap();
@@ -700,6 +729,7 @@ mod tests {
         let dir2 = TestnetDataDir {
             inner: persistent2,
             dht_bootstrap_nodes: bootstrap,
+            postgres_connection_string: None,
         };
         let kp2 = dir2.read_or_create_keypair().unwrap();
         let config2 = dir2.read_or_create_config_file().unwrap();
