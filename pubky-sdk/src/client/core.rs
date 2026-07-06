@@ -49,6 +49,9 @@ pub struct PubkyHttpClientBuilder {
     /// Optional user-agent segment appended to the default UA for app-level telemetry.
     user_agent_extra: Option<String>,
 
+    /// Idle keep-alive connections per host (`None` = reqwest default).
+    pool_max_idle_per_host: Option<usize>,
+
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
     testnet_host: Option<String>,
@@ -176,6 +179,12 @@ impl PubkyHttpClientBuilder {
         self
     }
 
+    /// Cap idle keep-alive connections per host. Set `0` to disable pooling.
+    pub const fn pool_max_idle_per_host(&mut self, max: usize) -> &mut Self {
+        self.pool_max_idle_per_host = Some(max);
+        self
+    }
+
     /// Build a [`PubkyHttpClient`].
     ///
     /// # Errors
@@ -214,7 +223,7 @@ impl PubkyHttpClientBuilder {
             reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent.as_ref());
 
         #[cfg(target_arch = "wasm32")]
-        let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
+        let mut http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
         #[cfg(not(target_arch = "wasm32"))]
         let mut icann_http_builder = reqwest::Client::builder()
@@ -227,6 +236,14 @@ impl PubkyHttpClientBuilder {
             http_builder = http_builder.timeout(timeout);
 
             icann_http_builder = icann_http_builder.timeout(timeout);
+        }
+
+        if let Some(max) = self.pool_max_idle_per_host {
+            http_builder = http_builder.pool_max_idle_per_host(max);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                icann_http_builder = icann_http_builder.pool_max_idle_per_host(max);
+            }
         }
         Ok(PubkyHttpClient {
             pkarr,
