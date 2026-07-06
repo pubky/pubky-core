@@ -19,7 +19,7 @@ See [Install and Run Pubky Homeserver](./INSTALL.md) for deploying a standalone 
 
 For building from source and running the local testnet:
 
-- Rust `1.89` or newer.
+- Rust `1.89` or newer - [rustup](https://rustup.rs/).
 - PostgreSQL for tests and the local testnet (see [Set Up PostgreSQL](#set-up-postgresql)).
 - Node.js `20` or newer for JS/WASM bindings.
 - `wasm-pack` when working on the JavaScript SDK bindings.
@@ -41,7 +41,7 @@ The local testnet starts a full Pubky network from source: homeserver, local DHT
 
 The testnet requires a running PostgreSQL instance with a user that can create databases. The testnet creates temporary `pubky_test_*` databases automatically and cleans them up on exit.
 
-In this guide we'll use Docker:
+In this guide we'll use Docker. Requires [Docker Engine](https://docs.docker.com/engine/install/ubuntu/).
 
 ```bash
 docker run --name pubky-postgres \
@@ -83,6 +83,8 @@ pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo
 
 ## Run Examples
 
+> **Prerequisites:** [Rust toolchain](https://rustup.rs/) and the [cloned source repository](./INSTALL.md#build-from-source).
+
 With the testnet running, use the examples in a separate terminal. Rust examples are in [`examples/rust`](../examples/rust).
 
 ### 1. Generate a keypair
@@ -119,7 +121,7 @@ Replace `<SIGNUP_TOKEN>` with the token from step 2. You will be prompted for yo
 cargo run -p pubky-core-examples --bin storage -- write --testnet \
   /tmp/pubky-recovery.json \
   /pub/example/hello.txt \
-  --content "Hello from pubky!"
+  --content 'Hello from pubky!'
 ```
 
 This signs in, writes the file, reads it back, and deletes it.

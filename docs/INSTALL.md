@@ -24,17 +24,25 @@ How to set up and operate a Pubky homeserver.
 
 ## Install the Homeserver
 
-### Release Binary
-
-Download the latest non-prerelease archive from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). Choose the archive for your operating system and CPU architecture, extract it, and place `pubky-homeserver` somewhere on your `PATH`.
-
-Requires `curl`. On Ubuntu/Debian: `apt install curl`.
+Pick a version from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). The commands below use this variable, so set it first:
 
 ```bash
-curl -LO https://github.com/pubky/pubky-core/releases/download/vx.x.x/pubky-core-vx.x.x-linux-amd64.tar.gz
-tar -xf pubky-core-vx.x.x-linux-amd64.tar.gz
-cd pubky-core-vx.x.x-linux-amd64
-cp pubky-homeserver /usr/local/bin
+PUBKY_CORE_VERSION=0.9.3
+```
+
+### Release Binary
+
+Download and extract the archive (requires `curl`; on Ubuntu/Debian: `apt install curl`):
+
+```bash
+curl -LO https://github.com/pubky/pubky-core/releases/download/v${PUBKY_CORE_VERSION}/pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64.tar.gz
+tar -xf pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64.tar.gz
+```
+
+Place the binary on your `PATH`:
+
+```bash
+cp pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64/pubky-homeserver /usr/local/bin
 ```
 
 Verify the install:
@@ -45,14 +53,18 @@ pubky-homeserver --version
 
 ### Build From Source
 
-On Ubuntu you might need: `apt install build-essential git curl`.
+Install build dependencies (Ubuntu/Debian):
+
+```bash
+apt update && apt install -y build-essential pkg-config libssl-dev git curl
+```
 
 Clone the repository:
 
 ```bash
 git clone https://github.com/pubky/pubky-core.git
 cd pubky-core
-git checkout vx.x.x   # Pick a version
+git checkout v${PUBKY_CORE_VERSION}
 ```
 
 #### Build a binary with Cargo
@@ -88,7 +100,7 @@ pubky-homeserver --version
 
 #### Build a Docker image
 
-Requires [Docker Engine](https://docs.docker.com/engine/install/ubuntu/).
+Requires [Docker Engine](https://docs.docker.com/engine/install/).
 
 Build the homeserver image using the [Dockerfile](../Dockerfile):
 
@@ -99,7 +111,7 @@ docker build --build-arg BUILD_TARGET=homeserver -t pubky-homeserver .
 Verify the image built correctly:
 
 ```bash
-docker run --rm pubky-homeserver --version
+docker run --rm pubky-homeserver homeserver --version
 ```
 
 ## Initialise the Data Directory
@@ -113,7 +125,7 @@ pubky-homeserver init
 With Docker:
 
 ```bash
-docker run -it -v ~/.pubky:/root/.pubky pubky-homeserver init
+docker run -it -v ~/.pubky:/root/.pubky pubky-homeserver homeserver init
 ```
 
 > **Note:** The `init` subcommand is available from v0.10 onwards. On v0.9 or earlier, the data directory is created automatically on first run. Start the homeserver once (it will fail if PostgreSQL is not yet configured, but the directory, sample config, and keypair will already be written to `~/.pubky/`).
@@ -186,14 +198,19 @@ psql "postgres://<USER>:<PASSWORD>@<HOST>:5432/pubky_homeserver" -c '\conninfo'
 
 ## Configure the Homeserver with PostgreSQL
 
-Update `database_url` in `~/.pubky/config.toml` to match your PostgreSQL connection string. For the Docker and Native examples above:
+Uncomment and set `database_url` in `~/.pubky/config.toml`. For the Docker and Native example setup above, it should look like:
 
 ```toml
 [general]
 database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
 ```
 
-Replace the credentials and host if using an existing instance.
+Here's a handy sed command to edit as above:
+
+```bash
+sed -i 's|^# \[general\]|[general]|' ~/.pubky/config.toml
+sed -i 's|^# database_url = .*|database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"|' ~/.pubky/config.toml
+```
 
 ## Run
 
@@ -206,7 +223,7 @@ pubky-homeserver
 With Docker:
 
 ```bash
-docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver
+docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
 ```
 
 Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
@@ -228,8 +245,6 @@ Standalone homeservers require signup tokens by default. Generate one through th
 curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
   -H "X-Admin-Password: admin"
 ```
-
-If you would like to test your homeserver with example clients, see [Run Examples](./LOCAL_DEVELOPMENT.md#run-examples) in the Local Development guide.
 
 ## Configuration
 
