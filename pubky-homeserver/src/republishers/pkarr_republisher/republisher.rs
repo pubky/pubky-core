@@ -164,12 +164,12 @@ impl Republisher {
     }
 
     /// Republish a single public key.
-    pub async fn republish_once(&self) -> Result<RepublishInfo, RepublishError> {
-        let packet = self.client.resolve_most_recent(&self.public_key).await;
-        if packet.is_none() {
-            return Err(RepublishError::Missing);
-        }
-        let packet = packet.unwrap();
+    async fn republish_once(&self) -> Result<RepublishInfo, RepublishError> {
+        let packet = self
+            .client
+            .resolve_most_recent(&self.public_key)
+            .await
+            .ok_or(RepublishError::Missing)?;
 
         // Check if the packet should be republished
         if !(self.republish_condition)(&packet) {
@@ -182,7 +182,7 @@ impl Republisher {
             .min_sufficient_node_publish_count(self.min_sufficient_node_publish_count);
         let publisher = Publisher::new_with_settings(packet, settings)
             .expect("infallible because pkarr client provided");
-        match publisher.publish_once().await {
+        match publisher.publish().await {
             Ok(info) => Ok(RepublishInfo::new(info.published_nodes_count, 1)),
             Err(e) => Err(e.into()),
         }
@@ -191,9 +191,7 @@ impl Republisher {
     // Republishes the key with an exponential backoff
     pub async fn republish(&self) -> Result<RepublishInfo, RepublishError> {
         let max_retries = self.retry_settings.max_retries.get();
-        let mut retry_count = 0;
-        let mut last_error: Option<RepublishError> = None;
-        while retry_count < max_retries {
+        for retry_count in 0..max_retries {
             match self.republish_once().await {
                 Ok(mut success) => {
                     success.attempts_needed = retry_count as usize + 1;
@@ -201,23 +199,25 @@ impl Republisher {
                 }
                 Err(e) => {
                     tracing::debug!(
-                        "{retry_count}/{max_retries} Failed to publish {}: {e}",
+                        "{retry_count}/{max_retries} Failed to republish {}: {e}",
                         self.public_key
                     );
-                    last_error = Some(e);
+                    if retry_count + 1 == max_retries {
+                        return Err(e);
+                    }
                 }
             }
 
             let delay = self.get_retry_delay(retry_count);
-            retry_count += 1;
             tracing::debug!(
-                "{} {retry_count}/{max_retries} Sleep for {delay:?} before trying again.",
-                self.public_key
+                "{} {}/{max_retries} Sleep for {delay:?} before trying again.",
+                self.public_key,
+                retry_count + 1
             );
             tokio::time::sleep(delay).await;
         }
 
-        Err(last_error.expect("infallible"))
+        unreachable!("max_retries is non-zero")
     }
 }
 

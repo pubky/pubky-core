@@ -52,10 +52,7 @@ impl HomeserverKeyRepublisher {
     ) -> Result<(), PublishError> {
         let res = client.publish(signed_packet, None).await;
         if let Err(e) = &res {
-            tracing::warn!(
-                "Failed to publish the homeserver's pkarr packet to the DHT: {}",
-                e
-            );
+            tracing::warn!("Failed to publish the homeserver's pkarr packet to the DHT: {e}",);
         } else {
             tracing::info!("Published the homeserver's pkarr packet to the DHT.");
         }
