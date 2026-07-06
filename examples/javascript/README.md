@@ -77,7 +77,7 @@ Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
 
 # example (testnet homeserver)
-node 2-signup.mjs pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+node 2-signup.mjs 8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
 ```
 
 You’ll be prompted for the recovery **passphrase**.

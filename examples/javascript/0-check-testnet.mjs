@@ -10,7 +10,7 @@ import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
 
 // This is the default testnet homeserver. It comes from the secret `00000...` (bits).
 const TESTNET_HOMESERVER =
-  "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 
 let isAvailable = await isTestnetAvailable();

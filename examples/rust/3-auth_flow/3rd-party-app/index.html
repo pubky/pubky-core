@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/pubky.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pubky Auth Demo</title>
+    <title>Pubky Grant Auth Demo</title>
     <link rel="stylesheet" href="./src/index.css" />
     <script type="module" src="/src/pubky-auth-widget.js"></script>
   </head>
@@ -16,9 +16,11 @@
     </pubky-auth-widget>
 
     <main>
-      <h1>Third Party app!</h1>
+      <h1>Third Party Grant Auth App</h1>
       <p>
-        This is a demo for using Pubky Auth Signin in an unhosted (no backend) app.
+        This is a demo for using Pubky Grant Auth in an unhosted (no backend)
+        app. The generated deep link includes a client ID and client public key,
+        and approval returns a grant-backed session.
       </p>
       <form>
         <label style="display: block">
@@ -31,8 +33,8 @@
           <input
             type="checkbox"
             onChange="let w = document.getElementById('widget'); w.caps.length > 0 ? w.setCapabilities(null) : w.setCapabilities('/pub/pubky.app/:rw,/pub/example.com/nested:rw')"
-          />Authz (Authorization with some capability e.g. "/pub/pubky.app/:rw".
-          Set if your pubky has an account on a Homeserver)
+          />Request capabilities e.g. "/pub/pubky.app/:rw".
+          Set if your pubky has an account on a Homeserver.
         </label>
       </form>
     </main>

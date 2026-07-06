@@ -3,16 +3,24 @@ use clap::Parser;
 use pubky::{Pubky, PublicKey};
 use std::path::PathBuf;
 
+#[path = "../recovery.rs"]
+mod recovery;
+
+/// local testnet HOMESERVER
+const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Homeserver identifier (for example `pubky5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo`)
-    homeserver: String,
+    /// Homeserver identifier (for example `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`)
+    homeserver: Option<String>,
 
     /// Path to a recovery_file of the Pubky you want to sign in with
-    recovery_file: PathBuf,
+    #[arg(long)]
+    recovery_file: Option<PathBuf>,
 
     /// Signup code (optional)
+    #[arg(long)]
     signup_code: Option<String>,
 
     /// Use the local testnet defaults instead of mainnet relays.
@@ -24,15 +32,14 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let recovery_file = std::fs::read(&cli.recovery_file)?;
-    println!("\nSuccessfully opened recovery file");
-
-    let homeserver = &PublicKey::try_from(cli.homeserver).unwrap();
-
-    println!("Enter your recovery_file's passphrase to signup:");
-    let passphrase = rpassword::read_password()?;
-
-    let keypair = pubky::recovery_file::decrypt_recovery_file(&recovery_file, &passphrase)?;
+    let homeserver = derive_homeserver(&cli)?;
+    let recovery_file_path = cli
+        .recovery_file
+        .unwrap_or_else(recovery::sample_recovery_file);
+    let keypair = recovery::decrypt_recovery_file(
+        &recovery_file_path,
+        "Enter your recovery file's passphrase to signup:",
+    )?;
 
     println!("Successfully decrypted the recovery file, signing up to the homeserver:");
 
@@ -44,10 +51,20 @@ async fn main() -> Result<()> {
 
     let signer = pubky.signer(keypair);
     signer
-        .signup(homeserver, cli.signup_code.as_deref())
+        .signup(&homeserver, cli.signup_code.as_deref())
         .await?;
 
     println!("Successfully signed up and published the homeserver record.");
 
     Ok(())
+}
+
+fn derive_homeserver(cli: &Cli) -> Result<PublicKey> {
+    let homeserver = match (&cli.homeserver, cli.testnet) {
+        (Some(homeserver), _) => homeserver.as_str(),
+        (None, true) => TESTNET_HOMESERVER,
+        (None, false) => anyhow::bail!("homeserver is required unless --testnet is set"),
+    };
+
+    Ok(PublicKey::try_from(homeserver)?)
 }

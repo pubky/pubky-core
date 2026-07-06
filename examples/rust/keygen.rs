@@ -26,9 +26,6 @@ fn main() -> Result<()> {
     // 2) Encrypt and save the recovery file
     println!("Enter a passphrase to encrypt the recovery file:");
     let passphrase = rpassword::read_password()?;
-    if passphrase.is_empty() {
-        anyhow::bail!("Passphrase cannot be empty");
-    }
 
     println!("Confirm passphrase:");
     let confirm = rpassword::read_password()?;

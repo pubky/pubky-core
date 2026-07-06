@@ -4,7 +4,8 @@ Minimal examples for different flows and functions you might need to implement u
 
 ## Utilities
 
-- [**keygen**](./keygen.rs): Generate a keypair and save a passphrase-encrypted recovery file. Required by examples 2, 3, and 4 (write).
+- [**sample_recovery.key**](./sample_recovery.key): Sample recovery file with an empty passphrase, used by default in examples 2, 3, and 4 (write).
+- [**keygen**](./keygen.rs): Generate a keypair and save a passphrase-encrypted recovery file when you want to use your own key.
 
 ## Examples
 

@@ -3,23 +3,24 @@
 You can use these examples to test Signup or Signin to a provided homeserver using a keypair,
 as opposed to using a the 3rd party [authorization flow](../3-auth_flow).
 
-## Prerequisites
-
-Generate a recovery file first using the [keygen utility](../keygen.rs):
-
-```bash
-cargo run --bin keygen
-# or specify a custom output path
-cargo run --bin keygen -- -o my_key.recovery
-```
 
 ## Usage
+
+This example defaults to `../sample_recovery.key`, which has an empty passphrase.
+Use `--recovery-file <PATH>` when you want to use your own recovery file.
 
 ### Signup
 
 ```bash
-cargo run --bin signup <homeserver pubky> </path/to/recovery file> <signup_token>
+# use the local testnet homeserver and sample recovery file
+cargo run --bin signup -- --testnet
 
-# or use the local testnet defaults
-cargo run --bin signup -- --testnet pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo </path/to/recovery file>
+# with a custom recovery file
+cargo run --bin signup -- --testnet --recovery-file </path/to/recovery file>
+
+# Signup to a mainnet homeserver
+cargo run --bin signup <homeserver pubky>
+
+# With a custom recovery file and signup code
+cargo run --bin signup <homeserver pubky> --recovery-file </path/to/recovery file> --signup-code <code>
 ```

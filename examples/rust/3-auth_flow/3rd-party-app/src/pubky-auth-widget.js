@@ -5,19 +5,15 @@ import QRCode from "qrcode";
 // ✅ Import the SDK as an ES module (no window global)
 import * as pubky from "@synonymdev/pubky";
 
-const DEFAULT_HTTP_RELAY = "https://httprelay.staging.pubky.app/inbox/";
-const TESTNET_HTTP_RELAY = "http://localhost:15412/inbox";
+const CLIENT_ID = "grant-auth.example";
 
 /**
  * <pubky-auth-widget>
  * Third-party (unhosted) Pubky Auth widget:
- * - Creates an AuthFlow and renders a QR with the deep link.
- * - Await approval:
- *   - If `caps` is empty -> waits for an AuthToken and shows the public key it belongs to.
- *   - If `caps` is provided -> waits for a Session and shows the authenticated user's public key.
+ * - Creates a GrantAuthFlow and renders a QR with the deep link.
+ * - Awaits approval and shows the grant-backed session metadata.
  *
  * Props/attrs:
- * - relay?: string  — optional HTTP relay base; if not set, defaults to staging or testnet.
  * - caps?: string   — comma-separated scopes (e.g. "/pub/app/:rw,/pub/foo.txt:r"). Empty means “authN only”.
  * - open?: boolean  — whether the widget is expanded.
  * - testnet?: boolean — toggled via switchTestnet().
@@ -25,7 +21,6 @@ const TESTNET_HTTP_RELAY = "http://localhost:15412/inbox";
 export class PubkyAuthWidget extends LitElement {
   static get properties() {
     return {
-      relay: { type: String },
       caps: { type: String },
       open: { type: Boolean },
       showCopied: { type: Boolean },
@@ -33,6 +28,10 @@ export class PubkyAuthWidget extends LitElement {
       // state
       _pubkyZ32: { type: String, state: true },
       _authUrl: { type: String, state: true },
+      _grantClientId: { type: String, state: true },
+      _grantId: { type: String, state: true },
+      _grantCapabilities: { type: Array, state: true },
+      _error: { type: String, state: true },
     };
   }
 
@@ -43,6 +42,7 @@ export class PubkyAuthWidget extends LitElement {
     this.testnet = false;
     this.open = false;
     this.caps = this.caps || "";
+    this._grantCapabilities = [];
 
     // Share one facade across flows
     this._sdk = new pubky.Pubky();
@@ -71,37 +71,37 @@ export class PubkyAuthWidget extends LitElement {
     this.updateComplete.then(() => this._updateQr());
   }
 
-  _generateFlow() {
-    const relay =
-      this.relay || (this.testnet ? TESTNET_HTTP_RELAY : DEFAULT_HTTP_RELAY);
+  async _generateFlow() {
+    this._pubkyZ32 = "";
+    this._grantClientId = "";
+    this._grantId = "";
+    this._grantCapabilities = [];
+    this._error = "";
 
-    // Start the flow with the facade’s client
-    const flow = this._sdk.startCookieAuthFlow(this.caps, pubky.AuthFlowKind.signin(), relay);
+    try {
+      const flow = await this._sdk.startGrantAuthFlow(
+        this.caps,
+        pubky.AuthFlowKind.signin(),
+        { clientId: CLIENT_ID },
+      );
 
-    // Capture the deep link *before* awaiting (await will consume the flow handle)
-    this._authUrl = flow.authorizationUrl;
+      // Capture the deep link *before* awaiting (await will consume the flow handle)
+      this._authUrl = flow.authorizationUrl;
 
-    // Redraw the QR now and again on next frame (covers initial layout/paint timing)
-    this._updateQr();
-    requestAnimationFrame(() => this._updateQr());
+      // Redraw the QR now and again on next frame (covers initial layout/paint timing)
+      this._updateQr();
+      requestAnimationFrame(() => this._updateQr());
 
-    // Waiting behavior depends on whether we request capabilities or not
-    if (this.caps && this.caps.trim().length > 0) {
-      // Capabilities requested -> wait for a Session
-      flow
-        .awaitApproval()
-        .then((session) => {
-          this._pubkyZ32 = session.info.publicKey.z32();
-        })
-        .catch((e) => console.error("Auth flow (session) failed:", e));
-    } else {
-      // No capabilities -> wait for an AuthToken and read the public key from it
-      flow
-        .awaitToken()
-        .then((token) => {
-          this._pubkyZ32 = token.publicKey.z32();
-        })
-        .catch((e) => console.error("Auth flow (token) failed:", e));
+      const session = await flow.awaitApproval();
+      const grantInfo = await session.grant.sessionInfo();
+
+      this._pubkyZ32 = session.info.publicKey.z32();
+      this._grantClientId = grantInfo.clientId;
+      this._grantId = grantInfo.grantId;
+      this._grantCapabilities = grantInfo.capabilities;
+    } catch (e) {
+      console.error("Grant auth flow failed:", e);
+      this._error = e?.message || String(e);
     }
   }
 
@@ -136,6 +136,10 @@ export class PubkyAuthWidget extends LitElement {
     if (!this.open) {
       this._pubkyZ32 = "";
       this._authUrl = "";
+      this._grantClientId = "";
+      this._grantId = "";
+      this._grantCapabilities = [];
+      this._error = "";
     }
   }
 
@@ -155,11 +159,10 @@ export class PubkyAuthWidget extends LitElement {
   render() {
     const showSuccess = Boolean(this._pubkyZ32);
     const headerLabel = this.open ? "Pubky Auth" : "Click!";
-
-    const instruction =
-      this.caps && this.caps.trim().length
-        ? "Scan or copy Pubky auth URL"
-        : "Scan to authenticate (no capabilities requested)";
+    const requestedCaps = this.caps
+      .split(",")
+      .map((cap) => cap.trim())
+      .filter(Boolean);
 
     return html`
       <div id="widget" class=${this.open ? "open" : ""}>
@@ -188,19 +191,25 @@ export class PubkyAuthWidget extends LitElement {
 
         <div id="widget-content">
           ${showSuccess
-            ? this.caps?.length
-              ? html`
-                  <p>Successfully authorized:</p>
-                  <p class="pk">${this._pubkyZ32}</p>
-                  <p>With capabilities</p>
-                  ${this.caps.split(",").map((cap) => html`<p>${cap}</p>`)}
-                `
-              : html`
-                  <p>Successfully authenticated:</p>
-                  <p class="pk">${this._pubkyZ32}</p>
-                `
-            : html`
-                <p>${instruction}</p>
+        ? html`
+                <p>Successfully authorized grant session:</p>
+                <p class="pk">${this._pubkyZ32}</p>
+                <p>Client ID: ${this._grantClientId}</p>
+                <p>Grant ID: ${this._grantId}</p>
+                ${this._grantCapabilities.length
+            ? html`
+                      <p>Capabilities</p>
+                      ${this._grantCapabilities.map((cap) => html`<p>${cap}</p>`)}
+                    `
+            : html`<p>No capabilities requested</p>`}
+              `
+        : html`
+                <p>Scan or copy this Pubky grant auth URL</p>
+                <p>Client ID: ${CLIENT_ID}</p>
+                ${requestedCaps.length
+            ? html`${requestedCaps.map((cap) => html`<p>${cap}</p>`)}`
+            : html`<p>No capabilities requested</p>`}
+                ${this._error ? html`<p class="error">${this._error}</p>` : ""}
                 <div class="card">
                   <canvas id="qr" ${ref((c) => this._setQr(c))}></canvas>
                 </div>
@@ -342,6 +351,11 @@ export class PubkyAuthWidget extends LitElement {
           ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
           monospace;
         opacity: 0.9;
+      }
+
+      .error {
+        color: #ffb4b4 !important;
+        opacity: 1 !important;
       }
 
       #qr {
