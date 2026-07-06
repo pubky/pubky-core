@@ -42,6 +42,10 @@ name = "events_stream"
 path = "./7-events_stream/main.rs"
 
 [[bin]]
+name = "sessions"
+path = "./8-session_management/main.rs"
+
+[[bin]]
 name = "keygen"
 path = "./keygen.rs"
 
