@@ -41,6 +41,17 @@ pub(crate) enum Mode {
     Reverse,
 }
 
+impl Mode {
+    /// Newest-first batch ordering.
+    fn reverse(self) -> bool {
+        matches!(self, Self::Reverse)
+    }
+    /// Stay open for live events after replaying history.
+    fn live(self) -> bool {
+        matches!(self, Self::ForwardLive)
+    }
+}
+
 /// Resolved filter for the admin all-events stream. The route builds this after authorizing the
 /// request (pubkeys → user ids, cursor parsed); it drives [`EventsService::all_events_stream`].
 pub(crate) struct AllEventsFilter {
@@ -216,10 +227,10 @@ impl EventsService {
 
             let mut last_cursor = filter.start_cursor;
             let mut total_sent: usize = 0;
-            let reverse = filter.mode == Mode::Reverse;
-            let live = filter.mode == Mode::ForwardLive;
+            let reverse = filter.mode.reverse();
+            let live = filter.mode.live();
 
-            // Phase 1: historical replay over a single advancing global cursor.
+            // Historical replay over a single advancing global cursor.
             loop {
                 // Drain buffered events; they'll be covered by this or a later DB query.
                 while rx.try_recv().is_ok() {}
@@ -268,7 +279,7 @@ impl EventsService {
                 }
             }
 
-            // Phase 2: live mode (only `Mode::ForwardLive` reaches here).
+            // The live tail, runs only for a live stream.
             if live {
                 loop {
                     match rx.recv().await {
