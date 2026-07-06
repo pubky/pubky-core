@@ -223,7 +223,7 @@ impl PubkyHttpClientBuilder {
             reqwest::ClientBuilder::from(pkarr.clone()).user_agent(user_agent.as_ref());
 
         #[cfg(target_arch = "wasm32")]
-        let mut http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
+        let http_builder = reqwest::Client::builder().user_agent(user_agent.as_ref());
 
         #[cfg(not(target_arch = "wasm32"))]
         let mut icann_http_builder = reqwest::Client::builder()
@@ -238,12 +238,10 @@ impl PubkyHttpClientBuilder {
             icann_http_builder = icann_http_builder.timeout(timeout);
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(max) = self.pool_max_idle_per_host {
             http_builder = http_builder.pool_max_idle_per_host(max);
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                icann_http_builder = icann_http_builder.pool_max_idle_per_host(max);
-            }
+            icann_http_builder = icann_http_builder.pool_max_idle_per_host(max);
         }
         Ok(PubkyHttpClient {
             pkarr,
