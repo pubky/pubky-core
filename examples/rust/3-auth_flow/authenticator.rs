@@ -13,13 +13,12 @@ const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Pubky Auth URL, or path to a recovery file when URL is provided as the next argument
-    #[arg(value_name = "AUTH_URL_OR_RECOVERY_FILE")]
-    first: String,
+    /// Pubky Auth URL to approve
+    auth_url: Url,
 
-    /// Pubky Auth URL when using a custom recovery file
-    #[arg(value_name = "AUTH_URL")]
-    second: Option<String>,
+    /// Path to a recovery file of the Pubky you want to sign in with
+    #[arg(long)]
+    recovery_file: Option<PathBuf>,
 
     /// Use testnet mode
     #[clap(long)]
@@ -31,7 +30,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
-    let (recovery_file, url) = auth_args(&cli)?;
+    let recovery_file = cli
+        .recovery_file
+        .unwrap_or_else(recovery::sample_recovery_file);
+    let url = cli.auth_url;
 
     let deep_link = url
         .to_string()
@@ -82,13 +84,6 @@ async fn main() -> Result<()> {
     signer.approve_auth(&url).await?;
 
     Ok(())
-}
-
-fn auth_args(cli: &Cli) -> Result<(PathBuf, Url)> {
-    match &cli.second {
-        Some(url) => Ok((PathBuf::from(&cli.first), url.parse()?)),
-        None => Ok((recovery::sample_recovery_file(), cli.first.parse()?)),
-    }
 }
 
 async fn ensure_testnet_signup(signer: &PubkySigner, homeserver: &PublicKey) -> Result<()> {

@@ -14,7 +14,7 @@ It consists of 2 parts:
 This example defaults to `../sample_recovery.key`, which has an empty passphrase.
 If that sample key cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
 
-Generate a recovery file using the [keygen utility](../keygen.rs) when you want to use your own key:
+(Optional) Generate a recovery file using the [keygen utility](../keygen.rs) when you want to use your own key:
 
 ```bash
 cargo run --bin keygen
@@ -32,6 +32,7 @@ Run the frontend of the 3rd party app
 
 ```bash
 cd ./3rd-party-app
+npm i
 npm start
 ```
 
@@ -40,10 +41,10 @@ Copy the Pubky Auth URL from the frontend. It should use the `signin_grant` inte
 Finally run the CLI to paste the Pubky Auth in.
 
 ```bash
-cargo run --bin authenticator "<Auth_URL>" [--testnet]
+cargo run --bin authenticator "<Auth_URL>" --testnet
 
 # with a custom recovery file
-cargo run --bin authenticator <RECOVERY_FILE> "<Auth_URL>" [--testnet]
+cargo run --bin authenticator "<Auth_URL>" --testnet --recovery-file <RECOVERY_FILE>
 ```
 
 Where the auth URL should be within quotation marks, and `--testnet` uses the local homeserver.
