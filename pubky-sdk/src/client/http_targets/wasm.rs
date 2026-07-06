@@ -9,6 +9,18 @@ use pkarr::extra::endpoints::Endpoint;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
+/// Whether a WASM `fetch` should carry ambient browser credentials — i.e. the
+/// cookie jar for the target origin.
+#[derive(Clone, Copy)]
+enum AmbientCredentials {
+    /// `credentials: include` — send the origin's cookies. Required
+    /// by the legacy cookie auth flow, whose secret lives only in the browser jar.
+    Include,
+    /// `credentials: omit` — never send ambient cookies. Used where a request
+    /// must be anonymous unless a credential is explicitly attached.
+    Omit,
+}
+
 impl PubkyHttpClient {
     /// A wrapper around [`PubkyHttpClient::request`], with the same signature between native and WASM.
     pub(crate) async fn cross_request<T: IntoUrl>(
@@ -16,15 +28,39 @@ impl PubkyHttpClient {
         method: Method,
         url: T,
     ) -> Result<RequestBuilder> {
+        self.cross_request_with_credentials(method, url, AmbientCredentials::Include)
+            .await
+    }
+
+    /// Like [`Self::cross_request`], but never carries ambient browser
+    /// credentials. Use where a request must stay anonymous
+    /// unless a credential is intentionally attached — notably event-stream
+    /// subscriptions.
+    pub(crate) async fn cross_request_anonymous<T: IntoUrl>(
+        &self,
+        method: Method,
+        url: T,
+    ) -> Result<RequestBuilder> {
+        self.cross_request_with_credentials(method, url, AmbientCredentials::Omit)
+            .await
+    }
+
+    async fn cross_request_with_credentials<T: IntoUrl>(
+        &self,
+        method: Method,
+        url: T,
+        credentials: AmbientCredentials,
+    ) -> Result<RequestBuilder> {
         let original_url = url.as_str();
         let mut url = Url::parse(original_url)?;
 
         let pubky_host = self.prepare_request(&mut url).await?;
 
-        let builder = self
-            .http
-            .request(method, url.clone())
-            .fetch_credentials_include();
+        let request = self.http.request(method, url.clone());
+        let builder = match credentials {
+            AmbientCredentials::Include => request.fetch_credentials_include(),
+            AmbientCredentials::Omit => request.fetch_credentials_omit(),
+        };
 
         let builder = if let Some(pubky_host) = pubky_host {
             builder.header("pubky-host", pubky_host)

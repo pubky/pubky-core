@@ -213,6 +213,13 @@ impl SessionCredential for CookieCredential {
         }
     }
 
+    async fn can_attach_to(&self, _homeserver: &PublicKey) -> bool {
+        // Private event streams are grant-only, so a cookie is never attached to
+        // one. (`can_attach_to` is only consulted by the event stream; regular
+        // cookie file I/O is unaffected.)
+        false
+    }
+
     async fn revalidate(
         &self,
         client: &PubkyHttpClient,
@@ -250,5 +257,38 @@ impl PubkySession {
     #[must_use]
     pub fn from_cookie_credential(client: PubkyHttpClient, credential: CookieCredential) -> Self {
         Self::from_credential(client, Arc::new(credential))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pubky_common::{
+        capabilities::{Capabilities, Capability},
+        crypto::Keypair,
+    };
+
+    fn cookie_credential(user: &PublicKey) -> CookieCredential {
+        let record =
+            CookieSessionRecord::new(user, Capabilities::from(vec![Capability::root()]), None);
+        CookieCredential::new(user.clone(), Some("cookie-secret".to_string()), record)
+    }
+
+    /// Cookie credentials never authenticate event streams
+    #[tokio::test]
+    async fn can_attach_to_is_always_false() {
+        let user = Keypair::random().public_key();
+        let credential = cookie_credential(&user);
+
+        assert!(
+            !credential
+                .can_attach_to(&Keypair::random().public_key())
+                .await
+        );
+        assert!(
+            !credential
+                .can_attach_to(&Keypair::random().public_key())
+                .await
+        );
     }
 }

@@ -439,19 +439,21 @@ async fn events_stream_sdk_private_without_session_is_unauthorized() {
     );
 }
 
-/// A session may not read another user's private events; the homeserver
-/// rejection surfaces as a typed `403 Forbidden`.
+/// A session must not read another user's private events. The SDK scopes a
+/// private subscription to the credential's own user, so A's session is *not*
+/// attached to B's private stream.
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_sdk_private_wrong_user_is_forbidden() {
+async fn events_stream_sdk_wrong_user_private_stream_is_not_attached() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
 
-    let (_a, session_a) = signed_in_user(&testnet, "sdk-403-a.test").await;
-    let (b, _session_b) = signed_in_user(&testnet, "sdk-403-b.test").await;
+    let (_a, session_a) = signed_in_user(&testnet, "sdk-401-a.test").await;
+    let (b, _session_b) = signed_in_user(&testnet, "sdk-401-b.test").await;
 
-    // A's session requesting B's private events → 403 (server-enforced).
+    // A's session requesting B's private events: the SDK refuses to attach A's
+    // credential to a private stream scoped to B, so the request is anonymous.
     let result = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&b, None)])
@@ -466,8 +468,40 @@ async fn events_stream_sdk_private_wrong_user_is_forbidden() {
         .expect("a session may not read another user's private events");
     assert_eq!(
         server_status(&err),
-        Some(StatusCode::FORBIDDEN),
-        "expected a typed 403 Server error, got: {err}"
+        Some(StatusCode::UNAUTHORIZED),
+        "expected a typed 401 Server error (credential not attached), got: {err}"
+    );
+}
+
+/// A session must not be attached to a multi-user private subscription
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_multi_user_private_stream_is_not_attached() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let (a, session_a) = signed_in_user(&testnet, "sdk-multi-a.test").await;
+    let (b, _session_b) = signed_in_user(&testnet, "sdk-multi-b.test").await;
+
+    // A's session on a subscription naming both A and B with a private path: the
+    // SDK won't attach a credential to a multi-user private stream.
+    let result = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&a, None), (&b, None)])
+        .unwrap()
+        .session(&session_a)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = result
+        .err()
+        .expect("a multi-user private subscription must not be authenticated");
+    assert_eq!(
+        server_status(&err),
+        Some(StatusCode::UNAUTHORIZED),
+        "expected a typed 401 Server error (credential not attached), got: {err}"
     );
 }
 
@@ -531,6 +565,94 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
     assert!(
         event.resource.path.as_str().contains("/pub/hello.txt"),
         "expected other's public event, got: {}",
+        event.resource.path
+    );
+}
+
+/// A cookie-backed session cannot authenticate a private event stream
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_cookie_session_private_is_unauthorized() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let user = signer.public_key();
+
+    // The cookie write to a private path still works (regular file I/O).
+    session
+        .storage()
+        .put("/priv/app/secret.txt", vec![42])
+        .await
+        .unwrap();
+
+    // But a cookie-backed private *event stream* is not authenticated: the SDK
+    // won't attach a cookie credential to a `/priv/...` subscription.
+    let result = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = result
+        .err()
+        .expect("a cookie session must not authenticate a private event stream");
+    assert_eq!(
+        server_status(&err),
+        Some(StatusCode::UNAUTHORIZED),
+        "expected a typed 401 Server error, got: {err}"
+    );
+}
+
+/// A public event stream works normally with a cookie session attached
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_public_stream_with_cookie_session_works() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let user = signer.public_key();
+
+    session
+        .storage()
+        .put("/pub/hello.txt", vec![1])
+        .await
+        .unwrap();
+
+    let mut stream = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/pub/")
+        .limit(1)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let event = stream
+        .next()
+        .await
+        .expect("public stream should deliver the public event")
+        .unwrap();
+    assert_eq!(event.resource.owner.z32(), user.z32());
+    assert!(
+        event.resource.path.as_str().contains("/pub/hello.txt"),
+        "expected the public event, got: {}",
         event.resource.path
     );
 }

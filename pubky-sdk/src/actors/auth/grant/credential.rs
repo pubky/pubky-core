@@ -331,6 +331,12 @@ impl SessionCredential for GrantCredential {
         Ok(rb.bearer_auth(bearer))
     }
 
+    async fn can_attach_to(&self, homeserver: &PublicKey) -> bool {
+        // Attach only to the homeserver that minted the bearer (the `PoP`
+        // audience), so a rotated/poisoned Pkarr record can't divert it.
+        &self.state.lock().await.homeserver_pk == homeserver
+    }
+
     async fn revalidate(
         &self,
         client: &PubkyHttpClient,
@@ -523,5 +529,54 @@ mod tests {
             homeserver_pk: homeserver_keypair.public_key(),
         };
         (stored, claims)
+    }
+
+    /// Build a live [`GrantCredential`] bound to `homeserver`.
+    fn grant_credential_bound_to(homeserver: PublicKey) -> GrantCredential {
+        let user_keypair = Keypair::random();
+        let client_keypair = Keypair::random();
+        let claims = GrantClaims {
+            iss: user_keypair.public_key(),
+            client_id: ClientId::new("can-attach.test").unwrap(),
+            caps: vec![Capability::root()],
+            cnf: client_keypair.public_key(),
+            jti: GrantId::generate(),
+            iat: now_unix(),
+            exp: now_unix() + 3600,
+        };
+        let grant_jws = claims.sign(&user_keypair, GRANT_JWS_TYP);
+        let response = GrantSessionResponse {
+            token: "test-bearer".to_string(),
+            session: GrantSessionInfo {
+                homeserver: homeserver.clone(),
+                pubky: user_keypair.public_key(),
+                client_id: ClientId::new("can-attach.test").unwrap(),
+                capabilities: vec![Capability::root()],
+                grant_id: claims.jti.clone(),
+                token_expires_at: now_unix() + 3600,
+                grant_expires_at: now_unix() + 7200,
+                created_at: now_unix(),
+            },
+        };
+        GrantCredential::from_response(response, grant_jws, claims, client_keypair, homeserver)
+    }
+
+    /// A grant credential attaches only to the homeserver it was minted for,
+    /// regardless of what a live PKDNS lookup might resolve to. This is the
+    /// core of the event-stream credential-attachment guard.
+    #[tokio::test]
+    async fn can_attach_to_only_matches_bound_homeserver() {
+        let bound = Keypair::random().public_key();
+        let other = Keypair::random().public_key();
+        let credential = grant_credential_bound_to(bound.clone());
+
+        assert!(
+            credential.can_attach_to(&bound).await,
+            "grant credential must attach to the homeserver it was minted for"
+        );
+        assert!(
+            !credential.can_attach_to(&other).await,
+            "grant credential must NOT attach to a homeserver it was not minted for"
+        );
     }
 }

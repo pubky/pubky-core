@@ -331,8 +331,8 @@ pub async fn feed_stream(
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
 
     // Authorize the requested path filters before doing any work. Public paths
-    // need no session; any `/priv/` path requires a session whose single user
-    // matches and that holds a covering read capability.
+    // need no session; any `/priv/` path requires a GRANT session whose single
+    // user matches and that holds a covering read capability.
     let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
 
     let mut user_cursor_map =
@@ -507,12 +507,12 @@ async fn resolve_user_cursors(
 ///
 /// - No requested path → implicit public-only (`/pub/`), no session needed.
 /// - Public (`/pub/...`) paths need no capability.
-/// - Any private (`/priv/...`) path requires a session (else 401), exactly one
-///   `user=` equal to the session user (else 403), and a read capability
+/// - Any private (`/priv/...`) path requires a GRANT session (else 401), exactly
+///   one `user=` equal to the session user (else 403), and a read capability
 ///   covering each private path (else 403).
 ///
-/// If any requested private path is unauthorized the whole subscription is
-/// rejected.
+/// Private event streams are grant-only: a cookie session is ignored here, so a
+/// private path falls through to 401.
 fn authorized_paths(
     paths: &[WebDavPath],
     user_cursors: &[(PublicKey, Option<String>)],
@@ -524,6 +524,9 @@ fn authorized_paths(
             WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
         ]);
     }
+
+    // Grant-only: drop any cookie session so private paths fall through to 401.
+    let session = session.filter(|s| matches!(s, AuthSession::Grant(_)));
 
     // The tenant to authorize each path against. A private read is single-tenant,
     // so a tenant only exists when the subscription names exactly one user.
@@ -614,6 +617,20 @@ mod tests {
             capabilities,
             grant_id: GrantId::generate(),
             token_expires_at: 9999999999,
+        })
+    }
+
+    fn cookie_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
+        use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
+        AuthSession::Cookie(SessionEntity {
+            id: 1,
+            secret: SessionSecret::random(),
+            user_id: 1,
+            user_pubkey: user_key,
+            capabilities,
+            created_at: sqlx::types::chrono::DateTime::from_timestamp(0, 0)
+                .expect("valid timestamp")
+                .naive_utc(),
         })
     }
 
@@ -750,6 +767,30 @@ mod tests {
         let u = pk();
         let status = reject_status(authorized_paths(&[wd("/priv/app/")], &cursors(&[&u]), None));
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn cookie_session_is_rejected_for_private_path() {
+        // Private event streams are grant-only: a cookie session (even with root
+        // caps for the requested user) is ignored, so a private path is 401.
+        let owner = pk();
+        let session = cookie_session(owner.clone(), Capabilities::from(vec![Capability::root()]));
+        let status = reject_status(authorized_paths(
+            &[wd("/priv/app/")],
+            &cursors(&[&owner]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn cookie_session_allows_public_path() {
+        // Public paths need no auth, so a cookie session doesn't change the outcome.
+        let owner = pk();
+        let session = cookie_session(owner.clone(), Capabilities::from(vec![Capability::root()]));
+        let filters =
+            authorized_paths(&[wd("/pub/")], &cursors(&[&owner]), Some(&session)).unwrap();
+        assert_eq!(filters, vec![pf("/pub/")]);
     }
 
     #[test]
