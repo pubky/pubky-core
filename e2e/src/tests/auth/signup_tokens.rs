@@ -184,3 +184,71 @@ async fn get_signup_token() {
         "Response should have created_at field"
     );
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn signup_via_direct_deeplink() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let deeplink = format!("pubkyauth://signup?hs={}", server.public_key().z32());
+
+    // Approving a direct signup link registers the account directly on the
+    // homeserver.
+    signer.approve_auth(&deeplink).await.unwrap();
+
+    let session = signer
+        .signin(ClientId::new("direct.signup.test").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        session.info().public_key(),
+        &signer.public_key(),
+        "Signed-in session should belong to the signer"
+    );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn signup_via_direct_deeplink_with_token() {
+    // The direct deep link must carry a valid token.
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let token = server
+        .admin_server()
+        .expect("admin server should be enabled")
+        .create_signup_token()
+        .await
+        .unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let deeplink = format!(
+        "pubkyauth://signup?hs={}&st={}",
+        server.public_key().z32(),
+        token
+    );
+
+    signer.approve_auth(&deeplink).await.unwrap();
+
+    let session = signer
+        .signin(ClientId::new("direct.signup.token.test").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        session.info().public_key(),
+        &signer.public_key(),
+        "Signed-in session should belong to the signer"
+    );
+}

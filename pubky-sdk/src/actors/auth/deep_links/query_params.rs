@@ -1,3 +1,5 @@
+use std::io;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pubky_common::{auth::jws::ClientId, capabilities::Capabilities, crypto::PublicKey};
 use url::Url;
@@ -17,16 +19,43 @@ pub(super) fn parse_relay(url: &Url) -> Result<Url, DeepLinkParseError> {
 }
 
 pub(super) fn parse_secret(url: &Url) -> Result<[u8; 32], DeepLinkParseError> {
-    let raw_secret = required_query(url, "secret")?;
+    parse_optional_secret(url)?.ok_or(DeepLinkParseError::MissingQueryParameter("secret"))
+}
+
+pub(super) fn parse_capabilities_or_default(
+    url: &Url,
+) -> Result<Capabilities, DeepLinkParseError> {
+    match optional_query(url, "caps") {
+        None => Ok(Capabilities::default()),
+        Some(raw) => raw
+            .as_str()
+            .try_into()
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("caps", Box::new(e))),
+    }
+}
+
+pub(super) fn parse_optional_relay(url: &Url) -> Result<Option<Url>, DeepLinkParseError> {
+    match optional_query(url, "relay") {
+        None => Ok(None),
+        Some(raw) => Url::parse(&raw)
+            .map(Some)
+            .map_err(|e| DeepLinkParseError::InvalidQueryParameter("relay", Box::new(e))),
+    }
+}
+
+pub(super) fn parse_optional_secret(url: &Url) -> Result<Option<[u8; 32]>, DeepLinkParseError> {
+    let Some(raw_secret) = optional_query(url, "secret") else {
+        return Ok(None);
+    };
     let secret = URL_SAFE_NO_PAD
         .decode(raw_secret.as_str())
         .map_err(|e| DeepLinkParseError::InvalidQueryParameter("secret", Box::new(e)))?;
 
-    secret.try_into().map_err(|e: Vec<u8>| {
+    secret.try_into().map(Some).map_err(|e: Vec<u8>| {
         let msg = format!("Expected 32 bytes, got {}", e.len());
         DeepLinkParseError::InvalidQueryParameter(
             "secret",
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
+            Box::new(io::Error::new(io::ErrorKind::InvalidData, msg)),
         )
     })
 }
@@ -70,14 +99,22 @@ pub(super) fn append_signin_params(
 
 pub(super) fn append_signup_params(
     url: &mut Url,
-    capabilities: &Capabilities,
-    relay: &Url,
-    secret: &[u8; 32],
+    capabilities: Option<&Capabilities>,
+    relay: Option<&Url>,
+    secret: Option<&[u8; 32]>,
     homeserver: &PublicKey,
     signup_token: Option<&str>,
 ) {
-    append_signin_params(url, capabilities, relay, secret);
     let mut query = url.query_pairs_mut();
+    if let Some(capabilities) = capabilities {
+        query.append_pair("caps", &capabilities.to_string());
+    }
+    if let Some(relay) = relay {
+        query.append_pair("relay", relay.as_str());
+    }
+    if let Some(secret) = secret {
+        query.append_pair("secret", &URL_SAFE_NO_PAD.encode(secret));
+    }
     query.append_pair("hs", &homeserver.z32());
     if let Some(signup_token) = signup_token {
         query.append_pair("st", signup_token);

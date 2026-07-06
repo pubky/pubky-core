@@ -398,15 +398,20 @@ fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], 
             s.params().secret,
             AuthFlowKind::signin(),
         )),
-        DeepLink::Signup(s) => Ok((
-            s.params().capabilities.clone(),
-            s.params().relay.clone(),
-            s.params().secret,
-            AuthFlowKind::signup(
-                s.params().homeserver.clone(),
-                s.params().signup_token.clone(),
-            ),
-        )),
+        DeepLink::Signup(s) => {
+            let params = s.params();
+            Ok((
+                params.capabilities.clone(),
+                params
+                    .relay
+                    .clone()
+                    .expect("relayed signup deep link has a relay"),
+                params
+                    .secret
+                    .expect("relayed signup deep link has a secret"),
+                AuthFlowKind::signup(params.homeserver.clone(), params.signup_token.clone()),
+            ))
+        }
         DeepLink::SigninGrant(_) | DeepLink::SignupGrant(_) => Err(AuthError::Validation(
             "grant auth flows cannot be resumed from the authorization URL alone; the PoP client private key is required and is not encoded in the deep link."
                 .into(),

@@ -63,6 +63,29 @@ test("Auth: 3rd party signup", async (t) => {
   t.end();
 });
 
+test("Auth: direct signup deeplink", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  // A direct signup link carries only the homeserver (+ token).
+  const deeplink = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=${encodeURIComponent(
+    signupToken,
+  )}`;
+
+  // Approving it registers the account directly on the homeserver.
+  await signer.approveAuthRequest(deeplink);
+
+  const session = await signer.signin("direct-signup-js.test");
+  t.equal(
+    session.info.publicKey.z32(),
+    signer.publicKey.z32(),
+    "session belongs to expected user",
+  );
+
+  t.end();
+});
+
 test("Auth: 3rd party signin", async (t) => {
   const sdk = Pubky.testnet();
 

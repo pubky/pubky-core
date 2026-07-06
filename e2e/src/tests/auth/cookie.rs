@@ -147,7 +147,12 @@ async fn auth_flow_signup_preserves_deep_link_fields() {
     };
     assert_eq!(&signup_deep_link.params().capabilities, &caps);
     assert_eq!(
-        signup_deep_link.params().relay.as_str(),
+        signup_deep_link
+            .params()
+            .relay
+            .as_ref()
+            .expect("relayed cookie signup should carry a relay")
+            .as_str(),
         testnet.http_relay().local_link_url().as_str()
     );
     assert_eq!(&signup_deep_link.params().homeserver, &server.public_key());

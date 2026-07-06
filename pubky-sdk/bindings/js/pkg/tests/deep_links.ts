@@ -49,6 +49,38 @@ test("signup deep link valid", async (t) => {
   t.end();
 });
 
+test("direct signup deep link valid", async (t) => {
+  const url = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}`;
+  const deepLink = SignupDeepLink.parse(url);
+
+  t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
+  t.equal(deepLink.isDirectSignup, true, "link is a direct signup");
+  t.equal(deepLink.baseRelayUrl, undefined, "no relay on a direct link");
+  t.equal(deepLink.secret, undefined, "no secret on a direct link");
+  t.equal(deepLink.capabilities, "", "no capabilities on a direct link");
+  t.equal(deepLink.signupToken, undefined, "no token when absent");
+
+  // Round-trips to only the homeserver.
+  const roundTripped = SignupDeepLink.parse(deepLink.toString());
+  t.equal(roundTripped.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
+  t.equal(roundTripped.isDirectSignup, true);
+
+  t.end();
+});
+
+test("direct signup deep link with token", async (t) => {
+  const url = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=1234567890`;
+  const deepLink = SignupDeepLink.parse(url);
+
+  t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
+  t.equal(deepLink.isDirectSignup, true, "link is a direct signup");
+  t.equal(deepLink.signupToken, "1234567890");
+  t.equal(deepLink.baseRelayUrl, undefined, "no relay on a direct link");
+  t.equal(deepLink.secret, undefined, "no secret on a direct link");
+
+  t.end();
+});
+
 test("signin grant deep link valid", async (t) => {
   let url = `pubkyauth://signin_grant?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/inbox&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&cid=franky.pubky.app&cpk=${CLIENT_PUBLICKEY.z32()}`;
   const deepLink = SigninGrantDeepLink.parse(url);

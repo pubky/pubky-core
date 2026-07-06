@@ -31,13 +31,22 @@ impl SignupDeepLink {
     }
 
     #[wasm_bindgen(js_name = "baseRelayUrl", getter)]
-    pub fn base_relay_url(&self) -> String {
-        self.0.params().relay.to_string()
+    pub fn base_relay_url(&self) -> Option<String> {
+        self.0.params().relay.as_ref().map(ToString::to_string)
     }
 
     #[wasm_bindgen(getter)]
-    pub fn secret(&self) -> Uint8Array {
-        Uint8Array::from(self.0.params().secret.as_ref())
+    pub fn secret(&self) -> Option<Uint8Array> {
+        self.0
+            .params()
+            .secret
+            .as_ref()
+            .map(|secret| Uint8Array::from(secret.as_ref()))
+    }
+
+    #[wasm_bindgen(js_name = "isDirectSignup", getter)]
+    pub fn is_direct_signup(&self) -> bool {
+        self.0.params().is_direct_signup()
     }
 
     #[wasm_bindgen(getter)]
