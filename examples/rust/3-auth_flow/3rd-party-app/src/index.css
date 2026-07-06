@@ -1,4 +1,6 @@
 :root {
+  color: white;
+  background: #0a0b0c;
   font-family:
     system-ui,
     -apple-system,
@@ -11,53 +13,42 @@
     "Open Sans",
     "Helvetica Neue",
     sans-serif;
-  color: white;
-
-  background:
-    radial-gradient(
-      circle,
-      transparent 20%,
-      #151718 20%,
-      #151718 80%,
-      transparent 80%,
-      transparent
-    ),
-    radial-gradient(
-        circle,
-        transparent 20%,
-        #151718 20%,
-        #151718 80%,
-        transparent 80%,
-        transparent
-      )
-      25px 25px,
-    linear-gradient(#202020 1px, transparent 2px) 0 -1px,
-    linear-gradient(90deg, #202020 1px, #151718 2px) -1px 0;
-  background-size:
-    50px 50px,
-    50px 50px,
-    25px 25px,
-    25px 25px;
 }
 
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 20rem;
   min-height: 100vh;
-  font-family: var(--font-family);
+  margin: 0;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    #0a0b0c;
+  background-position: -1px -1px;
+  background-size: 44px 44px;
 }
 
-h1 {
-  font-weight: bold;
-  font-size: 3.2rem;
-  line-height: 1.1;
+body::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    radial-gradient(circle at 50% 0%, rgba(47, 191, 143, 0.12), transparent 34rem),
+    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.04), transparent 28rem);
 }
 
 main {
-  max-width: 80rem;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 1.5rem 7.5rem;
+}
+
+@media (max-width: 560px) {
+  main {
+    align-items: flex-start;
+    padding: 1rem 0.5rem 4rem;
+  }
 }

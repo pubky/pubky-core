@@ -2,36 +2,24 @@ import { LitElement, css, html } from "lit";
 import { ref } from "lit/directives/ref.js";
 import QRCode from "qrcode";
 
-// ✅ Import the SDK as an ES module (no window global)
 import * as pubky from "@synonymdev/pubky";
 
 const CLIENT_ID = "grant-auth.example";
+const DEFAULT_CAPABILITIES = "/pub/pubky.app/:rw,/pub/example.com/nested:rw";
 
-/**
- * <pubky-auth-widget>
- * Third-party (unhosted) Pubky Auth widget:
- * - Creates a GrantAuthFlow and renders a QR with the deep link.
- * - Awaits approval and shows the grant-backed session metadata.
- *
- * Props/attrs:
- * - caps?: string   — comma-separated scopes (e.g. "/pub/app/:rw,/pub/foo.txt:r"). Empty means “authN only”.
- * - open?: boolean  — whether the widget is expanded.
- * - testnet?: boolean — toggled via switchTestnet().
- */
 export class PubkyAuthWidget extends LitElement {
   static get properties() {
     return {
       caps: { type: String },
-      open: { type: Boolean },
       showCopied: { type: Boolean },
       testnet: { type: Boolean },
-      // state
-      _pubkyZ32: { type: String, state: true },
       _authUrl: { type: String, state: true },
+      _error: { type: String, state: true },
+      _grantCapabilities: { type: Array, state: true },
       _grantClientId: { type: String, state: true },
       _grantId: { type: String, state: true },
-      _grantCapabilities: { type: Array, state: true },
-      _error: { type: String, state: true },
+      _phase: { type: String, state: true },
+      _pubkyZ32: { type: String, state: true },
     };
   }
 
@@ -39,44 +27,66 @@ export class PubkyAuthWidget extends LitElement {
     super();
     if (typeof pubky.setLogLevel === "function") pubky.setLogLevel("debug");
 
-    this.testnet = false;
-    this.open = false;
-    this.caps = this.caps || "";
+    this.caps = DEFAULT_CAPABILITIES;
+    this.showCopied = false;
+    this.testnet = true;
+    this._authUrl = "";
+    this._error = "";
     this._grantCapabilities = [];
+    this._grantClientId = "";
+    this._grantId = "";
+    this._phase = "idle";
+    this._pubkyZ32 = "";
 
-    // Share one facade across flows
-    this._sdk = new pubky.Pubky();
-
-    // internal
     this._canvas = null;
+    this._flowRunId = 0;
+    this._sdk = pubky.Pubky.testnet();
   }
 
-  // Public helpers for the demo page checkboxes
   switchTestnet() {
-    this.testnet = !this.testnet;
-    this._sdk = this.testnet ? pubky.Pubky.testnet() : new pubky.Pubky();
-    this._resetFlowAndQr();
+    this._setTestnet(!this.testnet);
   }
 
   setCapabilities(caps) {
     this.caps = caps || "";
-    this._resetFlowAndQr();
+    this._resetFlow();
   }
 
-  // ---- Flow + QR handling ---------------------------------------------------
+  _setTestnet(enabled) {
+    this.testnet = enabled;
+    this._sdk = this.testnet ? pubky.Pubky.testnet() : new pubky.Pubky();
+    this._resetFlow();
+  }
 
-  _resetFlowAndQr() {
-    // If already open, restart the flow; then (re)draw when canvas is mounted
-    if (this.open) this._generateFlow();
+  _toggleTestnet(event) {
+    this._setTestnet(event.target.checked);
+  }
+
+  _toggleCapabilities(event) {
+    this.setCapabilities(event.target.checked ? DEFAULT_CAPABILITIES : "");
+  }
+
+  _resetFlow() {
+    this._flowRunId += 1;
+    this._authUrl = "";
+    this._error = "";
+    this._grantCapabilities = [];
+    this._grantClientId = "";
+    this._grantId = "";
+    this._phase = "idle";
+    this._pubkyZ32 = "";
     this.updateComplete.then(() => this._updateQr());
   }
 
-  async _generateFlow() {
-    this._pubkyZ32 = "";
+  async _startFlow() {
+    const runId = ++this._flowRunId;
+    this._authUrl = "";
+    this._error = "";
+    this._grantCapabilities = [];
     this._grantClientId = "";
     this._grantId = "";
-    this._grantCapabilities = [];
-    this._error = "";
+    this._phase = "connecting";
+    this._pubkyZ32 = "";
 
     try {
       const flow = await this._sdk.startGrantAuthFlow(
@@ -84,24 +94,29 @@ export class PubkyAuthWidget extends LitElement {
         pubky.AuthFlowKind.signin(),
         { clientId: CLIENT_ID },
       );
+      if (runId !== this._flowRunId) return;
 
-      // Capture the deep link *before* awaiting (await will consume the flow handle)
       this._authUrl = flow.authorizationUrl;
-
-      // Redraw the QR now and again on next frame (covers initial layout/paint timing)
+      await this.updateComplete;
       this._updateQr();
-      requestAnimationFrame(() => this._updateQr());
 
       const session = await flow.awaitApproval();
+      if (runId !== this._flowRunId) return;
+
       const grantInfo = await session.grant.sessionInfo();
+      if (runId !== this._flowRunId) return;
 
       this._pubkyZ32 = session.info.publicKey.z32();
       this._grantClientId = grantInfo.clientId;
       this._grantId = grantInfo.grantId;
       this._grantCapabilities = grantInfo.capabilities;
+      this._logGrantMetadata(grantInfo);
+      this._phase = "approved";
     } catch (e) {
+      if (runId !== this._flowRunId) return;
       console.error("Grant auth flow failed:", e);
       this._error = e?.message || String(e);
+      this._phase = "error";
     }
   }
 
@@ -111,42 +126,18 @@ export class PubkyAuthWidget extends LitElement {
   }
 
   _updateQr() {
-    // We need both a canvas and the URL
     if (!this._canvas || !this._authUrl) return;
-    try {
-      QRCode.toCanvas(this._canvas, this._authUrl, {
-        margin: 2,
-        scale: 8,
-        color: { light: "#fff", dark: "#000" },
-      });
-    } catch (e) {
-      console.error("QR render error:", e);
-    }
-  }
 
-  _toggleOpen() {
-    this.open = !this.open;
-
-    // First time opening? start a flow
-    if (this.open && !this._authUrl) {
-      this._generateFlow();
-    }
-
-    // Reset success label when closing
-    if (!this.open) {
-      this._pubkyZ32 = "";
-      this._authUrl = "";
-      this._grantClientId = "";
-      this._grantId = "";
-      this._grantCapabilities = [];
-      this._error = "";
-    }
+    QRCode.toCanvas(this._canvas, this._authUrl, {
+      margin: 1,
+      scale: 8,
+      color: { light: "#fff", dark: "#0d0e0f" },
+    }).catch((e) => console.error("QR render error:", e));
   }
 
   async _copyToClipboard() {
     try {
-      const url = this._authUrl || "";
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(this._authUrl || "");
       this.showCopied = true;
       setTimeout(() => (this.showCopied = false), 1000);
     } catch (e) {
@@ -154,94 +145,183 @@ export class PubkyAuthWidget extends LitElement {
     }
   }
 
-  // ---- Template -------------------------------------------------------------
-
-  render() {
-    const showSuccess = Boolean(this._pubkyZ32);
-    const headerLabel = this.open ? "Pubky Auth" : "Click!";
-    const requestedCaps = this.caps
+  _requestedCaps() {
+    return this.caps
       .split(",")
       .map((cap) => cap.trim())
       .filter(Boolean);
+  }
+
+  _logGrantMetadata(grantInfo) {
+    console.log("Pubky grant metadata:", {
+      publicKey: grantInfo.publicKey.z32(),
+      homeserver: grantInfo.homeserver.z32(),
+      clientId: grantInfo.clientId,
+      grantId: grantInfo.grantId,
+      capabilities: grantInfo.capabilities,
+      createdAt: grantInfo.createdAt,
+      tokenExpiresAt: grantInfo.tokenExpiresAt,
+      grantExpiresAt: grantInfo.grantExpiresAt,
+    });
+  }
+
+  _stepClass(step) {
+    if (step === 1) return "step-index active";
+    if (step === 2 && this._phase !== "idle") return "step-index active";
+    if (step === 3 && this._phase === "approved") return "step-index active";
+    return "step-index";
+  }
+
+  render() {
+    const requestedCaps = this._requestedCaps();
+    const approved = this._phase === "approved";
+    const waiting = this._phase === "connecting";
+    const idle = this._phase === "idle";
+    const errored = this._phase === "error";
 
     return html`
-      <div id="widget" class=${this.open ? "open" : ""}>
-        <button
-          class="header"
-          @click=${this._toggleOpen}
-          aria-label="Open Pubky Auth"
-        >
-          <div class="header-content">
-            <svg
-              id="pubky-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 452 690"
-              aria-hidden="true"
-            >
-              <path
-                fill-rule="evenodd"
-                d="m0.1 84.7l80.5 17.1 15.8-74.5 73.8 44.2 54.7-71.5 55.2 71.5 70.3-44.2 19.4 74.5 81.6-17.1-74.5 121.5c-40.5-35.3-93.5-56.6-151.4-56.6-57.8 0-110.7 21.3-151.2 56.4zm398.4 293.8c0 40.6-14 78-37.4 107.4l67 203.8h-403.1l66.2-202.3c-24.1-29.7-38.6-67.6-38.6-108.9 0-95.5 77.4-172.8 173-172.8 95.5 0 172.9 77.3 172.9 172.8zm-212.9 82.4l-48.2 147.3h178.1l-48.6-148 2.9-1.6c28.2-15.6 47.3-45.6 47.3-80.1 0-50.5-41-91.4-91.5-91.4-50.6 0-91.6 40.9-91.6 91.4 0 35 19.7 65.4 48.6 80.8z"
+      <section class="auth-shell">
+        <div class="content">
+          <p class="eyebrow">Pubky Grant Auth · Rust example</p>
+          <h1>Grant Auth, step by step</h1>
+          <p class="intro">
+            A demo for using Pubky Grant Auth in an unhosted app. Follow the flow
+            in order: create a request, approve it with the authenticator, then
+            receive a grant-backed session.
+          </p>
+
+          ${this._renderConfigureStep(requestedCaps)}
+          ${this._renderApproveStep({ idle, waiting, approved, errored })}
+          ${this._renderSessionStep(approved)}
+        </div>
+      </section>
+    `;
+  }
+
+  _renderConfigureStep(requestedCaps) {
+    return html`
+      <div class="step">
+        <div class="rail">
+          <div class=${this._stepClass(1)}>1</div>
+          <div class="line"></div>
+        </div>
+        <div class="step-body">
+          <h2>Configure the request</h2>
+          <div class="panel controls">
+            <label>
+              <input
+                type="checkbox"
+                .checked=${this.testnet}
+                @change=${this._toggleTestnet}
               />
-            </svg>
-            <span class="text">${headerLabel}</span>
+              <span title="Use the local Pubky test network instead of the public one.">
+                Testnet
+              </span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                .checked=${requestedCaps.length > 0}
+                @change=${this._toggleCapabilities}
+              />
+              <span title="Scoped read/write paths on the user's Homeserver.">
+                Request capabilities
+              </span>
+            </label>
+            <div class="code-card">
+              <div>client_id = ${CLIENT_ID}</div>
+              <div>network = ${this.testnet ? "testnet" : "default"}</div>
+              <div>caps = ${requestedCaps.length ? requestedCaps.join(", ") : "none"}</div>
+            </div>
           </div>
-        </button>
+        </div>
+      </div>
+    `;
+  }
 
-        <div class="line"></div>
-
-        <div id="widget-content">
-          ${showSuccess
-        ? html`
-                <p>Successfully authorized grant session:</p>
-                <p class="pk">${this._pubkyZ32}</p>
-                <p>Client ID: ${this._grantClientId}</p>
-                <p>Grant ID: ${this._grantId}</p>
-                ${this._grantCapabilities.length
-            ? html`
-                      <p>Capabilities</p>
-                      ${this._grantCapabilities.map((cap) => html`<p>${cap}</p>`)}
-                    `
-            : html`<p>No capabilities requested</p>`}
-              `
-        : html`
-                <p>Scan or copy this Pubky grant auth URL</p>
-                <p>Client ID: ${CLIENT_ID}</p>
-                ${requestedCaps.length
-            ? html`${requestedCaps.map((cap) => html`<p>${cap}</p>`)}`
-            : html`<p>No capabilities requested</p>`}
-                ${this._error ? html`<p class="error">${this._error}</p>` : ""}
-                <div class="card">
-                  <canvas id="qr" ${ref((c) => this._setQr(c))}></canvas>
-                </div>
-                <button
-                  class="card url"
-                  @click=${this._copyToClipboard}
-                  title="Copy URL"
-                >
-                  <div class="copied ${this.showCopied ? "show" : ""}">
-                    Copied to Clipboard
+  _renderApproveStep({ idle, waiting, approved, errored }) {
+    return html`
+      <div class="step">
+        <div class="rail">
+          <div class=${this._stepClass(2)}>2</div>
+          <div class="line"></div>
+        </div>
+        <div class="step-body">
+          <h2>Scan and approve</h2>
+          <div class="panel approve-panel">
+            ${idle
+              ? html`
+                  <p class="muted">Generate the link to see the QR code here.</p>
+                  <button class="primary" @click=${this._startFlow}>
+                    Generate auth link
+                  </button>
+                `
+              : ""}
+            ${waiting
+              ? html`
+                  <div class="qr-card">
+                    <canvas ${ref((canvas) => this._setQr(canvas))}></canvas>
                   </div>
-                  <p>${this._authUrl || ""}</p>
-                  <svg
-                    width="14"
-                    height="16"
-                    viewBox="0 0 14 16"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <rect width="10" height="12" rx="2" fill="white"></rect>
-                    <rect
-                      x="3"
-                      y="3"
-                      width="10"
-                      height="12"
-                      rx="2"
-                      fill="white"
-                      stroke="#3B3B3B"
-                    ></rect>
-                  </svg>
-                </button>
-              `}
+                  <button class="url-card" @click=${this._copyToClipboard}>
+                    <span>${this._authUrl}</span>
+                    <strong>${this.showCopied ? "Copied" : "Copy"}</strong>
+                  </button>
+                  <div class="waiting-row">
+                    <span class="spinner"></span>
+                    <span>Waiting for authenticator approval...</span>
+                  </div>
+                `
+              : ""}
+            ${approved
+              ? html`<p class="success">Approved by user</p>`
+              : ""}
+            ${errored
+              ? html`
+                  <p class="error">${this._error}</p>
+                  <button class="primary" @click=${this._startFlow}>Try again</button>
+                `
+              : ""}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderSessionStep(approved) {
+    return html`
+      <div class="step last">
+        <div class="rail">
+          <div class=${this._stepClass(3)}>3</div>
+        </div>
+        <div class="step-body">
+          <h2>Receive the session</h2>
+          <div class="panel session-panel">
+            ${approved
+              ? html`
+                  <div class="detail-label">Public key</div>
+                  <div class="mono break">${this._pubkyZ32}</div>
+                  <div class="detail-grid">
+                    <div>
+                      <span>Client ID</span>
+                      <strong>${this._grantClientId}</strong>
+                    </div>
+                    <div>
+                      <span>Grant ID</span>
+                      <strong>${this._grantId}</strong>
+                    </div>
+                  </div>
+                  ${this._grantCapabilities.length
+                    ? html`
+                        <div class="detail-label">Capabilities</div>
+                        ${this._grantCapabilities.map(
+                          (cap) => html`<div class="cap mono">${cap}</div>`,
+                        )}
+                      `
+                    : html`<div class="cap mono">No capabilities requested</div>`}
+                  <button class="text-button" @click=${this._resetFlow}>Start over</button>
+                `
+              : html`<p class="muted">Waiting on step 2...</p>`}
+          </div>
         </div>
       </div>
     `;
@@ -249,161 +329,339 @@ export class PubkyAuthWidget extends LitElement {
 
   static get styles() {
     return css`
+      @keyframes pubky-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       * {
         box-sizing: border-box;
       }
+
       :host {
-        --full-width: 22rem;
-        --full-height: 31rem;
-        --header-height: 3.5rem;
-        --closed-width: 14rem; /* big clickable pill */
+        display: block;
+        width: min(40rem, calc(100vw - 2rem));
+        color: #f2f3f3;
       }
 
       button {
-        padding: 0;
-        background: none;
-        border: 0;
-        color: inherit;
-        cursor: pointer;
-      }
-      p {
-        margin: 0;
+        font: inherit;
       }
 
-      #widget {
-        color: white;
-        position: fixed;
-        top: 2rem;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 99999;
+      .auth-shell {
         overflow: hidden;
-        background: rgba(43, 43, 43, 0.74);
-        border: 1px solid #3c3c3c;
-        box-shadow: 0 10px 34px -10px rgba(236, 243, 222, 0.05);
-        border-radius: 999px; /* pill when closed */
-        -webkit-backdrop-filter: blur(8px);
-        backdrop-filter: blur(8px);
-        width: var(--closed-width);
-        height: var(--header-height);
-        transition:
-          height 120ms ease,
-          width 120ms ease,
-          border-radius 120ms ease;
+        border: 1px solid #24272a;
+        border-radius: 16px;
+        background: #111315;
+        box-shadow: 0 24px 80px rgb(0 0 0 / 32%);
       }
 
-      #widget.open {
-        width: var(--full-width);
-        height: var(--full-height);
-        border-radius: 12px; /* card when open */
+      .content {
+        padding: 3.5rem 2.5rem 2.75rem;
       }
 
-      .header {
-        width: 100%;
-        height: var(--header-height);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 0 0.9rem;
-      }
-
-      .header-content {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      #pubky-icon {
-        height: 1.6rem;
-        width: auto;
-        fill: currentColor;
-      }
-
-      .text {
+      .eyebrow {
+        margin: 0 0 0.5rem;
+        color: #2fbf8f;
+        font-size: 0.75rem;
         font-weight: 800;
-        font-size: 1.1rem;
-        letter-spacing: 0.2px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0 0 0.625rem;
+        color: #f2f3f3;
+        font-size: clamp(1.75rem, 5vw, 2rem);
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .intro {
+        margin: 0 0 1.75rem;
+        color: #9aa0a4;
+        font-size: 0.875rem;
+        line-height: 1.6;
+      }
+
+      .step {
+        display: flex;
+        gap: 1rem;
+      }
+
+      .step.last .step-body {
+        padding-bottom: 0;
+      }
+
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .step-index {
+        display: grid;
+        width: 1.875rem;
+        height: 1.875rem;
+        flex-shrink: 0;
+        place-items: center;
+        border: 1px solid #33373a;
+        border-radius: 50%;
+        background: #1a1c1e;
+        color: #6f7478;
+        font-size: 0.8125rem;
+        font-weight: 800;
+      }
+
+      .step-index.active {
+        border-color: #2fbf8f;
+        background: #1a2e27;
+        color: #5fe0b3;
       }
 
       .line {
-        height: 1px;
-        background-color: #3b3b3b;
-        margin-bottom: 1rem;
-        opacity: 0.6;
+        width: 2px;
+        flex: 1;
+        background: #26292b;
       }
 
-      #widget-content {
-        width: var(--full-width);
-        padding: 0 1rem;
+      .step-body {
+        flex: 1;
+        min-width: 0;
+        padding-bottom: 1.5rem;
       }
 
-      #widget p {
-        font-size: 0.87rem;
-        line-height: 1rem;
-        text-align: center;
-        color: #fff;
-        opacity: 0.7;
-        text-wrap: nowrap;
+      h2 {
+        margin: 0 0 0.625rem;
+        color: #f2f3f3;
+        font-size: 0.90625rem;
+        font-weight: 700;
       }
 
-      .pk {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
-        opacity: 0.9;
+      .panel {
+        border: 1px solid #26292b;
+        border-radius: 10px;
+        background: #1a1c1e;
+        padding: 1rem;
+      }
+
+      .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 0.625rem;
+      }
+
+      label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #c7cacc;
+        font-size: 0.8125rem;
+      }
+
+      label span {
+        border-bottom: 1px dotted #6f7478;
+        cursor: help;
+      }
+
+      input {
+        accent-color: #2fbf8f;
+      }
+
+      .code-card,
+      .cap,
+      .mono,
+      .url-card {
+        font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+      }
+
+      .code-card {
+        border-radius: 6px;
+        background: #0d0e0f;
+        color: #8b9096;
+        font-size: 0.6875rem;
+        line-height: 1.6;
+        padding: 0.625rem 0.75rem;
+      }
+
+      .approve-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .muted {
+        margin: 0;
+        color: #6f7478;
+        font-size: 0.8125rem;
+      }
+
+      .primary {
+        all: unset;
+        cursor: pointer;
+        border-radius: 999px;
+        background: #2fbf8f;
+        color: #0c1a15;
+        font-size: 0.8125rem;
+        font-weight: 800;
+        padding: 0.625rem 1.375rem;
+      }
+
+      .qr-card {
+        display: flex;
+        border-radius: 10px;
+        background: #fff;
+        padding: 0.5625rem;
+      }
+
+      .qr-card canvas {
+        width: min(16rem, calc(100vw - 8rem)) !important;
+        height: min(16rem, calc(100vw - 8rem)) !important;
+      }
+
+      .url-card {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        border: 0;
+        border-radius: 8px;
+        background: #0d0e0f;
+        color: #9aa0a4;
+        cursor: pointer;
+        font-size: 0.65625rem;
+        padding: 0.5625rem 0.6875rem;
+      }
+
+      .url-card span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .url-card strong {
+        color: #5fe0b3;
+        font-family: inherit;
+        font-size: 0.6875rem;
+      }
+
+      .waiting-row {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        color: #c7cacc;
+        font-size: 0.8125rem;
+        padding: 0.25rem 0;
+      }
+
+      .spinner {
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #3a3d3f;
+        border-top-color: #2fbf8f;
+        border-radius: 50%;
+        animation: pubky-spin 0.8s linear infinite;
+      }
+
+      .success {
+        margin: 0;
+        color: #5fe0b3;
+        font-size: 0.8125rem;
       }
 
       .error {
-        color: #ffb4b4 !important;
-        opacity: 1 !important;
+        margin: 0;
+        color: #ffb4b4;
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        text-align: center;
       }
 
-      #qr {
-        width: 18em !important;
-        height: 18em !important;
-      }
-
-      .card {
-        position: relative;
-        background: #3b3b3b;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-top: 1rem;
+      .session-panel {
         display: flex;
-        justify-content: center;
-        align-items: center;
+        flex-direction: column;
+        gap: 0.5rem;
       }
 
-      .card.url {
-        padding: 0.625rem;
-        justify-content: space-between;
-        max-width: 100%;
+      .detail-label {
+        color: #6f7478;
+        font-size: 0.75rem;
+        font-weight: 700;
       }
 
-      .card.url p {
-        display: flex;
-        align-items: center;
-        line-height: 1 !important;
-        width: 93%;
+      .break {
+        word-break: break-all;
+      }
+
+      .mono {
+        color: #c7cacc;
+        font-size: 0.6875rem;
+        line-height: 1.5;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+      }
+
+      .detail-grid div,
+      .cap {
+        border-radius: 6px;
+        background: #0d0e0f;
+        padding: 0.5rem 0.625rem;
+      }
+
+      .detail-grid span {
+        display: block;
+        color: #6f7478;
+        font-size: 0.6875rem;
+      }
+
+      .detail-grid strong {
+        display: block;
         overflow: hidden;
+        color: #c7cacc;
+        font-size: 0.75rem;
         text-overflow: ellipsis;
-        text-wrap: nowrap;
+        white-space: nowrap;
       }
 
-      .copied {
-        transition: opacity 80ms ease-in;
-        opacity: 0;
-        position: absolute;
-        right: 0;
-        top: -1.6rem;
-        font-size: 0.9em;
-        background: rgb(43 43 43 / 98%);
-        padding: 0.5rem;
-        border-radius: 0.3rem;
-        color: #ddd;
+      .text-button {
+        all: unset;
+        align-self: flex-start;
+        color: #8b9096;
+        cursor: pointer;
+        font-size: 0.75rem;
+        text-decoration: underline;
       }
-      .copied.show {
-        opacity: 1;
+
+      @media (max-width: 560px) {
+        :host {
+          width: min(100%, calc(100vw - 1rem));
+        }
+
+        .content {
+          padding: 2rem 1rem;
+        }
+
+        .step {
+          gap: 0.75rem;
+        }
+
+        .detail-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .qr-card canvas {
+          width: min(14rem, calc(100vw - 6rem)) !important;
+          height: min(14rem, calc(100vw - 6rem)) !important;
+        }
       }
     `;
   }

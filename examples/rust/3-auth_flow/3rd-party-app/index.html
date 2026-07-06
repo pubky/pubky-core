@@ -9,34 +9,8 @@
     <script type="module" src="/src/pubky-auth-widget.js"></script>
   </head>
   <body>
-    <pubky-auth-widget
-      id="widget"
-      relay="https://httprelay.staging.pubky.app/inbox"
-    >
-    </pubky-auth-widget>
-
     <main>
-      <h1>Third Party Grant Auth App</h1>
-      <p>
-        This is a demo for using Pubky Grant Auth in an unhosted (no backend)
-        app. The generated deep link includes a client ID and client public key,
-        and approval returns a grant-backed session.
-      </p>
-      <form>
-        <label style="display: block">
-          <input
-            type="checkbox"
-            onChange="document.getElementById('widget').switchTestnet()"
-          />Testnet (use local test network)
-        </label>
-        <label style="display: block">
-          <input
-            type="checkbox"
-            onChange="let w = document.getElementById('widget'); w.caps.length > 0 ? w.setCapabilities(null) : w.setCapabilities('/pub/pubky.app/:rw,/pub/example.com/nested:rw')"
-          />Request capabilities e.g. "/pub/pubky.app/:rw".
-          Set if your pubky has an account on a Homeserver.
-        </label>
-      </form>
+      <pubky-auth-widget id="widget"></pubky-auth-widget>
     </main>
   </body>
 </html>
