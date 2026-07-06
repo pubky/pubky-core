@@ -1,28 +1,77 @@
-mod read;
-mod write;
-
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use pubky::{ClientId, Pubky, PublicKey};
+use std::path::PathBuf;
+
+#[path = "../recovery.rs"]
+mod recovery;
+
+/// local testnet HOMESERVER
+const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Pubky homeserver storage examples")]
+#[command(version, about = "Pubky homeserver storage lifecycle example")]
 struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
+    /// Resource path to write to
+    #[arg(default_value = "/pub/my-app/data.json")]
+    path: String,
 
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Public read: GET data from any user's homeserver (no authentication needed)
-    Read(read::Args),
-    /// Authenticated write: PUT, GET, and DELETE a file on your own homeserver
-    Write(write::Args),
+    /// Content to write
+    #[arg(short, long, default_value = "my data")]
+    content: String,
+
+    /// Path to a recovery file
+    #[arg(long)]
+    recovery_file: Option<PathBuf>,
+
+    /// Use the local testnet defaults instead of mainnet relays
+    #[arg(long)]
+    testnet: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    match Cli::parse().command {
-        Command::Read(args) => read::run(args).await,
-        Command::Write(args) => write::run(args).await,
+    let cli = Cli::parse();
+
+    let recovery_file = cli
+        .recovery_file
+        .unwrap_or_else(recovery::sample_recovery_file);
+    let keypair =
+        recovery::decrypt_recovery_file(&recovery_file, "Enter your recovery file passphrase:")?;
+    println!("Decrypted recovery file for {}", keypair.public_key());
+
+    let pubky = if cli.testnet {
+        println!("Using testnet...");
+        Pubky::testnet()?
+    } else {
+        Pubky::new()?
+    };
+
+    let signer = pubky.signer(keypair);
+    if cli.testnet {
+        let homeserver = &PublicKey::try_from(TESTNET_HOMESERVER)?;
+        recovery::ensure_testnet_signup(&signer, homeserver).await?;
     }
+
+    let session = signer.signin(ClientId::new("storage.example")?).await?;
+    println!("Signed in successfully!");
+
+    let storage = session.storage();
+
+    println!("\nPUT {} ...", cli.path);
+    storage
+        .put(&cli.path, cli.content.as_bytes().to_vec())
+        .await?;
+    println!("  Written successfully.");
+
+    println!("\nGET {} ...", cli.path);
+    let response = storage.get(&cli.path).await?;
+    let body = response.bytes().await?;
+    println!("  Content: {}", String::from_utf8_lossy(&body));
+
+    println!("\nDELETE {} ...", cli.path);
+    storage.delete(&cli.path).await?;
+    println!("  Deleted successfully.");
+
+    Ok(())
 }

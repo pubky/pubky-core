@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pubky::{deep_links::DeepLink, Pubky, PubkySigner, PublicKey};
+use pubky::{deep_links::DeepLink, Pubky, PublicKey};
 use std::path::PathBuf;
 use url::Url;
 
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
-        ensure_testnet_signup(&signer, homeserver).await?;
+        recovery::ensure_testnet_signup(&signer, homeserver).await?;
 
         signer
     } else {
@@ -82,20 +82,6 @@ async fn main() -> Result<()> {
     println!("Sending approval to the 3rd party app...");
 
     signer.approve_auth(&url).await?;
-
-    Ok(())
-}
-
-async fn ensure_testnet_signup(signer: &PubkySigner, homeserver: &PublicKey) -> Result<()> {
-    match signer.signup(homeserver, None).await {
-        Ok(()) => println!("Signed up to the testnet homeserver."),
-        Err(pubky::Error::Request(pubky::errors::RequestError::Server { status, .. }))
-            if status == reqwest::StatusCode::CONFLICT =>
-        {
-            println!("Testnet user already exists, continuing...");
-        }
-        Err(err) => return Err(err.into()),
-    }
 
     Ok(())
 }
