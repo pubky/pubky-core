@@ -1,4 +1,5 @@
 use crate::pubky::Pubky;
+use anyhow::Context;
 
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -116,7 +117,7 @@ impl StaticTestnetBuilder {
                 true
             }
         };
-        testnet.persistent = persistent;
+        testnet.is_persistent = persistent;
 
         Ok(testnet)
     }
@@ -148,7 +149,7 @@ pub struct StaticTestnet {
     /// Inner flexible testnet.
     pub testnet: Testnet,
     /// Whether the homeserver is using persistent on-disk storage.
-    persistent: bool,
+    is_persistent: bool,
     #[allow(dead_code)]
     fixed_bootstrap_node: Option<pkarr::mainline::Dht>, // Keep alive
     #[allow(dead_code)]
@@ -177,15 +178,15 @@ impl StaticTestnet {
 
     /// Whether this testnet is running in persistent mode.
     pub fn is_persistent(&self) -> bool {
-        self.persistent
+        self.is_persistent
     }
 
     /// Start the shared infrastructure (DHT bootstrap node, pkarr relay, http relay)
     /// without a homeserver.
     async fn start_infra() -> anyhow::Result<Self> {
         let testnet = Testnet::new().await?;
-        let fixed_boostrap =
-            Self::run_fixed_boostrap_node(&testnet.dht.bootstrap).map_err(|e| {
+        let fixed_bootsrap =
+            Self::run_fixed_bootsrap_node(&testnet.dht.bootstrap).map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to run bootstrap node on port {}: {}",
                     testnet_ports::BOOTSTRAP,
@@ -195,9 +196,9 @@ impl StaticTestnet {
 
         let mut testnet = Self {
             testnet,
-            fixed_bootstrap_node: fixed_boostrap,
+            fixed_bootstrap_node: fixed_bootsrap,
             temp_dirs: vec![],
-            persistent: false,
+            is_persistent: false,
         };
 
         testnet.run_fixed_pkarr_relays().await.map_err(|e| {
@@ -288,7 +289,7 @@ impl StaticTestnet {
 
     /// Create a fixed bootstrap node on port 6881 if it is not already running.
     /// If it's already running, return None.
-    fn run_fixed_boostrap_node(
+    fn run_fixed_bootsrap_node(
         other_bootstrap_nodes: &[String],
     ) -> anyhow::Result<Option<pkarr::mainline::Dht>> {
         let port_suffix = format!(":{}", testnet_ports::BOOTSTRAP);
@@ -356,7 +357,10 @@ impl StaticTestnet {
         let persistent_dir = PersistentDataDir::new(data_dir);
 
         if let Some(source) = config_path {
-            seed_config(source, &persistent_dir)?;
+            persistent_dir.seed_config(source).context(
+                "Remove --homeserver-config to use the existing config, \
+                 or delete the file to replace it.",
+            )?;
         }
 
         // Don't call persistent_dir.init() here — it would create a random
@@ -394,23 +398,6 @@ impl StaticTestnet {
     }
 }
 
-/// Copy the source config file into the persistent data directory.
-/// Errors if a `config.toml` already exists at the destination.
-fn seed_config(source: &Path, persistent_dir: &PersistentDataDir) -> anyhow::Result<()> {
-    let config_path = persistent_dir.get_config_file_path();
-    if config_path.exists() {
-        anyhow::bail!(
-            "config.toml already exists at {}. Remove --homeserver-config to use the existing config, \
-             or delete the file to replace it.",
-            config_path.display()
-        );
-    }
-    std::fs::create_dir_all(persistent_dir.path())?;
-    std::fs::copy(source, &config_path)?;
-    tracing::info!("Copied {} → {}", source.display(), config_path.display());
-    Ok(())
-}
-
 /// A [`PersistentDataDir`] wrapper that overrides DHT config for testnet use.
 ///
 /// This ensures the homeserver connects to the testnet's local DHT bootstrap
@@ -435,6 +422,12 @@ impl DataDir for TestnetDataDir {
         let mut config = self.inner.read_or_create_config_file()?;
         apply_static_testnet_overrides(&mut config, self.dht_bootstrap_nodes.clone());
         if let Some(connection_string) = &self.postgres_connection_string {
+            if connection_string.is_test_db() {
+                anyhow::bail!(
+                    "Persistent testnet requires a real database. \
+                     Remove `?pubky-test=true` from the connection string to use a persistent database."
+                );
+            }
             config.general.database_url = connection_string.clone();
         }
         Ok(config)
@@ -555,7 +548,7 @@ mod tests {
         let sample = ConfigToml::sample_string();
         std::fs::write(&source_config, &sample).unwrap();
 
-        seed_config(&source_config, &persistent).unwrap();
+        persistent.seed_config(&source_config).unwrap();
 
         assert!(persistent.get_config_file_path().exists());
         let content = std::fs::read_to_string(persistent.get_config_file_path()).unwrap();
@@ -571,7 +564,7 @@ mod tests {
         let source = temp.path().join("other.toml");
         std::fs::write(&source, "[general]\nsignup_mode = \"open\"\n").unwrap();
 
-        let result = seed_config(&source, &persistent);
+        let result = persistent.seed_config(&source);
         assert!(
             result.is_err(),
             "Seeding should be rejected when config.toml already exists"
@@ -702,7 +695,7 @@ mod tests {
         std::fs::write(&source, "[general]\nsignup_mode = \"token_required\"\n").unwrap();
 
         let persistent1 = PersistentDataDir::new(data_dir.clone());
-        seed_config(&source, &persistent1).unwrap();
+        persistent1.seed_config(&source).unwrap();
         // Only init the dir structure + config, but NOT the keypair — let
         // TestnetDataDir seed the deterministic one.
         persistent1
