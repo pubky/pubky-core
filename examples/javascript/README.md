@@ -1,6 +1,6 @@
-# Pubky JS Examples (Node 20+)
+# Pubky JS Examples
 
-Tiny CLI scripts that teach the **@synonymdev/pubky** SDK with real flows.
+Tiny CLI scripts and browser examples that teach the **@synonymdev/pubky** SDK with real flows.
 
 > Tip: call `setLogLevel("debug")` when exploring the scripts to surface SDK logs in your console.
 
@@ -134,6 +134,20 @@ node 5-request.mjs \
   -d '{"msg":"hello"}' \
   POST https://example.com/data.json
 ```
+
+## Browser Examples
+
+### 6) Browser session persistence
+
+Vite app that creates disposable testnet accounts and shows how to save, list, restore, and forget multiple browser-backed Pubky sessions with `browserSessionStore`.
+
+```bash
+cd 6-browser-session-persistence
+npm install
+npm run dev
+```
+
+See [**6-browser-session-persistence**](./6-browser-session-persistence/README.md) for the full flow.
 
 ## Concepts you’ll bump into
 
