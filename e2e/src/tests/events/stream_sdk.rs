@@ -2,7 +2,7 @@ use super::*;
 use futures::StreamExt;
 use pubky_testnet::pubky::errors::{Error, RequestError};
 use pubky_testnet::pubky::{ClientId, EventCursor, PubkySession, PublicKey};
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 
 /// Sign up a fresh user and return its public key plus an authenticated
 /// (root-capability) grant session.
