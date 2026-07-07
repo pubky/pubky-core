@@ -2,6 +2,8 @@
 
 Pubky homeserver that acts as user's agent on the Internet, providing data availability and more.
 
+For standalone installation and operation, see [Install and Run Pubky Homeserver](../docs/INSTALL.md). For local app development, use the [local testnet guide](../docs/LOCAL_DEVELOPMENT.md).
+
 ## Usage
 
 ### Library
@@ -78,7 +80,17 @@ async fn main() -> anyhow::Result<()> {
 
 ### Binary
 
-Use `cargo run -- --data-dir=~/.pubky`.
+From the repository root:
+
+```bash
+cargo run -p pubky-homeserver -- --data-dir ~/.pubky
+```
+
+With an installed release binary:
+
+```bash
+pubky-homeserver --data-dir ~/.pubky
+```
 
 ## Caching and Proxies
 
