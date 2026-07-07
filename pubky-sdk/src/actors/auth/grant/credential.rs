@@ -33,7 +33,6 @@ use crate::actors::session::credential::{SessionCredential, credential_session_m
 use crate::{
     PubkyHttpClient,
     actors::session::SessionInfo,
-    actors::storage::resource::resolve_pubky,
     cross_log,
     errors::{AuthError, RequestError, Result},
     util::check_http_status,
@@ -42,6 +41,7 @@ use crate::{
 /// Refresh the bearer proactively when it has less than this many seconds left.
 pub(crate) const REFRESH_SLACK_SECS: u64 = 300;
 
+const GRANT_SESSION_PATH: &str = "/auth/grant/session";
 const STORED_GRANT_CREDENTIAL_PREFIX: &str = "pubky-grant-credential-v1";
 const STORED_GRANT_CREDENTIAL_PREFIX_FAMILY: &str = "pubky-grant-credential-";
 
@@ -332,10 +332,13 @@ impl GrantCredential {
         .await?;
         let body = serde_json::json!({ "grant": &state.grant_jws, "pop": pop_jws });
 
-        let url = format!("pubky{}/auth/grant/session", state.grant_claims.iss.z32());
-        let resolved = resolve_pubky(&url)?;
         let resp = client
-            .cross_request(Method::POST, resolved)
+            .cross_request_via_homeserver(
+                Method::POST,
+                &state.homeserver_pk,
+                &state.grant_claims.iss,
+                GRANT_SESSION_PATH,
+            )
             .await?
             .json(&body)
             .send()
@@ -350,6 +353,20 @@ impl GrantCredential {
         state.token_expires_at = parsed.session.token_expires_at;
         state.session = parsed.session;
         Ok(())
+    }
+
+    async fn grant_session_request(
+        &self,
+        client: &PubkyHttpClient,
+        method: Method,
+    ) -> Result<RequestBuilder> {
+        let (homeserver, user) = {
+            let state = self.state.lock().await;
+            (state.homeserver_pk.clone(), state.grant_claims.iss.clone())
+        };
+        client
+            .cross_request_via_homeserver(method, &homeserver, &user, GRANT_SESSION_PATH)
+            .await
     }
 }
 
@@ -367,12 +384,9 @@ impl SessionCredential for GrantCredential {
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
         // Hit the auth endpoint directly and attach the bearer ourselves —
         // `/auth/grant/session` is not a storage URL.
-        let user_pk = self.state.lock().await.grant_claims.iss.clone();
-        let url = format!("pubky{}/auth/grant/session", user_pk.z32());
-        let resolved = resolve_pubky(&url)?;
         let bearer = self.current_bearer().await;
-        let response = client
-            .cross_request(Method::DELETE, resolved)
+        let response = self
+            .grant_session_request(client, Method::DELETE)
             .await?
             .bearer_auth(&bearer)
             .send()
@@ -410,12 +424,9 @@ impl SessionCredential for GrantCredential {
         // We hit the auth endpoint directly (not the storage path) and
         // attach the bearer ourselves — `/auth/grant/session` is not a
         // storage URL.
-        let user_pk = self.state.lock().await.grant_claims.iss.clone();
-        let url = format!("pubky{}/auth/grant/session", user_pk.z32());
-        let resolved = resolve_pubky(&url)?;
         let bearer = self.current_bearer().await;
-        let response = client
-            .cross_request(Method::GET, resolved)
+        let response = self
+            .grant_session_request(client, Method::GET)
             .await?
             .bearer_auth(&bearer)
             .send()
@@ -726,6 +737,46 @@ mod tests {
         assert!(
             !credential.can_attach_to(&other).await,
             "grant credential must NOT attach to a homeserver it was not minted for"
+        );
+    }
+
+    #[tokio::test]
+    async fn grant_session_request_routes_through_bound_homeserver() {
+        use pkarr::{SignedPacket, dns::rdata::SVCB};
+
+        let (mut stored, claims) = stored_credential(now_unix() + 3600);
+        let homeserver_keypair = pkarr::Keypair::random();
+        stored.homeserver_pk =
+            PublicKey::try_from_z32(&homeserver_keypair.public_key().to_string()).unwrap();
+        let icann = SVCB::new(10, "example.com".try_into().unwrap());
+        let homeserver_packet = SignedPacket::builder()
+            .https(".".try_into().unwrap(), icann, 3600)
+            .sign(&homeserver_keypair)
+            .unwrap();
+        let client_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
+        let credential = test_credential(stored, claims.clone(), client_signer);
+
+        let mut builder = PubkyHttpClient::builder();
+        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        let client = builder.build().unwrap();
+        client
+            .pkarr
+            .cache()
+            .unwrap()
+            .put(&homeserver_keypair.public_key().into(), &homeserver_packet);
+
+        let request = credential
+            .grant_session_request(&client, Method::POST)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(request.url().host_str(), Some("example.com"));
+        assert_eq!(request.url().path(), "/auth/grant/session");
+        assert_eq!(
+            request.headers().get("pubky-host").unwrap(),
+            &claims.iss.z32()
         );
     }
 }
