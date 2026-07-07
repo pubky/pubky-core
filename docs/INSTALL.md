@@ -77,7 +77,7 @@ docker run --name pubky-postgres \
   -e POSTGRES_DB=pubky_homeserver \
   -p 127.0.0.1:5432:5432 \
   -v postgres-data:/var/lib/postgresql/data \
-  -d postgres:17
+  -d postgres:18
 ```
 
 Verify it's running and the database exists:
