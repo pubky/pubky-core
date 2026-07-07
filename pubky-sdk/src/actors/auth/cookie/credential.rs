@@ -32,12 +32,18 @@ use reqwest::{Method, RequestBuilder, Response};
 use crate::actors::session::core::PubkySession;
 use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
-    cross_log, errors::Result, util::check_http_status,
+    PubkyHttpClient,
+    actors::session::SessionInfo,
+    actors::storage::resource::resolve_pubky,
+    cross_log,
+    errors::{RequestError, Result},
+    util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::errors::AuthError;
+
+const SESSION_PATH: &str = "/session";
 
 /// Cookie-based session credential (legacy).
 ///
@@ -138,19 +144,26 @@ impl CookieCredential {
         client: &PubkyHttpClient,
         homeserver: Option<PublicKey>,
     ) -> Result<Self> {
-        let url = format!("pubky{}/session", token.public_key().z32());
         cross_log!(
             info,
             "Establishing new session exchange for {}",
             token.public_key()
         );
-        let resolved = resolve_pubky(&url)?;
-        let response = client
-            .cross_request(Method::POST, resolved)
-            .await?
-            .body(token.serialize())
-            .send()
-            .await?;
+        let request = if let Some(homeserver) = homeserver.as_ref() {
+            client
+                .cross_request_via_homeserver(
+                    Method::POST,
+                    homeserver,
+                    token.public_key(),
+                    SESSION_PATH,
+                )
+                .await?
+        } else {
+            let url = format!("pubky{}/session", token.public_key().z32());
+            let resolved = resolve_pubky(&url)?;
+            client.cross_request(Method::POST, resolved).await?
+        };
+        let response = request.body(token.serialize()).send().await?;
 
         let response = check_http_status(response).await?;
         cross_log!(
@@ -210,9 +223,13 @@ impl SessionCredential for CookieCredential {
     }
 
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
-        let url = format!("pubky{}/session", self.user.z32());
-        let resolved = resolve_pubky(&url)?;
-        let rb = client.cross_request(Method::DELETE, resolved).await?;
+        let homeserver = match self.bound_homeserver() {
+            Some(homeserver) => homeserver,
+            None => resolve_cookie_homeserver(client, &self.user).await?,
+        };
+        let rb = client
+            .cross_request_via_homeserver(Method::DELETE, &homeserver, &self.user, SESSION_PATH)
+            .await?;
         let rb = self.attach(rb, client).await?;
         let response = rb.send().await.map_err(crate::Error::from)?;
         check_http_status(response).await?;
@@ -258,9 +275,13 @@ impl SessionCredential for CookieCredential {
         client: &PubkyHttpClient,
         user: &PublicKey,
     ) -> Result<Option<SessionInfo>> {
-        let url = format!("pubky{}/session", user.z32());
-        let resolved = resolve_pubky(&url)?;
-        let rb = client.cross_request(Method::GET, resolved).await?;
+        let (homeserver, bind_on_success) = match self.bound_homeserver() {
+            Some(homeserver) => (homeserver, false),
+            None => (resolve_cookie_homeserver(client, user).await?, true),
+        };
+        let rb = client
+            .cross_request_via_homeserver(Method::GET, &homeserver, user, SESSION_PATH)
+            .await?;
         let rb = self.attach(rb, client).await?;
         let response = rb.send().await.map_err(crate::Error::from)?;
         if credential_session_missing(&response) {
@@ -273,18 +294,8 @@ impl SessionCredential for CookieCredential {
         let info = SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec());
         self.replace_record(record);
 
-        // Best-effort hydration for restored/imported cookies that were created
-        // without a homeserver binding. Normal signup/signin paths bind at
-        // construction. This can theoretically race with concurrent PKDNS
-        // re-homing between the request resolution and this lookup; if resolution
-        // fails, keep the credential unbound so private event streams stay
-        // anonymous.
-        if self.bound_homeserver().is_none()
-            && let Some(hs) = crate::Pkdns::with_client(client.clone())
-                .get_homeserver_of(user)
-                .await
-        {
-            self.set_homeserver(hs);
+        if bind_on_success {
+            self.set_homeserver(homeserver);
         }
         Ok(Some(info))
     }
@@ -292,6 +303,21 @@ impl SessionCredential for CookieCredential {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+async fn resolve_cookie_homeserver(
+    client: &PubkyHttpClient,
+    user: &PublicKey,
+) -> Result<PublicKey> {
+    crate::Pkdns::with_client(client.clone())
+        .get_homeserver_of(user)
+        .await
+        .ok_or_else(|| {
+            RequestError::Validation {
+                message: format!("could not resolve homeserver for {}", user.z32()),
+            }
+            .into()
+        })
 }
 
 impl PubkySession {

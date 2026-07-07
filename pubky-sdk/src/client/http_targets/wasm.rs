@@ -1,5 +1,6 @@
 //! HTTP methods that support `https://` with Pkarr domains, including `_pubky.<pk>` URLs
 
+use super::homeserver_url;
 use crate::PublicKey;
 use crate::errors::{PkarrError, RequestError, Result};
 use crate::{PubkyHttpClient, cross_log};
@@ -43,6 +44,25 @@ impl PubkyHttpClient {
     ) -> Result<RequestBuilder> {
         self.cross_request_with_credentials(method, url, AmbientCredentials::Omit)
             .await
+    }
+
+    /// Build a credentialed request transported through `homeserver` while
+    /// addressing `pubky_host` as the logical tenant on that homeserver.
+    pub(crate) async fn cross_request_via_homeserver(
+        &self,
+        method: Method,
+        homeserver: &PublicKey,
+        pubky_host: &PublicKey,
+        path: &str,
+    ) -> Result<RequestBuilder> {
+        let mut url = homeserver_url(homeserver, path)?;
+        self.prepare_request(&mut url).await?;
+
+        Ok(self
+            .http
+            .request(method, url)
+            .fetch_credentials_include()
+            .header("pubky-host", pubky_host.z32()))
     }
 
     async fn cross_request_with_credentials<T: IntoUrl>(

@@ -2,7 +2,7 @@ use super::*;
 use futures::StreamExt;
 use pubky_testnet::pubky::errors::{Error, RequestError};
 use pubky_testnet::pubky::{ClientId, EventCursor, PubkySession, PublicKey};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// Sign up a fresh user and return its public key plus an authenticated
 /// (root-capability) grant session.
@@ -627,6 +627,54 @@ async fn events_stream_sdk_cookie_backed_private_authorized() {
     assert!(
         !event.resource.path.as_str().contains("/priv/other/"),
         "out-of-scope private event leaked: {}",
+        event.resource.path
+    );
+}
+
+/// A locally signed cookie signin binds to the homeserver used for `/session`,
+/// so its private stream can authenticate immediately.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_signin_cookie_private_authorized() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    signer.signup(&server.public_key(), None).await.unwrap();
+    let session = signer.signin_cookie().await.unwrap();
+    let user = signer.public_key();
+
+    session
+        .storage()
+        .put("/priv/app/signin-cookie.txt", vec![42])
+        .await
+        .unwrap();
+
+    let mut stream = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .limit(1)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let event = stream
+        .next()
+        .await
+        .expect("signin-cookie session should receive its private event")
+        .unwrap();
+    assert_eq!(event.resource.owner.z32(), user.z32());
+    assert!(
+        event
+            .resource
+            .path
+            .as_str()
+            .contains("/priv/app/signin-cookie.txt"),
+        "expected the signin-cookie private event, got: {}",
         event.resource.path
     );
 }

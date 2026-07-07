@@ -178,11 +178,14 @@ impl PubkySigner {
 
     async fn signin_cookie_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let token = self.root_capability_token();
-        // Best-effort: if resolution is unavailable the cookie stays unbound and
-        // hydrates on its first successful revalidate.
-        let homeserver = self.pkdns().get_homeserver().await.ok().flatten();
+        let homeserver = self.pkdns().get_homeserver().await?.ok_or_else(|| {
+            crate::errors::AuthError::Validation(format!(
+                "could not resolve homeserver for {}",
+                self.keypair.public_key().z32()
+            ))
+        })?;
         let credential =
-            CookieCredential::from_auth_token(&token, &self.client, homeserver).await?;
+            CookieCredential::from_auth_token(&token, &self.client, Some(homeserver)).await?;
         let session = PubkySession::from_cookie_credential(self.client.clone(), credential);
         self.publish_after_signin(mode).await?;
         Ok(session)
