@@ -339,7 +339,7 @@ impl EventStreamBuilder {
     /// Authenticate the subscription with a user session.
     ///
     /// Required to receive private (`/priv/...`) events: the session credential
-    /// is attached so the homeserver can authorize each private [`path`](Self::path) 
+    /// is attached so the homeserver can authorize each private [`path`](Self::path)
     /// against the session's read capabilities. Public subscriptions need no session.
     ///
     /// The credential is attached only for a private stream naming exactly the
