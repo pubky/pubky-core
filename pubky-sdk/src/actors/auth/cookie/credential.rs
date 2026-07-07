@@ -32,12 +32,8 @@ use reqwest::{Method, RequestBuilder, Response};
 use crate::actors::session::core::PubkySession;
 use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient,
-    actors::session::SessionInfo,
-    actors::storage::resource::resolve_pubky,
-    cross_log,
-    errors::{RequestError, Result},
-    util::check_http_status,
+    PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
+    cross_log, errors::Result, util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -159,7 +155,7 @@ impl CookieCredential {
                 )
                 .await?
         } else {
-            let url = format!("pubky{}/session", token.public_key().z32());
+            let url = format!("pubky{}{}", token.public_key().z32(), SESSION_PATH);
             let resolved = resolve_pubky(&url)?;
             client.cross_request(Method::POST, resolved).await?
         };
@@ -225,7 +221,11 @@ impl SessionCredential for CookieCredential {
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
         let homeserver = match self.bound_homeserver() {
             Some(homeserver) => homeserver,
-            None => resolve_cookie_homeserver(client, &self.user).await?,
+            None => {
+                crate::Pkdns::with_client(client.clone())
+                    .require_homeserver_of(&self.user)
+                    .await?
+            }
         };
         let rb = client
             .cross_request_via_homeserver(Method::DELETE, &homeserver, &self.user, SESSION_PATH)
@@ -248,10 +248,7 @@ impl SessionCredential for CookieCredential {
                 Ok(rb.header(reqwest::header::COOKIE, format!("{cookie_name}={cookie}")))
             }
             None => {
-                // Browser WASM: the secret lives only in the cookie jar. Opt this
-                // request into credentialed fetch so the jar is sent (event streams
-                // default to `credentials: omit`). Only reached once `can_attach_to`
-                // confirmed the target is this cookie's bound homeserver.
+                // Browser WASM keeps the secret in the cookie jar.
                 #[cfg(target_arch = "wasm32")]
                 {
                     Ok(rb.fetch_credentials_include())
@@ -277,7 +274,12 @@ impl SessionCredential for CookieCredential {
     ) -> Result<Option<SessionInfo>> {
         let (homeserver, bind_on_success) = match self.bound_homeserver() {
             Some(homeserver) => (homeserver, false),
-            None => (resolve_cookie_homeserver(client, user).await?, true),
+            None => (
+                crate::Pkdns::with_client(client.clone())
+                    .require_homeserver_of(user)
+                    .await?,
+                true,
+            ),
         };
         let rb = client
             .cross_request_via_homeserver(Method::GET, &homeserver, user, SESSION_PATH)
@@ -303,21 +305,6 @@ impl SessionCredential for CookieCredential {
     fn as_any(&self) -> &dyn Any {
         self
     }
-}
-
-async fn resolve_cookie_homeserver(
-    client: &PubkyHttpClient,
-    user: &PublicKey,
-) -> Result<PublicKey> {
-    crate::Pkdns::with_client(client.clone())
-        .get_homeserver_of(user)
-        .await
-        .ok_or_else(|| {
-            RequestError::Validation {
-                message: format!("could not resolve homeserver for {}", user.z32()),
-            }
-            .into()
-        })
 }
 
 impl PubkySession {

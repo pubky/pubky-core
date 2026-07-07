@@ -385,26 +385,37 @@ impl EventStreamBuilder {
         Ok(url)
     }
 
-    /// Resolve a user's homeserver via Pkarr, mapping a resolution failure to a
-    /// typed validation error.
-    async fn resolve_homeserver(&self, user: &PublicKey) -> Result<PublicKey> {
-        Pkdns::with_client(self.client.clone())
-            .get_homeserver_of(user)
-            .await
-            .ok_or_else(|| {
-                Error::from(RequestError::Validation {
-                    message: format!("Could not resolve homeserver for user {user}"),
-                })
-            })
-    }
-
     /// Whether any requested [`path`](Self::path) targets a private (`/priv/...`)
     /// scope. Only private paths require authentication; `/pub/` is world-readable.
     fn has_private_path_filter(&self) -> bool {
-        self.paths.iter().any(|path| {
-            let path = path.trim_start_matches('/');
-            path == "priv" || path.starts_with("priv/")
-        })
+        self.paths
+            .iter()
+            .any(|path| Self::is_private_path_filter(path))
+    }
+
+    fn is_private_path_filter(path: &str) -> bool {
+        let mut segments = Vec::new();
+        for segment in path.split('/') {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    if segments.pop().is_none() {
+                        return false;
+                    }
+                }
+                segment => segments.push(segment),
+            }
+        }
+
+        if segments.is_empty() {
+            return false;
+        }
+
+        let mut normalized = format!("/{}", segments.join("/"));
+        if (path.ends_with('/') || path.ends_with("..")) && !normalized.ends_with('/') {
+            normalized.push('/');
+        }
+        normalized.starts_with("/priv/")
     }
 
     /// Whether `credential` should be attached to this subscription.
@@ -445,7 +456,9 @@ impl EventStreamBuilder {
         let homeserver = if let Some(hs) = &self.homeserver {
             hs.clone()
         } else {
-            self.resolve_homeserver(&self.users[0].0).await?
+            Pkdns::with_client(self.client.clone())
+                .require_homeserver_of(&self.users[0].0)
+                .await?
         };
 
         cross_log!(
@@ -1053,6 +1066,11 @@ mod tests {
         );
         assert!(
             EventStreamBuilder::for_user(client.clone(), user, None)
+                .path("/priv/")
+                .has_private_path_filter()
+        );
+        assert!(
+            EventStreamBuilder::for_user(client.clone(), user, None)
                 .path("priv/x")
                 .has_private_path_filter()
         );
@@ -1060,6 +1078,24 @@ mod tests {
             EventStreamBuilder::for_user(client, user, None)
                 .path("/pub/")
                 .path("/priv/app/")
+                .has_private_path_filter()
+        );
+    }
+
+    #[test]
+    fn has_private_path_filter_normalizes_before_classifying() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(1);
+        let user = &keys[0];
+
+        assert!(
+            EventStreamBuilder::for_user(client.clone(), user, None)
+                .path("/pub/../priv/secret/")
+                .has_private_path_filter()
+        );
+        assert!(
+            !EventStreamBuilder::for_user(client, user, None)
+                .path("/priv")
                 .has_private_path_filter()
         );
     }
@@ -1088,6 +1124,12 @@ mod tests {
         assert!(
             EventStreamBuilder::for_user(client.clone(), alice, None)
                 .path("/priv/app/")
+                .should_attach_credential(&alice_cred)
+        );
+
+        assert!(
+            EventStreamBuilder::for_user(client.clone(), alice, None)
+                .path("/pub/../priv/secret/")
                 .should_attach_credential(&alice_cred)
         );
 

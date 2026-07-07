@@ -522,8 +522,7 @@ async fn resolve_user_cursors(
 fn has_bearer_auth(headers: &HeaderMap) -> bool {
     headers
         .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("Bearer "))
+        .is_some_and(|value| value.as_bytes().starts_with(b"Bearer "))
 }
 
 /// Resolve a same-tenant cookie session for a single-user private subscription.
@@ -695,6 +694,37 @@ mod tests {
             .expect_err("expected the subscription to be rejected")
             .into_response()
             .status()
+    }
+
+    fn authorization_headers(value: axum::http::HeaderValue) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, value);
+        headers
+    }
+
+    #[test]
+    fn has_bearer_auth_detects_valid_bearer_prefix() {
+        let headers = authorization_headers(axum::http::HeaderValue::from_static("Bearer token"));
+
+        assert!(has_bearer_auth(&headers));
+    }
+
+    #[test]
+    fn has_bearer_auth_detects_non_utf8_bearer_prefix() {
+        let headers = authorization_headers(
+            axum::http::HeaderValue::from_bytes(b"Bearer \xff").expect("valid header bytes"),
+        );
+
+        assert!(has_bearer_auth(&headers));
+    }
+
+    #[test]
+    fn has_bearer_auth_ignores_non_bearer_invalid_bytes() {
+        let headers = authorization_headers(
+            axum::http::HeaderValue::from_bytes(b"Basic \xff").expect("valid header bytes"),
+        );
+
+        assert!(!has_bearer_auth(&headers));
     }
 
     #[test]
