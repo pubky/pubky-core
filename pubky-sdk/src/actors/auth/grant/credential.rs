@@ -382,8 +382,6 @@ impl SessionCredential for GrantCredential {
     }
 
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
-        // Hit the auth endpoint directly and attach the bearer ourselves —
-        // `/auth/grant/session` is not a storage URL.
         let bearer = self.current_bearer().await;
         let response = self
             .grant_session_request(client, Method::DELETE)
@@ -411,8 +409,6 @@ impl SessionCredential for GrantCredential {
     }
 
     async fn can_attach_to(&self, homeserver: &PublicKey) -> bool {
-        // Attach only to the homeserver that minted the bearer (the `PoP`
-        // audience), so a rotated/poisoned Pkarr record can't divert it.
         &self.state.lock().await.homeserver_pk == homeserver
     }
 
@@ -421,9 +417,6 @@ impl SessionCredential for GrantCredential {
         client: &PubkyHttpClient,
         _user: &PublicKey,
     ) -> Result<Option<SessionInfo>> {
-        // We hit the auth endpoint directly (not the storage path) and
-        // attach the bearer ourselves — `/auth/grant/session` is not a
-        // storage URL.
         let bearer = self.current_bearer().await;
         let response = self
             .grant_session_request(client, Method::GET)
@@ -718,9 +711,6 @@ mod tests {
         super::super::pop_signer::delegated_sign_callback(|_| async { Ok(vec![0; 64]) })
     }
 
-    /// A grant credential attaches only to the homeserver it was minted for,
-    /// regardless of what a live PKDNS lookup might resolve to. This is the
-    /// core of the event-stream credential-attachment guard.
     #[tokio::test]
     async fn can_attach_to_only_matches_bound_homeserver() {
         let bound = Keypair::random().public_key();

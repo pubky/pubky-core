@@ -178,10 +178,7 @@ impl PubkyHttpClient {
         self.build_pubky_request(method, &url, &pk, &transport)
     }
 
-    /// Like [`Self::cross_request`]. Native has no ambient cookie jar (the cookie
-    /// credential attaches its secret via an explicit `Cookie` header), so this
-    /// is identical to `cross_request`; it exists to mirror the WASM API, which
-    /// drops `credentials: include` here.
+    /// Native has no ambient browser cookie jar, so this is `cross_request`.
     pub(crate) async fn cross_request_anonymous(
         &self,
         method: Method,
@@ -190,8 +187,7 @@ impl PubkyHttpClient {
         self.cross_request(method, url).await
     }
 
-    /// Build a request transported through `homeserver` while addressing
-    /// `pubky_host` as the logical tenant on that homeserver.
+    /// Route through `homeserver` while addressing `pubky_host`.
     pub(crate) async fn cross_request_via_homeserver(
         &self,
         method: Method,

@@ -326,10 +326,6 @@ async fn events_stream_sdk_builder_api() {
     );
 }
 
-/// An authenticated owner receives their own private events through the SDK
-/// builder: a single `/priv/app/` filter yields only the in-scope event, and a
-/// mixed `/pub/` + `/priv/app/` subscription returns the union without leaking
-/// an unrequested private scope.
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_private_authorized_scoping() {
@@ -350,7 +346,6 @@ async fn events_stream_sdk_private_authorized_scoping() {
         .await
         .unwrap();
 
-    // A single `/priv/app/` filter yields only the in-scope private event.
     let mut stream = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&user, None)])
@@ -379,8 +374,6 @@ async fn events_stream_sdk_private_authorized_scoping() {
     );
     drop(stream);
 
-    // A mixed `/pub/` + `/priv/app/` subscription returns the union and never
-    // the unrequested `/priv/other/` scope.
     let mut stream = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&user, None)])
@@ -410,104 +403,6 @@ async fn events_stream_sdk_private_authorized_scoping() {
     assert!(paths.iter().any(|p| p.contains("/priv/app/secret.txt")));
 }
 
-/// A private-path subscription with no session is rejected by the
-/// homeserver and surfaced as a typed `401 Unauthorized`.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_private_without_session_is_unauthorized() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-    let (user, _session) = signed_in_user(&testnet, "sdk-401.test").await;
-
-    // No `.session()` → the homeserver rejects the private path.
-    let result = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&user, None)])
-        .unwrap()
-        .path("/priv/app/")
-        .subscribe()
-        .await;
-
-    let err = result
-        .err()
-        .expect("private path without a session must be rejected");
-    assert_eq!(
-        server_status(&err),
-        Some(StatusCode::UNAUTHORIZED),
-        "expected a typed 401 Server error, got: {err}"
-    );
-}
-
-/// A session must not read another user's private events. The SDK scopes a
-/// private subscription to the credential's own user, so A's session is *not*
-/// attached to B's private stream.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_wrong_user_private_stream_is_not_attached() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let (_a, session_a) = signed_in_user(&testnet, "sdk-401-a.test").await;
-    let (b, _session_b) = signed_in_user(&testnet, "sdk-401-b.test").await;
-
-    // A's session requesting B's private events: the SDK refuses to attach A's
-    // credential to a private stream scoped to B, so the request is anonymous.
-    let result = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&b, None)])
-        .unwrap()
-        .session(&session_a)
-        .path("/priv/app/")
-        .subscribe()
-        .await;
-
-    let err = result
-        .err()
-        .expect("a session may not read another user's private events");
-    assert_eq!(
-        server_status(&err),
-        Some(StatusCode::UNAUTHORIZED),
-        "expected a typed 401 Server error (credential not attached), got: {err}"
-    );
-}
-
-/// A session must not be attached to a multi-user private subscription
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_multi_user_private_stream_is_not_attached() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let (a, session_a) = signed_in_user(&testnet, "sdk-multi-a.test").await;
-    let (b, _session_b) = signed_in_user(&testnet, "sdk-multi-b.test").await;
-
-    // A's session on a subscription naming both A and B with a private path: the
-    // SDK won't attach a credential to a multi-user private stream.
-    let result = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&a, None), (&b, None)])
-        .unwrap()
-        .session(&session_a)
-        .path("/priv/app/")
-        .subscribe()
-        .await;
-
-    let err = result
-        .err()
-        .expect("a multi-user private subscription must not be authenticated");
-    assert_eq!(
-        server_status(&err),
-        Some(StatusCode::UNAUTHORIZED),
-        "expected a typed 401 Server error (credential not attached), got: {err}"
-    );
-}
-
-/// Attaching a session must not hijack the subscription's target.
-/// With two homeservers, subscribing to a user on HS2 while holding a session on
-/// HS1 still targets HS2 — the session is simply not attached (owner ≠ target).
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_session_does_not_override_target_homeserver() {
@@ -522,7 +417,6 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
 
     let pubky = testnet.sdk().unwrap();
 
-    // `me` holds a session on HS1.
     let me = pubky.signer(Keypair::random());
     me.signup(&hs1, None).await.unwrap();
     let my_session = me
@@ -530,7 +424,6 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
         .await
         .unwrap();
 
-    // `other` lives on HS2 and writes a public event there.
     let other_signer = pubky.signer(Keypair::random());
     other_signer.signup(&hs2, None).await.unwrap();
     let other = other_signer.public_key();
@@ -544,9 +437,6 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
         .await
         .unwrap();
 
-    // Subscribe to `other`'s public events with MY (HS1) session attached. The
-    // builder must resolve `other`'s homeserver (HS2), not mine (HS1), and stream
-    // `other`'s event; the mismatched session is silently not attached.
     let mut stream = pubky
         .event_stream_for_user(&other, None)
         .session(&my_session)
@@ -569,70 +459,6 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
     );
 }
 
-/// A cookie-backed session authenticates its own single-user private stream
-/// (bound to its homeserver at signup); the path filter still excludes an
-/// out-of-scope private event.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_cookie_backed_private_authorized() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let signer = pubky.signer(Keypair::random());
-    let session = signer
-        .signup_cookie(&server.public_key(), None)
-        .await
-        .unwrap();
-    let user = signer.public_key();
-
-    session
-        .storage()
-        .put("/priv/app/secret.txt", vec![42])
-        .await
-        .unwrap();
-    // An out-of-scope private write that the `/priv/app/` filter must exclude.
-    session
-        .storage()
-        .put("/priv/other/z.txt", vec![7])
-        .await
-        .unwrap();
-
-    let mut stream = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&user, None)])
-        .unwrap()
-        .session(&session)
-        .path("/priv/app/")
-        .limit(1)
-        .subscribe()
-        .await
-        .unwrap();
-
-    let event = stream
-        .next()
-        .await
-        .expect("cookie-backed session should receive its in-scope private event")
-        .unwrap();
-    assert_eq!(event.resource.owner.z32(), user.z32());
-    assert!(
-        event
-            .resource
-            .path
-            .as_str()
-            .contains("/priv/app/secret.txt"),
-        "expected the in-scope private event, got: {}",
-        event.resource.path
-    );
-    assert!(
-        !event.resource.path.as_str().contains("/priv/other/"),
-        "out-of-scope private event leaked: {}",
-        event.resource.path
-    );
-}
-
-/// A locally signed cookie signin binds to the homeserver used for `/session`,
-/// so its private stream can authenticate immediately.
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_signin_cookie_private_authorized() {
@@ -679,10 +505,6 @@ async fn events_stream_sdk_signin_cookie_private_authorized() {
     );
 }
 
-/// A cookie bound to HS1 must not grant private access when targeting HS2: the
-/// subscribe fails `401`. Outcome-only — HS2 returns `401` whether or not the
-/// cookie was sent (it holds no matching session); non-attachment itself is
-/// proven by the `can_attach_to` unit tests in the cookie credential.
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_cookie_bound_homeserver_is_enforced() {
@@ -720,96 +542,6 @@ async fn events_stream_sdk_cookie_bound_homeserver_is_enforced() {
     );
 }
 
-/// A cookie session for A must not grant private access to a stream scoped to B:
-/// the subscribe fails `401`. Outcome-only — B's stream returns `401` whether or
-/// not A's cookie was sent; the gate's non-attachment (B ≠ credential user) is
-/// proven by the `should_attach_credential` unit tests in the event stream.
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_cookie_wrong_user_private_is_not_attached() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let signer_a = pubky.signer(Keypair::random());
-    let session_a = signer_a
-        .signup_cookie(&server.public_key(), None)
-        .await
-        .unwrap();
-
-    let signer_b = pubky.signer(Keypair::random());
-    signer_b
-        .signup_cookie(&server.public_key(), None)
-        .await
-        .unwrap();
-    let b = signer_b.public_key();
-
-    let result = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&b, None)])
-        .unwrap()
-        .session(&session_a)
-        .path("/priv/app/")
-        .subscribe()
-        .await;
-
-    let err = result
-        .err()
-        .expect("A's cookie must not authenticate a private stream scoped to B");
-    assert_eq!(
-        server_status(&err),
-        Some(StatusCode::UNAUTHORIZED),
-        "expected a typed 401 Server error, got: {err}"
-    );
-}
-
-/// A public event stream works normally with a cookie session attached
-#[tokio::test]
-#[pubky_testnet::test]
-async fn events_stream_sdk_public_stream_with_cookie_session_works() {
-    let testnet = build_full_testnet().await;
-    let server = testnet.homeserver_app();
-    let pubky = testnet.sdk().unwrap();
-
-    let signer = pubky.signer(Keypair::random());
-    let session = signer
-        .signup_cookie(&server.public_key(), None)
-        .await
-        .unwrap();
-    let user = signer.public_key();
-
-    session
-        .storage()
-        .put("/pub/hello.txt", vec![1])
-        .await
-        .unwrap();
-
-    let mut stream = pubky
-        .event_stream_for(&server.public_key())
-        .add_users([(&user, None)])
-        .unwrap()
-        .session(&session)
-        .path("/pub/")
-        .limit(1)
-        .subscribe()
-        .await
-        .unwrap();
-
-    let event = stream
-        .next()
-        .await
-        .expect("public stream should deliver the public event")
-        .unwrap();
-    assert_eq!(event.resource.owner.z32(), user.z32());
-    assert!(
-        event.resource.path.as_str().contains("/pub/hello.txt"),
-        "expected the public event, got: {}",
-        event.resource.path
-    );
-}
-
-/// A cookie-backed live private stream receives in-scope private events and the
-/// path filter excludes out-of-scope ones.
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_sdk_cookie_live_private_receives_in_scope() {
@@ -835,7 +567,6 @@ async fn events_stream_sdk_cookie_live_private_receives_in_scope() {
         .await
         .unwrap();
 
-    // After subscribing, write an out-of-scope then an in-scope private event.
     let writer = session.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;

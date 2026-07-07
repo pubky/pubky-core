@@ -56,9 +56,7 @@ pub struct CookieCredential {
     /// Cookie secret captured from `Set-Cookie`. `None` only on browser
     /// WASM where the value is hidden by the fetch spec.
     cookie: Option<String>,
-    /// Homeserver this cookie was established against, once known. Gates
-    /// [`SessionCredential::can_attach_to`] so the cookie is only ever attached
-    /// to a request targeting that homeserver.
+    /// Homeserver this cookie may attach to.
     homeserver: Arc<RwLock<Option<PublicKey>>>,
 }
 
@@ -78,14 +76,12 @@ impl CookieCredential {
         }
     }
 
-    /// Record the homeserver this cookie is bound to. Idempotent.
     pub(crate) fn set_homeserver(&self, homeserver: PublicKey) {
         if let Ok(mut hs) = self.homeserver.write() {
             *hs = Some(homeserver);
         }
     }
 
-    /// The homeserver this cookie is currently bound to, if any.
     fn bound_homeserver(&self) -> Option<PublicKey> {
         self.homeserver.read().ok().and_then(|hs| hs.clone())
     }
@@ -130,11 +126,6 @@ impl CookieCredential {
     }
 
     /// Establish a cookie credential from a signed [`AuthToken`] (legacy flow).
-    ///
-    /// POSTs the token to the homeserver's `/session` endpoint and constructs
-    /// a [`CookieCredential`] ready to be lifted into a [`PubkySession`] via
-    /// [`PubkySession::from_cookie_credential`]. `homeserver` is the homeserver
-    /// the session is established against, when the caller knows it.
     pub(crate) async fn from_auth_token(
         token: &AuthToken,
         client: &PubkyHttpClient,
@@ -262,8 +253,6 @@ impl SessionCredential for CookieCredential {
     }
 
     async fn can_attach_to(&self, homeserver: &PublicKey) -> bool {
-        // Attach only to the homeserver this cookie was established against. An
-        // unbound cookie (restored, not yet revalidated) fails closed.
         self.bound_homeserver().as_ref() == Some(homeserver)
     }
 
@@ -339,7 +328,6 @@ mod tests {
         )
     }
 
-    /// A bound cookie attaches only to the homeserver it was established against.
     #[tokio::test]
     async fn can_attach_to_only_matches_bound_homeserver() {
         let user = Keypair::random().public_key();
@@ -351,8 +339,6 @@ mod tests {
         assert!(!credential.can_attach_to(&other).await);
     }
 
-    /// An unbound cookie (restored, not yet revalidated) fails closed, then
-    /// attaches to its homeserver once bound.
     #[tokio::test]
     async fn can_attach_to_is_false_until_bound() {
         let user = Keypair::random().public_key();

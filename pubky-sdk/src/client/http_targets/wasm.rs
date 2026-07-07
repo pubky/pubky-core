@@ -10,15 +10,9 @@ use pkarr::extra::endpoints::Endpoint;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
 
-/// Whether a WASM `fetch` should carry ambient browser credentials — i.e. the
-/// cookie jar for the target origin.
 #[derive(Clone, Copy)]
 enum AmbientCredentials {
-    /// `credentials: include` — send the origin's cookies. Required
-    /// by the legacy cookie auth flow, whose secret lives only in the browser jar.
     Include,
-    /// `credentials: omit` — never send ambient cookies. Used where a request
-    /// must be anonymous unless a credential is explicitly attached.
     Omit,
 }
 
@@ -33,10 +27,7 @@ impl PubkyHttpClient {
             .await
     }
 
-    /// Like [`Self::cross_request`], but never carries ambient browser
-    /// credentials. Use where a request must stay anonymous
-    /// unless a credential is intentionally attached — notably event-stream
-    /// subscriptions.
+    /// Like [`Self::cross_request`], but omits ambient browser cookies.
     pub(crate) async fn cross_request_anonymous<T: IntoUrl>(
         &self,
         method: Method,
@@ -46,8 +37,7 @@ impl PubkyHttpClient {
             .await
     }
 
-    /// Build a credentialed request transported through `homeserver` while
-    /// addressing `pubky_host` as the logical tenant on that homeserver.
+    /// Route through `homeserver` while addressing `pubky_host`.
     pub(crate) async fn cross_request_via_homeserver(
         &self,
         method: Method,

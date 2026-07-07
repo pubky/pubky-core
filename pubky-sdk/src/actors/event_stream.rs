@@ -131,6 +131,12 @@ pub struct EventStreamBuilder {
     credential: Option<Arc<dyn SessionCredential>>,
 }
 
+enum EventStreamAuthScope<'a> {
+    PublicOnly,
+    PrivateSingleUser(&'a PublicKey),
+    PrivateUnsupported,
+}
+
 impl EventStreamBuilder {
     /// Create an event stream builder for a single user.
     ///
@@ -338,14 +344,7 @@ impl EventStreamBuilder {
 
     /// Authenticate the subscription with a user session.
     ///
-    /// Required to receive private (`/priv/...`) events: the session credential
-    /// is attached so the homeserver can authorize each private [`path`](Self::path)
-    /// against the session's read capabilities. Public subscriptions need no session.
-    ///
-    /// The credential is attached only for a private stream naming exactly the
-    /// session's own user AND bound to the target homeserver. Otherwise the request stays anonymous, so a
-    /// credential is never sent to the wrong user, the wrong homeserver, or on a
-    /// public stream. A cookie is only attachable once bound.
+    /// Required for private (`/priv/...`) events. Public streams stay anonymous.
     #[must_use]
     pub fn session(mut self, session: &PubkySession) -> Self {
         self.credential = Some(Arc::clone(session.credential()));
@@ -385,8 +384,6 @@ impl EventStreamBuilder {
         Ok(url)
     }
 
-    /// Whether any requested [`path`](Self::path) targets a private (`/priv/...`)
-    /// scope. Only private paths require authentication; `/pub/` is world-readable.
     fn has_private_path_filter(&self) -> bool {
         self.paths
             .iter()
@@ -418,17 +415,22 @@ impl EventStreamBuilder {
         normalized.starts_with("/priv/")
     }
 
-    /// Whether `credential` should be attached to this subscription.
-    fn should_attach_credential(&self, credential: &dyn SessionCredential) -> bool {
+    fn auth_scope(&self) -> EventStreamAuthScope<'_> {
         if !self.has_private_path_filter() {
-            return false;
+            return EventStreamAuthScope::PublicOnly;
         }
 
-        let [(user, _)] = self.users.as_slice() else {
-            return false;
-        };
+        match self.users.as_slice() {
+            [(user, _)] => EventStreamAuthScope::PrivateSingleUser(user),
+            _ => EventStreamAuthScope::PrivateUnsupported,
+        }
+    }
 
-        user == credential.info().public_key()
+    fn should_attach_credential(&self, credential: &dyn SessionCredential) -> bool {
+        match self.auth_scope() {
+            EventStreamAuthScope::PrivateSingleUser(user) => user == credential.info().public_key(),
+            EventStreamAuthScope::PublicOnly | EventStreamAuthScope::PrivateUnsupported => false,
+        }
     }
 
     /// Internal helper that contains the shared subscription logic.
@@ -469,14 +471,10 @@ impl EventStreamBuilder {
         );
 
         let url = self.build_request_url(&homeserver)?;
-        // Anonymous by default so an ambient browser cookie can't authenticate a
-        // private stream; a credential is attached below only when intended.
         let mut request = self
             .client
             .cross_request_anonymous(Method::GET, url)
             .await?;
-        // Attach only for a private stream scoped to thecredentials own single user and bound to the target homeserver. A
-        // cookie that isn't bound (or bound elsewhere) reports `can_attach_to == false` and stays off.
         if let Some(credential) = &self.credential
             && self.should_attach_credential(credential.as_ref())
             && credential.can_attach_to(&homeserver).await
@@ -1016,8 +1014,6 @@ mod tests {
         );
     }
 
-    /// Build a real (cookie) credential for `user`, to exercise the private-scope
-    /// gate without a homeserver.
     fn cookie_credential_for(
         user: &PublicKey,
     ) -> crate::actors::auth::cookie::credential::CookieCredential {
@@ -1041,63 +1037,25 @@ mod tests {
         let keys = test_pubkeys(1);
         let user = &keys[0];
 
-        // Public-only and empty subscriptions are not private.
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("/pub/")
-                .has_private_path_filter()
-        );
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), user, None).has_private_path_filter()
-        );
+        let cases = [
+            (vec![], false),
+            (vec!["/pub/"], false),
+            (vec!["/privstuff/x"], false),
+            (vec!["/priv"], false),
+            (vec!["/priv/app/"], true),
+            (vec!["/priv/"], true),
+            (vec!["priv/x"], true),
+            (vec!["/pub/", "/priv/app/"], true),
+            (vec!["/pub/../priv/secret/"], true),
+        ];
 
-        // `/privstuff` is a distinct root, not `/priv/`.
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("/privstuff/x")
-                .has_private_path_filter()
-        );
-
-        // `/priv/...`, a leading-slash-less `priv/...`, and any mix count.
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("/priv/app/")
-                .has_private_path_filter()
-        );
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("/priv/")
-                .has_private_path_filter()
-        );
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("priv/x")
-                .has_private_path_filter()
-        );
-        assert!(
-            EventStreamBuilder::for_user(client, user, None)
-                .path("/pub/")
-                .path("/priv/app/")
-                .has_private_path_filter()
-        );
-    }
-
-    #[test]
-    fn has_private_path_filter_normalizes_before_classifying() {
-        let client = crate::PubkyHttpClient::testnet().unwrap();
-        let keys = test_pubkeys(1);
-        let user = &keys[0];
-
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), user, None)
-                .path("/pub/../priv/secret/")
-                .has_private_path_filter()
-        );
-        assert!(
-            !EventStreamBuilder::for_user(client, user, None)
-                .path("/priv")
-                .has_private_path_filter()
-        );
+        for (paths, expected) in cases {
+            let builder = paths.iter().fold(
+                EventStreamBuilder::for_user(client.clone(), user, None),
+                |b, p| b.path(*p),
+            );
+            assert_eq!(builder.has_private_path_filter(), expected, "{paths:?}");
+        }
     }
 
     #[test]
@@ -1108,47 +1066,50 @@ mod tests {
         let bob = &keys[1];
         let alice_cred = cookie_credential_for(alice);
 
-        // Public-only subscription: never attach — public streams are anonymous.
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), alice, None)
-                .path("/pub/")
-                .should_attach_credential(&alice_cred)
-        );
-        // Even with no path (public-only default): never attach.
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), alice, None)
-                .should_attach_credential(&alice_cred)
-        );
+        let cases = [
+            (
+                "no path",
+                EventStreamBuilder::for_user(client.clone(), alice, None),
+                false,
+            ),
+            (
+                "public path",
+                EventStreamBuilder::for_user(client.clone(), alice, None).path("/pub/"),
+                false,
+            ),
+            (
+                "same-user private path",
+                EventStreamBuilder::for_user(client.clone(), alice, None).path("/priv/app/"),
+                true,
+            ),
+            (
+                "normalized private path",
+                EventStreamBuilder::for_user(client.clone(), alice, None)
+                    .path("/pub/../priv/secret/"),
+                true,
+            ),
+            (
+                "wrong-user private path",
+                EventStreamBuilder::for_user(client.clone(), bob, None).path("/priv/app/"),
+                false,
+            ),
+            (
+                "multi-user private path",
+                EventStreamBuilder::for_homeserver(client, &keys[0])
+                    .add_users([(alice, None), (bob, None)])
+                    .unwrap()
+                    .path("/priv/app/"),
+                false,
+            ),
+        ];
 
-        // Private, single user == credential's user → attach.
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), alice, None)
-                .path("/priv/app/")
-                .should_attach_credential(&alice_cred)
-        );
-
-        assert!(
-            EventStreamBuilder::for_user(client.clone(), alice, None)
-                .path("/pub/../priv/secret/")
-                .should_attach_credential(&alice_cred)
-        );
-
-        // Private, single user != credential's user → do not attach.
-        assert!(
-            !EventStreamBuilder::for_user(client.clone(), bob, None)
-                .path("/priv/app/")
-                .should_attach_credential(&alice_cred)
-        );
-
-        // Private, multi-user → do not attach even though the credential's user is
-        // among them.
-        assert!(
-            !EventStreamBuilder::for_homeserver(client, &keys[0])
-                .add_users([(alice, None), (bob, None)])
-                .unwrap()
-                .path("/priv/app/")
-                .should_attach_credential(&alice_cred)
-        );
+        for (name, builder, expected) in cases {
+            assert_eq!(
+                builder.should_attach_credential(&alice_cred),
+                expected,
+                "{name}"
+            );
+        }
     }
 
     #[test]
