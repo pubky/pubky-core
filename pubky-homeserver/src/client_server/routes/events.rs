@@ -637,6 +637,7 @@ impl Drop for ConnectionGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
     use crate::client_server::auth::grant::session::GrantSession;
     use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
@@ -664,7 +665,6 @@ mod tests {
     }
 
     fn cookie_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
-        use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
         AuthSession::Cookie(SessionEntity {
             id: 1,
             secret: SessionSecret::random(),

@@ -273,6 +273,20 @@ mod tests {
     use crate::{Keypair, Pubky};
     use std::str::FromStr;
 
+    async fn build_flow(auth_kind: AuthFlowKind) -> PubkyCookieAuthFlow {
+        let relay = http_relay::HttpRelay::builder()
+            .http_port(0)
+            .run()
+            .await
+            .unwrap();
+        let inbox_base = relay.local_url().join("inbox").unwrap();
+        PubkyCookieAuthFlow::builder(&Capabilities::default(), auth_kind)
+            .client(PubkyHttpClient::new().unwrap())
+            .relay(inbox_base)
+            .start()
+            .unwrap()
+    }
+
     async fn assert_resume_reconnects(auth_kind: AuthFlowKind) {
         let relay = http_relay::HttpRelay::builder()
             .http_port(0)
@@ -359,20 +373,6 @@ mod tests {
         let url = "pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
         let result = pubky.resume_cookie_auth_flow(url);
         assert!(result.is_err(), "seed export URL should fail to resume");
-    }
-
-    async fn build_flow(auth_kind: AuthFlowKind) -> PubkyCookieAuthFlow {
-        let relay = http_relay::HttpRelay::builder()
-            .http_port(0)
-            .run()
-            .await
-            .unwrap();
-        let inbox_base = relay.local_url().join("inbox").unwrap();
-        PubkyCookieAuthFlow::builder(&Capabilities::default(), auth_kind)
-            .client(PubkyHttpClient::new().unwrap())
-            .relay(inbox_base)
-            .start()
-            .unwrap()
     }
 
     #[tokio::test]
