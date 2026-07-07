@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 use crate::{cross_log, errors::BuildError};
@@ -276,6 +275,22 @@ impl PubkyHttpClientBuilder {
     /// Cap idle keep-alive connections per host. Set `0` to disable pooling.
     pub fn pool_max_idle_per_host(&mut self, max: usize) -> &mut Self {
         self.native_http.pool_max_idle_per_host = Some(max);
+        self
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl PubkyHttpClientBuilder {
+    /// Set HTTP requests timeout.
+    ///
+    /// # Deprecated
+    /// This setter has never had any effect on WASM: reqwest uses the browser
+    /// `fetch` backend and `build()` does not apply a global HTTP timeout.
+    /// Use [`.pkarr()`](Self::pkarr) to configure pkarr/DHT request timeouts instead.
+    #[deprecated(
+        note = "HTTP request timeout is not supported on WASM and has never had any effect; use `.pkarr(|p| p.request_timeout(..))` for pkarr/DHT timeouts"
+    )]
+    pub fn request_timeout(&mut self, _timeout: Duration) -> &mut Self {
         self
     }
 }
