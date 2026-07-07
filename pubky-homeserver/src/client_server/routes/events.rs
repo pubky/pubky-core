@@ -9,7 +9,7 @@
 use axum::{
     body::Body,
     extract::{RawQuery, State},
-    http::{header, Response, StatusCode},
+    http::{header, HeaderMap, Response, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
@@ -19,6 +19,7 @@ use futures_util::stream::Stream;
 use pubky_common::crypto::PublicKey;
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
+use tower_cookies::Cookies;
 use url::form_urlencoded;
 
 use crate::{
@@ -27,7 +28,7 @@ use crate::{
         query_params::ListQueryParams,
         AppState,
     },
-    constants::PUBLIC_ROOT,
+    constants::{PRIVATE_ROOT, PUBLIC_ROOT},
     metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{
@@ -325,14 +326,27 @@ pub async fn feed(
 pub async fn feed_stream(
     State(state): State<AppState>,
     session: Option<AuthSession>,
+    headers: HeaderMap,
+    cookies: Cookies,
     raw_query: RawQuery,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let params =
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
 
+    // Grant sessions are set by middleware and take
+    // priority. When no session was extracted AND no bearer was presented, fall
+    // back to a same-tenant cookie for a single-user private subscription.
+    let session = match session {
+        Some(session) => Some(session),
+        None if !has_bearer_auth(&headers) => {
+            resolve_tenant_cookie_session(&state, &cookies, &params).await
+        }
+        None => None,
+    };
+
     // Authorize the requested path filters before doing any work. Public paths
-    // need no session; any `/priv/` path requires a GRANT session whose single
-    // user matches and that holds a covering read capability.
+    // need no session; any `/priv/` path requires a session (grant or same-tenant
+    // cookie) whose single user matches and that holds a covering read capability.
     let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
 
     let mut user_cursor_map =
@@ -502,17 +516,58 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
+/// Whether the request presented a `Bearer` Authorization header (valid or not).
+/// Mirrors the grant middleware's `strip_prefix("Bearer ")`, so a presented
+/// bearer is never silently downgraded to cookie auth.
+fn has_bearer_auth(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("Bearer "))
+}
+
+/// Resolve a same-tenant cookie session for a single-user private subscription.
+///
+/// The cookie middleware keys cookies by `pubky-host` (the homeserver here), so a
+/// user's cookie never matches on this endpoint. A private subscription names
+/// exactly one user, so we look the cookie up by that tenant instead. Returns
+/// `None` unless a `/priv/` path is requested AND exactly one `user=` is named;
+/// [`resolve_session_from_cookie`](crate::client_server::auth::AuthState) then
+/// verifies the cookie's session belongs to that user, so this grants no
+/// authority the caller didn't already hold.
+async fn resolve_tenant_cookie_session(
+    state: &AppState,
+    cookies: &Cookies,
+    params: &EventStreamQueryParams,
+) -> Option<AuthSession> {
+    let requests_private = params
+        .paths
+        .iter()
+        .any(|path| path.as_str().starts_with(PRIVATE_ROOT));
+    if !requests_private {
+        return None;
+    }
+    let [(tenant, _)] = params.user_cursors.as_slice() else {
+        return None;
+    };
+    let cookie_value = cookies.get(&tenant.z32()).map(|c| c.value().to_string());
+    state
+        .auth_state
+        .cookie_auth_service
+        .resolve_session_from_cookie(cookie_value, tenant)
+        .await
+}
+
 /// Authorize the requested `path`s and return the allow-list to apply to both
 /// the historical replay and the live phase.
 ///
 /// - No requested path → implicit public-only (`/pub/`), no session needed.
 /// - Public (`/pub/...`) paths need no capability.
-/// - Any private (`/priv/...`) path requires a GRANT session (else 401), exactly
-///   one `user=` equal to the session user (else 403), and a read capability
+/// - Any private (`/priv/...`) path requires a session (else 401), exactly one
+///   `user=` equal to the session user (else 403), and a read capability
 ///   covering each private path (else 403).
 ///
-/// Private event streams are grant-only: a cookie session is ignored here, so a
-/// private path falls through to 401.
+/// The session may be grant- or (same-tenant) cookie-backed; both are accepted.
 fn authorized_paths(
     paths: &[WebDavPath],
     user_cursors: &[(PublicKey, Option<String>)],
@@ -524,9 +579,6 @@ fn authorized_paths(
             WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
         ]);
     }
-
-    // Grant-only: drop any cookie session so private paths fall through to 401.
-    let session = session.filter(|s| matches!(s, AuthSession::Grant(_)));
 
     // The tenant to authorize each path against. A private read is single-tenant,
     // so a tenant only exists when the subscription names exactly one user.
@@ -770,17 +822,43 @@ mod tests {
     }
 
     #[test]
-    fn cookie_session_is_rejected_for_private_path() {
-        // Private event streams are grant-only: a cookie session (even with root
-        // caps for the requested user) is ignored, so a private path is 401.
+    fn cookie_session_authorizes_own_private_path() {
+        // A same-tenant cookie session authorizes its own single-user private path.
         let owner = pk();
         let session = cookie_session(owner.clone(), Capabilities::from(vec![Capability::root()]));
+        let filters =
+            authorized_paths(&[wd("/priv/app/")], &cursors(&[&owner]), Some(&session)).unwrap();
+        assert_eq!(filters, vec![pf("/priv/app/")]);
+    }
+
+    #[test]
+    fn cookie_session_wrong_tenant_is_forbidden() {
+        // A cookie session for A requesting B's private events is 403 (session user
+        // ≠ tenant). (Resolution can't reach here with a mismatched cookie anyway.)
+        let (a, b) = (pk(), pk());
+        let session = cookie_session(a, Capabilities::from(vec![Capability::root()]));
         let status = reject_status(authorized_paths(
             &[wd("/priv/app/")],
+            &cursors(&[&b]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn cookie_session_under_scoped_denies_sibling_private_path() {
+        // A cookie session scoped to `/priv/app/` may not read a sibling scope.
+        let owner = pk();
+        let session = cookie_session(
+            owner.clone(),
+            Capabilities::from(vec![Capability::read("/priv/app/")]),
+        );
+        let status = reject_status(authorized_paths(
+            &[wd("/priv/other/")],
             &cursors(&[&owner]),
             Some(&session),
         ));
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     #[test]

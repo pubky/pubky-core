@@ -569,10 +569,12 @@ async fn events_stream_sdk_session_does_not_override_target_homeserver() {
     );
 }
 
-/// A cookie-backed session cannot authenticate a private event stream
+/// A cookie-backed session authenticates its own single-user private stream
+/// (bound to its homeserver at signup); the path filter still excludes an
+/// out-of-scope private event.
 #[tokio::test]
 #[pubky_testnet::test]
-async fn events_stream_sdk_cookie_session_private_is_unauthorized() {
+async fn events_stream_sdk_cookie_backed_private_authorized() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
@@ -584,27 +586,128 @@ async fn events_stream_sdk_cookie_session_private_is_unauthorized() {
         .unwrap();
     let user = signer.public_key();
 
-    // The cookie write to a private path still works (regular file I/O).
     session
         .storage()
         .put("/priv/app/secret.txt", vec![42])
         .await
         .unwrap();
+    // An out-of-scope private write that the `/priv/app/` filter must exclude.
+    session
+        .storage()
+        .put("/priv/other/z.txt", vec![7])
+        .await
+        .unwrap();
 
-    // But a cookie-backed private *event stream* is not authenticated: the SDK
-    // won't attach a cookie credential to a `/priv/...` subscription.
-    let result = pubky
+    let mut stream = pubky
         .event_stream_for(&server.public_key())
         .add_users([(&user, None)])
         .unwrap()
         .session(&session)
+        .path("/priv/app/")
+        .limit(1)
+        .subscribe()
+        .await
+        .unwrap();
+
+    let event = stream
+        .next()
+        .await
+        .expect("cookie-backed session should receive its in-scope private event")
+        .unwrap();
+    assert_eq!(event.resource.owner.z32(), user.z32());
+    assert!(
+        event
+            .resource
+            .path
+            .as_str()
+            .contains("/priv/app/secret.txt"),
+        "expected the in-scope private event, got: {}",
+        event.resource.path
+    );
+    assert!(
+        !event.resource.path.as_str().contains("/priv/other/"),
+        "out-of-scope private event leaked: {}",
+        event.resource.path
+    );
+}
+
+/// A cookie bound to HS1 must not grant private access when targeting HS2: the
+/// subscribe fails `401`. Outcome-only — HS2 returns `401` whether or not the
+/// cookie was sent (it holds no matching session); non-attachment itself is
+/// proven by the `can_attach_to` unit tests in the cookie credential.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_cookie_bound_homeserver_is_enforced() {
+    let mut testnet = build_full_testnet().await;
+    let hs1 = testnet.homeserver_app().public_key();
+    let hs2 = testnet
+        .create_random_homeserver()
+        .await
+        .unwrap()
+        .public_key();
+    assert_ne!(hs1, hs2, "test needs two distinct homeservers");
+
+    let pubky = testnet.sdk().unwrap();
+
+    let me = pubky.signer(Keypair::random());
+    let my_session = me.signup_cookie(&hs1, None).await.unwrap();
+    let my_user = me.public_key();
+
+    let result = pubky
+        .event_stream_for(&hs2)
+        .add_users([(&my_user, None)])
+        .unwrap()
+        .session(&my_session)
         .path("/priv/app/")
         .subscribe()
         .await;
 
     let err = result
         .err()
-        .expect("a cookie session must not authenticate a private event stream");
+        .expect("a cookie bound to HS1 must not authenticate a private stream on HS2");
+    assert_eq!(
+        server_status(&err),
+        Some(StatusCode::UNAUTHORIZED),
+        "expected a typed 401 Server error, got: {err}"
+    );
+}
+
+/// A cookie session for A must not grant private access to a stream scoped to B:
+/// the subscribe fails `401`. Outcome-only — B's stream returns `401` whether or
+/// not A's cookie was sent; the gate's non-attachment (B ≠ credential user) is
+/// proven by the `should_attach_credential` unit tests in the event stream.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_cookie_wrong_user_private_is_not_attached() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer_a = pubky.signer(Keypair::random());
+    let session_a = signer_a
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    let signer_b = pubky.signer(Keypair::random());
+    signer_b
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let b = signer_b.public_key();
+
+    let result = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&b, None)])
+        .unwrap()
+        .session(&session_a)
+        .path("/priv/app/")
+        .subscribe()
+        .await;
+
+    let err = result
+        .err()
+        .expect("A's cookie must not authenticate a private stream scoped to B");
     assert_eq!(
         server_status(&err),
         Some(StatusCode::UNAUTHORIZED),
@@ -653,6 +756,61 @@ async fn events_stream_sdk_public_stream_with_cookie_session_works() {
     assert!(
         event.resource.path.as_str().contains("/pub/hello.txt"),
         "expected the public event, got: {}",
+        event.resource.path
+    );
+}
+
+/// A cookie-backed live private stream receives in-scope private events and the
+/// path filter excludes out-of-scope ones.
+#[tokio::test]
+#[pubky_testnet::test]
+async fn events_stream_sdk_cookie_live_private_receives_in_scope() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+    let user = signer.public_key();
+
+    let mut stream = pubky
+        .event_stream_for(&server.public_key())
+        .add_users([(&user, None)])
+        .unwrap()
+        .session(&session)
+        .path("/priv/app/")
+        .live()
+        .subscribe()
+        .await
+        .unwrap();
+
+    // After subscribing, write an out-of-scope then an in-scope private event.
+    let writer = session.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        writer
+            .storage()
+            .put("/priv/other/skip.txt", vec![9])
+            .await
+            .unwrap();
+        writer
+            .storage()
+            .put("/priv/app/live.txt", vec![1])
+            .await
+            .unwrap();
+    });
+
+    let event = timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("should receive a live event within the timeout")
+        .expect("stream should yield an event")
+        .unwrap();
+    assert!(
+        event.resource.path.as_str().contains("/priv/app/live.txt"),
+        "expected the in-scope live private event (out-of-scope excluded), got: {}",
         event.resource.path
     );
 }

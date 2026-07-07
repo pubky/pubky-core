@@ -56,10 +56,11 @@
 //!
 //! # Example: Private events (authenticated)
 //!
-//! Attach a **grant** session with [`EventStreamBuilder::session`] and request a
+//! Attach a session with [`EventStreamBuilder::session`] and request a
 //! `/priv/...` [`path`](EventStreamBuilder::path). The homeserver authorizes the
-//! private scope against the session's read capabilities. Private event streams
-//! require a grant-backed session; public subscriptions need no session.
+//! private scope against the session's read capabilities. The session may be
+//! grant- or cookie-backed, but it must name the session's own user and be bound
+//! to the target homeserver; public subscriptions need no session.
 //! ```no_run
 //! use pubky::{Pubky, PubkySession};
 //! use futures_util::StreamExt;
@@ -326,7 +327,7 @@ impl EventStreamBuilder {
     /// slash matches a directory and all its descendants (`/pub/files/`); no
     /// trailing slash matches an exact file (`/pub/notes.txt`).
     ///
-    /// Private (`/priv/...`) paths require a grant-backed session attached via
+    /// Private (`/priv/...`) paths require a session attached via
     /// [`Self::session`]; without one the homeserver rejects the subscription
     /// with `401 Unauthorized`.
     #[must_use]
@@ -335,16 +336,16 @@ impl EventStreamBuilder {
         self
     }
 
-    /// Authenticate the subscription with a **grant** session.
+    /// Authenticate the subscription with a user session.
     ///
-    /// Required to receive private (`/priv/...`) events: the session's grant
-    /// bearer is attached so the homeserver can authorize each private
-    /// [`path`](Self::path) against the session's read capabilities. Public
-    /// subscriptions need no session.
+    /// Required to receive private (`/priv/...`) events: the session credential
+    /// is attached so the homeserver can authorize each private [`path`](Self::path) 
+    /// against the session's read capabilities. Public subscriptions need no session.
     ///
-    /// Private event streams are grant-only. A legacy cookie session is never
-    /// attached here, so a cookie-backed `/priv/...` subscription stays anonymous
-    /// and the homeserver rejects it with `401`.
+    /// The credential is attached only for a private stream naming exactly the
+    /// session's own user AND bound to the target homeserver. Otherwise the request stays anonymous, so a
+    /// credential is never sent to the wrong user, the wrong homeserver, or on a
+    /// public stream. A cookie is only attachable once bound.
     #[must_use]
     pub fn session(mut self, session: &PubkySession) -> Self {
         self.credential = Some(Arc::clone(session.credential()));
@@ -461,9 +462,8 @@ impl EventStreamBuilder {
             .client
             .cross_request_anonymous(Method::GET, url)
             .await?;
-        // Attach only for a private stream scoped to the credential's own single
-        // user and bound to the target homeserver. Cookies return
-        // `can_attach_to == false`, so private streams are grant-only.
+        // Attach only for a private stream scoped to thecredentials own single user and bound to the target homeserver. A
+        // cookie that isn't bound (or bound elsewhere) reports `can_attach_to == false` and stays off.
         if let Some(credential) = &self.credential
             && self.should_attach_credential(credential.as_ref())
             && credential.can_attach_to(&homeserver).await
@@ -1018,6 +1018,7 @@ mod tests {
             user.clone(),
             Some("test-cookie".to_string()),
             record,
+            None,
         )
     }
 

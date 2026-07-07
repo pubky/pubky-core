@@ -146,7 +146,8 @@ impl PubkySigner {
             .await?;
 
         self.publish_signup_homeserver(homeserver).await?;
-        let cookie_credential = CookieCredential::from_response(response).await?;
+        let cookie_credential =
+            CookieCredential::from_response(response, Some(homeserver.clone())).await?;
         Ok(PubkySession::from_credential(
             self.client.clone(),
             Arc::new(cookie_credential),
@@ -174,7 +175,11 @@ impl PubkySigner {
 
     async fn signin_cookie_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let token = self.root_capability_token();
-        let credential = CookieCredential::from_auth_token(&token, &self.client).await?;
+        // Best-effort: if resolution is unavailable the cookie stays unbound and
+        // hydrates on its first successful revalidate.
+        let homeserver = self.pkdns().get_homeserver().await.ok().flatten();
+        let credential =
+            CookieCredential::from_auth_token(&token, &self.client, homeserver).await?;
         let session = PubkySession::from_cookie_credential(self.client.clone(), credential);
         self.publish_after_signin(mode).await?;
         Ok(session)

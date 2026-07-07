@@ -180,11 +180,10 @@ impl EventStreamBuilder {
     /// Authenticate the subscription with a user `Session`.
     ///
     /// Required to receive private (`/priv/...`) events: the session credential
-    /// is attached so the homeserver can authorize each private `path()` against
-    /// the session's read capabilities. Public subscriptions don't need this.
+    /// (grant or cookie) is attached so the homeserver can authorize each private
+    /// `path()` against the session's read capabilities. Public subscriptions
+    /// don't need this.
     ///
-    /// The homeserver only authorizes private paths when the subscription names
-    /// exactly the session's own user; otherwise it responds with 403.
     ///
     /// @param {Session} session - The authenticated session
     /// @returns {EventStreamBuilder} - Builder for chaining
