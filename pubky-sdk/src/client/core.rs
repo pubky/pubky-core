@@ -6,6 +6,13 @@ use crate::{cross_log, errors::BuildError};
 
 const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSION"),);
 
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Default)]
+struct NativeHttpConfig {
+    request_timeout: Option<Duration>,
+    pool_max_idle_per_host: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 #[must_use]
 /// Configures a [`PubkyHttpClient`] before construction.
@@ -16,19 +23,23 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 ///
 /// # Defaults
 /// - Pkarr relays: [`crate::pkarr::DEFAULT_RELAYS`]
-/// - HTTP request timeout: reqwest default (no global timeout) unless set via
+/// - HTTP request timeout (native only): reqwest default unless set via
 ///   [`Self::request_timeout`]
 /// - User-agent: `pubky.org@<crate-version>` plus any [`Self::user_agent_extra`]
-///
+/// - Idle keep-alive connections per host (native only): reqwest default unless set via
+///   [`Self::pool_max_idle_per_host`]
 /// # Example
 /// ```no_run
+/// # #[cfg(not(target_arch = "wasm32"))]
+/// # fn example() -> Result<(), pubky::BuildError> {
 /// use std::time::Duration;
 /// # use pubky::{PubkyHttpClient, PubkyHttpClientBuilder};
 /// let client = PubkyHttpClient::builder()
 ///     .request_timeout(Duration::from_secs(10))
 ///     .user_agent_extra("myapp/1.2.3")
+///     .pool_max_idle_per_host(10)
 ///     .build()?;
-/// # Ok::<_, pubky::BuildError>(())
+/// # Ok(()) }
 /// ```
 ///
 /// You can keep the default Pkarr relays or override them via the builder:
@@ -44,10 +55,12 @@ const DEFAULT_USER_AGENT: &str = concat!("pubky.org", "@", env!("CARGO_PKG_VERSI
 #[derive(Default)]
 pub struct PubkyHttpClientBuilder {
     pkarr: pkarr::ClientBuilder,
-    http_request_timeout: Option<Duration>,
 
     /// Optional user-agent segment appended to the default UA for app-level telemetry.
     user_agent_extra: Option<String>,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    native_http: NativeHttpConfig,
 
     /// The hostname to use for testnet URL transformations (WASM only).
     #[cfg(target_arch = "wasm32")]
@@ -161,13 +174,6 @@ impl PubkyHttpClientBuilder {
         self
     }
 
-    /// Set HTTP requests timeout.
-    pub const fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.http_request_timeout = Some(timeout);
-
-        self
-    }
-
     /// Append an extra user-agent segment after the default `pubky.org@<version>`.
     /// Enables app-level telemetry
     /// Example: `.user_agent_extra("myapp/1.2.3")`
@@ -202,10 +208,18 @@ impl PubkyHttpClientBuilder {
                 |extra| Cow::Owned(format!("{DEFAULT_USER_AGENT} {extra}")),
             );
 
+        #[cfg(not(target_arch = "wasm32"))]
         cross_log!(
             info,
-            "Building PubkyHttpClient (timeout: {:?}, user_agent: {})",
-            self.http_request_timeout,
+            "Building PubkyHttpClient (timeout: {:?}, user_agent: {}, pool_max_idle_per_host: {:?})",
+            self.native_http.request_timeout,
+            user_agent,
+            self.native_http.pool_max_idle_per_host
+        );
+        #[cfg(target_arch = "wasm32")]
+        cross_log!(
+            info,
+            "Building PubkyHttpClient (user_agent: {})",
             user_agent
         );
 
@@ -223,11 +237,17 @@ impl PubkyHttpClientBuilder {
 
         // TODO: change this after Reqwest publish a release with timeout in wasm
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(timeout) = self.http_request_timeout {
+        if let Some(timeout) = self.native_http.request_timeout {
             http_builder = http_builder.timeout(timeout);
-
             icann_http_builder = icann_http_builder.timeout(timeout);
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(max) = self.native_http.pool_max_idle_per_host {
+            http_builder = http_builder.pool_max_idle_per_host(max);
+            icann_http_builder = icann_http_builder.pool_max_idle_per_host(max);
+        }
+
         Ok(PubkyHttpClient {
             pkarr,
             http: http_builder.build()?,
@@ -241,6 +261,37 @@ impl PubkyHttpClientBuilder {
             #[cfg(target_arch = "wasm32")]
             testnet_host: self.testnet_host.clone(),
         })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PubkyHttpClientBuilder {
+    /// Set HTTP requests timeout.
+    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.native_http.request_timeout = Some(timeout);
+        self
+    }
+
+    /// Cap idle keep-alive connections per host. Set `0` to disable pooling.
+    pub fn pool_max_idle_per_host(&mut self, max: usize) -> &mut Self {
+        self.native_http.pool_max_idle_per_host = Some(max);
+        self
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl PubkyHttpClientBuilder {
+    /// Set HTTP requests timeout.
+    ///
+    /// # Deprecated
+    /// This setter has never had any effect on WASM: reqwest uses the browser
+    /// `fetch` backend and `build()` does not apply a global HTTP timeout.
+    /// Use [`.pkarr()`](Self::pkarr) to configure pkarr/DHT request timeouts instead.
+    #[deprecated(
+        note = "HTTP request timeout is not supported on WASM and has never had any effect; use `.pkarr(|p| p.request_timeout(..))` for pkarr/DHT timeouts"
+    )]
+    pub fn request_timeout(&mut self, _timeout: Duration) -> &mut Self {
+        self
     }
 }
 
