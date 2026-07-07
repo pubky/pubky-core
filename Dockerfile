@@ -64,4 +64,4 @@ WORKDIR /usr/local/bin
 EXPOSE 6287
 
 # Run the binary by default and pass docker run arguments to it.
-ENTRYPOINT ["homeserver"]
+ENTRYPOINT ["pubky-homeserver"]
