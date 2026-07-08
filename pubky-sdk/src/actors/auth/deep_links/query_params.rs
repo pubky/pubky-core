@@ -22,9 +22,7 @@ pub(super) fn parse_secret(url: &Url) -> Result<[u8; 32], DeepLinkParseError> {
     parse_optional_secret(url)?.ok_or(DeepLinkParseError::MissingQueryParameter("secret"))
 }
 
-pub(super) fn parse_capabilities_or_default(
-    url: &Url,
-) -> Result<Capabilities, DeepLinkParseError> {
+pub(super) fn parse_capabilities_or_default(url: &Url) -> Result<Capabilities, DeepLinkParseError> {
     match optional_query(url, "caps") {
         None => Ok(Capabilities::default()),
         Some(raw) => raw
