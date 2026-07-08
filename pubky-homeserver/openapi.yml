@@ -626,18 +626,33 @@ paths:
         data: cursor: 42
         data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI=
         ```
+
+        This path is served by **two servers with different contracts** (select the server below):
+        - **Client server** (`http://localhost:6287`): session-authenticated. `user` is **required**;
+          `/priv/...` paths require an authorized session capability (otherwise `401`/`403`).
+        - **Admin server** (`http://localhost:6288`): authenticated with the `X-Admin-Password`
+          header. Streams **all** events including private (`/priv/...`) paths and responds with
+          `Cache-Control: no-store`. `user` is **optional** (omit to stream every user); a single
+          global `cursor` paginates the combined feed.
       operationId: getEventStream
+      servers:
+        - url: http://localhost:6287
+          description: Client server (session auth)
+        - url: http://localhost:6288
+          description: Admin server (X-Admin-Password)
       security:
         - {}
         - bearerAuth: []
         - cookieAuth: []
+        - adminPassword: []
       parameters:
         - name: user
           in: query
-          required: true
+          required: false
           description: |
             One or more user public keys (z-base-32). Repeat for multiple users.
             Optionally append `:cursor` to start from a specific position.
+            **Required** on the client server; **optional** on the admin server (omit to stream all users).
           schema:
             type: array
             items:
@@ -649,6 +664,13 @@ paths:
               value: [o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo]
             withCursor:
               value: ["o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo:42"]
+        - name: cursor
+          in: query
+          description: |
+            Resume from a single global cursor (admin server). On the client server, append
+            `:cursor` to each `user` value instead.
+          schema:
+            type: string
         - name: limit
           in: query
           description: Maximum total events to send.
@@ -670,7 +692,11 @@ paths:
             default: false
         - name: path
           in: query
-          description: Path filter. /priv/ paths require an authorized session.
+          description: |
+            Path filter (repeatable; union — an event matches if it satisfies any). A trailing slash
+            matches a directory and its descendants; otherwise it matches that exact file. On the
+            client server, `/priv/...` paths require an authorized session capability; the admin
+            server returns all paths.
           schema:
             type: array
             items:
@@ -694,9 +720,11 @@ paths:
             Invalid user pubkey, missing user parameter, too many users,
             live + reverse combination, or invalid path.
         "401":
-          description: A private path was requested without a session.
+          description: |
+            Client server: a private path was requested without a session.
+            Admin server: missing or invalid `X-Admin-Password`.
         "403":
-          description: "Missing path read capability"
+          description: "Client server: missing path read capability"
         "404":
           description: User not found
 
@@ -1313,10 +1341,10 @@ components:
             - type: string
               enum: [unlimited]
         rate_read:
-          description: "Read bandwidth limit (e.g. `\"200mb/m\"`, `\"unlimited\"`, or `null`)."
+          description: 'Read bandwidth limit (e.g. `"200mb/m"`, `"unlimited"`, or `null`).'
           type: string
         rate_write:
-          description: "Write bandwidth limit (e.g. `\"100mb/m\"`, `\"unlimited\"`, or `null`)."
+          description: 'Write bandwidth limit (e.g. `"100mb/m"`, `"unlimited"`, or `null`).'
           type: string
         rate_read_burst:
           description: |
@@ -1359,10 +1387,10 @@ components:
               enum: [unlimited]
             - type: "null"
         rate_read:
-          description: "Read bandwidth limit string, `\"unlimited\"`, or `null` to reset."
+          description: 'Read bandwidth limit string, `"unlimited"`, or `null` to reset.'
           type: ["string", "null"]
         rate_write:
-          description: "Write bandwidth limit string, `\"unlimited\"`, or `null` to reset."
+          description: 'Write bandwidth limit string, `"unlimited"`, or `null` to reset.'
           type: ["string", "null"]
         rate_read_burst:
           description: "Burst for read rate limit (in rate's natural unit), or `null` to reset to default."

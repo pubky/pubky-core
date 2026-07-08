@@ -18,6 +18,7 @@ mod constants;
 mod data_directory;
 mod homeserver_app;
 mod metrics_server;
+mod observability;
 mod persistence;
 mod republishers;
 mod services;

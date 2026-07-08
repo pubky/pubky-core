@@ -2,7 +2,11 @@ use dav_server::{fakels::FakeLs, DavHandler};
 use dav_server_opendalfs::OpendalFs;
 
 use crate::data_directory::DefaultQuotasToml;
-use crate::persistence::{files::FileService, sql::SqlDb};
+use crate::observability::Metrics;
+use crate::persistence::{
+    files::{events::EventsService, FileService},
+    sql::SqlDb,
+};
 use crate::services::user_service::UserService;
 use crate::ConfigToml;
 
@@ -23,6 +27,10 @@ pub(crate) struct AppState {
     pub(crate) metadata: AdminMetadata,
     /// User service for quota cache eviction on admin updates.
     pub(crate) user_service: UserService,
+    /// Event service for the admin all-events stream.
+    pub(crate) events_service: EventsService,
+    /// Metrics shared with the rest of the homeserver.
+    pub(crate) metrics: Metrics,
     /// System-wide default quotas for resolving effective values.
     pub(crate) default_storage_mb: Option<u64>,
     pub(crate) default_quotas: DefaultQuotasToml,
@@ -34,6 +42,8 @@ impl AppState {
         file_service: FileService,
         admin_password: &str,
         user_service: UserService,
+        events_service: EventsService,
+        metrics: Metrics,
     ) -> Self {
         let webdavfs = OpendalFs::new(file_service.opendal.admin_operator.clone());
         let inner_dav_handler = DavHandler::builder()
@@ -49,6 +59,8 @@ impl AppState {
             inner_dav_handler,
             metadata: AdminMetadata::default(),
             user_service,
+            events_service,
+            metrics,
             default_storage_mb: None,
             default_quotas: DefaultQuotasToml::default(),
         }

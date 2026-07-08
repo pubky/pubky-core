@@ -23,6 +23,23 @@ impl EventEntity {
     pub fn cursor(&self) -> EventCursor {
         EventCursor::new(self.id)
     }
+
+    /// Full `pubky://` URI of this event's resource, e.g. `pubky://<z32>/pub/file.txt`.
+    pub(crate) fn pubky_uri(&self) -> String {
+        format!("pubky://{}{}", self.user_pubkey.z32(), self.path.path())
+    }
+
+    /// Multiline SSE `data:` payload (path, `cursor:`, and `content_hash:` for PUTs) shared by the
+    /// public and admin event streams. Each line is prefixed with `data: ` by the SSE layer.
+    pub(crate) fn to_sse_data(&self) -> String {
+        let mut lines = vec![self.pubky_uri(), format!("cursor: {}", self.cursor())];
+        if let Some(hash) = self.event_type.content_hash() {
+            let hash_base64 =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
+            lines.push(format!("content_hash: {hash_base64}"));
+        }
+        lines.join("\n")
+    }
 }
 
 impl FromRow<'_, PgRow> for EventEntity {

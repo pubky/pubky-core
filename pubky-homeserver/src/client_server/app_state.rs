@@ -1,7 +1,7 @@
 use axum::extract::FromRef;
 
 use crate::client_server::auth::AuthState;
-use crate::metrics_server::routes::metrics::Metrics;
+use crate::observability::Metrics;
 use crate::persistence::files::events::EventsService;
 use crate::persistence::files::FileService;
 use crate::persistence::sql::SqlDb;
