@@ -400,15 +400,16 @@ fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], 
         )),
         DeepLink::Signup(s) => {
             let params = s.params();
+            let (Some(relay), Some(secret)) = (params.relay.clone(), params.secret) else {
+                return Err(AuthError::Validation(
+                    "relayed signup deep link is missing 'relay' or 'secret'".into(),
+                )
+                .into());
+            };
             Ok((
                 params.capabilities.clone(),
-                params
-                    .relay
-                    .clone()
-                    .expect("relayed signup deep link has a relay"),
-                params
-                    .secret
-                    .expect("relayed signup deep link has a secret"),
+                relay,
+                secret,
                 AuthFlowKind::signup(params.homeserver.clone(), params.signup_token.clone()),
             ))
         }
