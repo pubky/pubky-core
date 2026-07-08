@@ -16,7 +16,7 @@ use axum::{
     },
 };
 use futures_util::stream::Stream;
-use pubky_common::crypto::PublicKey;
+use pubky_common::{crypto::PublicKey, storage};
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
 use tower_cookies::Cookies;
@@ -24,11 +24,10 @@ use url::form_urlencoded;
 
 use crate::{
     client_server::{
-        auth::{has_read_permission, AuthSession},
+        auth::{grant::bearer::extract_bearer_token, has_read_permission, AuthSession},
         query_params::ListQueryParams,
         AppState,
     },
-    constants::{PRIVATE_ROOT, PUBLIC_ROOT},
     metrics_server::routes::metrics::Metrics,
     persistence::{
         files::events::{
@@ -94,7 +93,7 @@ impl<'a> EventStreamTenantScope<'a> {
     fn from_query(paths: &[WebDavPath], user_cursors: &'a [(PublicKey, Option<String>)]) -> Self {
         if !paths
             .iter()
-            .any(|path| path.as_str().starts_with(PRIVATE_ROOT))
+            .any(|path| storage::is_private_path(path.as_str()))
         {
             return Self::PublicOnly;
         }
@@ -364,7 +363,7 @@ pub async fn feed_stream(
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
     let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
-    // Bearer auth wins over cookie fallback, even when the bearer is invalid.
+    // Bearer auth disables the homeserver-addressed cookie fallback.
     let session = match session {
         Some(session) => Some(session),
         None if !has_bearer_auth(&headers) => {
@@ -542,13 +541,8 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
-/// Whether the request presented a `Bearer` Authorization header (valid or not).
-/// Mirrors the grant middleware's `strip_prefix("Bearer ")`, so a presented
-/// bearer is never silently downgraded to cookie auth.
 fn has_bearer_auth(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::AUTHORIZATION)
-        .is_some_and(|value| value.as_bytes().starts_with(b"Bearer "))
+    extract_bearer_token(headers).has_bearer_scheme()
 }
 
 async fn resolve_tenant_cookie_session(
@@ -573,9 +567,10 @@ fn authorized_paths(
     session: Option<&AuthSession>,
 ) -> Result<Vec<PathFilter>, HttpError> {
     if paths.is_empty() {
-        return Ok(vec![
-            WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
-        ]);
+        return Ok(vec![WebDavPath::new_unchecked(
+            storage::PUBLIC_ROOT.to_string(),
+        )
+        .into()]);
     }
 
     let mut allowed = Vec::with_capacity(paths.len());
@@ -707,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn has_bearer_auth_checks_raw_bearer_prefix() {
+    fn has_bearer_auth_uses_bearer_scheme() {
         let cases = [
             (b"Bearer token".as_slice(), true),
             (b"Bearer \xff".as_slice(), true),

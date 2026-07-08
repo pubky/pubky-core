@@ -175,9 +175,9 @@ impl PubkySigner {
     async fn signin_cookie_with_publish(&self, mode: PublishMode) -> Result<PubkySession> {
         let token = self.root_capability_token();
         let user = self.keypair.public_key();
-        let homeserver = self.pkdns().require_homeserver_of(&user).await?;
+        let homeserver = self.pkdns().get_homeserver_of(&user).await;
         let credential =
-            CookieCredential::from_auth_token(&token, &self.client, Some(homeserver)).await?;
+            CookieCredential::from_auth_token(&token, &self.client, homeserver).await?;
         let session = PubkySession::from_cookie_credential(self.client.clone(), credential);
         self.publish_after_signin(mode).await?;
         Ok(session)

@@ -136,20 +136,13 @@ impl CookieCredential {
             "Establishing new session exchange for {}",
             token.public_key()
         );
-        let request = if let Some(homeserver) = homeserver.as_ref() {
-            client
-                .cross_request_via_homeserver(
-                    Method::POST,
-                    homeserver,
-                    token.public_key(),
-                    SESSION_PATH,
-                )
-                .await?
-        } else {
-            let url = format!("pubky{}{}", token.public_key().z32(), SESSION_PATH);
-            let resolved = resolve_pubky(&url)?;
-            client.cross_request(Method::POST, resolved).await?
-        };
+        let request = session_request(
+            client,
+            Method::POST,
+            token.public_key(),
+            homeserver.as_ref(),
+        )
+        .await?;
         let response = request.body(token.serialize()).send().await?;
 
         let response = check_http_status(response).await?;
@@ -183,6 +176,26 @@ impl CookieCredential {
     }
 }
 
+fn session_resource(user: &PublicKey) -> String {
+    format!("pubky{}{}", user.z32(), SESSION_PATH)
+}
+
+async fn session_request(
+    client: &PubkyHttpClient,
+    method: Method,
+    user: &PublicKey,
+    homeserver: Option<&PublicKey>,
+) -> Result<RequestBuilder> {
+    if let Some(homeserver) = homeserver {
+        return client
+            .cross_request_via_homeserver(method, homeserver, user, SESSION_PATH)
+            .await;
+    }
+
+    let resolved = resolve_pubky(session_resource(user))?;
+    client.cross_request(method, resolved).await
+}
+
 /// Cross-target reader for `Set-Cookie` response header values.
 fn collect_set_cookies(response: &Response) -> Vec<String> {
     let mut out = Vec::new();
@@ -211,16 +224,14 @@ impl SessionCredential for CookieCredential {
 
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
         let homeserver = match self.bound_homeserver() {
-            Some(homeserver) => homeserver,
+            Some(homeserver) => Some(homeserver),
             None => {
                 crate::Pkdns::with_client(client.clone())
-                    .require_homeserver_of(&self.user)
-                    .await?
+                    .get_homeserver_of(&self.user)
+                    .await
             }
         };
-        let rb = client
-            .cross_request_via_homeserver(Method::DELETE, &homeserver, &self.user, SESSION_PATH)
-            .await?;
+        let rb = session_request(client, Method::DELETE, &self.user, homeserver.as_ref()).await?;
         let rb = self.attach(rb, client).await?;
         let response = rb.send().await.map_err(crate::Error::from)?;
         check_http_status(response).await?;
@@ -261,18 +272,17 @@ impl SessionCredential for CookieCredential {
         client: &PubkyHttpClient,
         user: &PublicKey,
     ) -> Result<Option<SessionInfo>> {
-        let (homeserver, bind_on_success) = match self.bound_homeserver() {
-            Some(homeserver) => (homeserver, false),
-            None => (
+        let bound_homeserver = self.bound_homeserver();
+        let bind_on_success = bound_homeserver.is_none();
+        let homeserver = match bound_homeserver {
+            Some(homeserver) => Some(homeserver),
+            None => {
                 crate::Pkdns::with_client(client.clone())
-                    .require_homeserver_of(user)
-                    .await?,
-                true,
-            ),
+                    .get_homeserver_of(user)
+                    .await
+            }
         };
-        let rb = client
-            .cross_request_via_homeserver(Method::GET, &homeserver, user, SESSION_PATH)
-            .await?;
+        let rb = session_request(client, Method::GET, user, homeserver.as_ref()).await?;
         let rb = self.attach(rb, client).await?;
         let response = rb.send().await.map_err(crate::Error::from)?;
         if credential_session_missing(&response) {
@@ -285,7 +295,7 @@ impl SessionCredential for CookieCredential {
         let info = SessionInfo::new(record.public_key().clone(), record.capabilities().to_vec());
         self.replace_record(record);
 
-        if bind_on_success {
+        if bind_on_success && let Some(homeserver) = homeserver {
             self.set_homeserver(homeserver);
         }
         Ok(Some(info))

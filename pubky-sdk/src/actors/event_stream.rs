@@ -91,7 +91,7 @@ use crate::PublicKey;
 use base64::Engine;
 use eventsource_stream::Eventsource;
 use futures_util::{Stream, StreamExt};
-use pubky_common::crypto::Hash;
+use pubky_common::{crypto::Hash, storage};
 use reqwest::Method;
 use url::Url;
 
@@ -387,32 +387,7 @@ impl EventStreamBuilder {
     fn has_private_path_filter(&self) -> bool {
         self.paths
             .iter()
-            .any(|path| Self::is_private_path_filter(path))
-    }
-
-    fn is_private_path_filter(path: &str) -> bool {
-        let mut segments = Vec::new();
-        for segment in path.split('/') {
-            match segment {
-                "" | "." => {}
-                ".." => {
-                    if segments.pop().is_none() {
-                        return false;
-                    }
-                }
-                segment => segments.push(segment),
-            }
-        }
-
-        if segments.is_empty() {
-            return false;
-        }
-
-        let mut normalized = format!("/{}", segments.join("/"));
-        if (path.ends_with('/') || path.ends_with("..")) && !normalized.ends_with('/') {
-            normalized.push('/');
-        }
-        normalized.starts_with("/priv/")
+            .any(|path| storage::is_private_path_filter(path))
     }
 
     fn auth_scope(&self) -> EventStreamAuthScope<'_> {
@@ -657,6 +632,11 @@ fn decode_content_hash(content_hash_base64: Option<&str>) -> Result<Hash> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actors::auth::cookie::credential::CookieCredential;
+    use pubky_common::{
+        capabilities::{Capabilities, Capability},
+        session::CookieSessionRecord,
+    };
 
     /// Helper to create an SSE event for testing
     fn make_sse(event: &str, data: &str) -> eventsource_stream::Event {
@@ -1014,21 +994,10 @@ mod tests {
         );
     }
 
-    fn cookie_credential_for(
-        user: &PublicKey,
-    ) -> crate::actors::auth::cookie::credential::CookieCredential {
-        use pubky_common::{
-            capabilities::{Capabilities, Capability},
-            session::CookieSessionRecord,
-        };
+    fn cookie_credential_for(user: &PublicKey) -> CookieCredential {
         let record =
             CookieSessionRecord::new(user, Capabilities::from(vec![Capability::root()]), None);
-        crate::actors::auth::cookie::credential::CookieCredential::new(
-            user.clone(),
-            Some("test-cookie".to_string()),
-            record,
-            None,
-        )
+        CookieCredential::new(user.clone(), Some("test-cookie".to_string()), record, None)
     }
 
     #[test]
