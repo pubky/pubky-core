@@ -21,15 +21,6 @@ async fn signed_in_user(
     (signer.public_key(), session)
 }
 
-/// Extract the HTTP status from a typed server-rejection error, so tests assert
-/// against `RequestError::Server { status, .. }` rather than a raw string.
-fn server_status(err: &Error) -> Option<StatusCode> {
-    match err {
-        Error::Request(RequestError::Server { status, .. }) => Some(*status),
-        _ => None,
-    }
-}
-
 /// Test the SDK builder API: `event_stream_for()` and `add_users()`
 /// This tests the high-level SDK interface rather than raw HTTP requests.
 #[tokio::test]
@@ -535,10 +526,12 @@ async fn events_stream_sdk_cookie_bound_homeserver_is_enforced() {
     let err = result
         .err()
         .expect("a cookie bound to HS1 must not authenticate a private stream on HS2");
-    assert_eq!(
-        server_status(&err),
-        Some(StatusCode::UNAUTHORIZED),
-        "expected a typed 401 Server error, got: {err}"
+    let Error::Request(RequestError::Validation { message }) = err else {
+        panic!("expected local validation error, got: {err}");
+    };
+    assert!(
+        message.contains("cannot attach session credential"),
+        "got: {message}"
     );
 }
 
