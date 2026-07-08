@@ -9,7 +9,7 @@ use crate::services::user_service::UserService;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
-    metrics_server::routes::metrics::{Metrics, MetricsInitError},
+    observability::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
         sql::{Migrator, PgEventListener, SqlDb},
