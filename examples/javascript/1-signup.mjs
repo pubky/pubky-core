@@ -5,10 +5,10 @@ import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [signup_code] [--testnet]
+  node 1-signup.mjs <homeserver_pubky> </path/to/recovery_file> [signup_code] [--testnet]
 
 Example:
-  node 2-signup.mjs pubky8pinxxg... ./alice.recovery INVITE-123 --testnet
+  node 1-signup.mjs pubky8pinxxg... ./alice.recovery INVITE-123 --testnet
 `;
 
 const a = args(process.argv.slice(2), { usage });

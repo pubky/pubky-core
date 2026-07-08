@@ -6,12 +6,12 @@ import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
 
 const usage = `
 Usage:
-  node 3-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+  node 2-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 
 Example:
-  node 3-authenticator.mjs ./alice.pkarr "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/inbox" --testnet
+  node 2-authenticator.mjs ./alice.pkarr "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/inbox" --testnet
 
-You can try this out with the example backend-less third party browser application in /examples/rust/3-auth_flow/3rd-party-app
+You can try this out with the example backend-less third party browser application in /examples/rust/2-auth_flow/3rd-party-app
 `;
 
 const a = args(process.argv.slice(2), {

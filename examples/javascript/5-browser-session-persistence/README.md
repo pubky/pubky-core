@@ -16,7 +16,7 @@ npm run testnet
 Start the browser app in another terminal:
 
 ```bash
-cd examples/javascript/6-browser-session-persistence
+cd examples/javascript/5-browser-session-persistence
 npm install
 npm run dev
 ```

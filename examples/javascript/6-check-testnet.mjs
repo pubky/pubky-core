@@ -2,7 +2,7 @@
 
 /**
  * Script to test if the local testnet is available by performing an end-to-end roundtrip: signup -> signin -> write -> read.
- * Usage: `node 0-check-testnet.mjs`
+ * Usage: `node 6-check-testnet.mjs`
  */
 
 // End-to-end testnet roundtrip: signup -> signin -> write -> read.

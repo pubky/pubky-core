@@ -7,11 +7,11 @@ const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo
 
 const usage = `
 Usage:
-  node 1-logging.mjs [--testnet] [--homeserver <pubky>] [--level <error|warn|info|debug|trace>]
+  node 7-logging.mjs [--testnet] [--homeserver <pubky>] [--level <error|warn|info|debug|trace>]
 
 Examples:
-  node 1-logging.mjs --testnet --level debug
-  node 1-logging.mjs --homeserver <mainnet_pk> --level info
+  node 7-logging.mjs --testnet --level debug
+  node 7-logging.mjs --homeserver <mainnet_pk> --level info
 `;
 
 const a = args(process.argv.slice(2), {

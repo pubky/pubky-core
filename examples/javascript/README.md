@@ -38,7 +38,7 @@ To check the basic flow from another terminal:
 
 ```bash
 cd examples/javascript
-node 0-check-testnet.mjs
+node 6-check-testnet.mjs
 ```
 
 Expected output includes:
@@ -51,44 +51,26 @@ Testnet is available, roundtrip succeeded.
 
 Each script is a single, commented file under the project root. Run examples explicitly with `node <script>.mjs <args...>`.
 
-### 0) Check local testnet availability
-
-Helper script that checks whether the local testnet is ready by performing a signup, signin, write, and read roundtrip.
-
-```bash
-node 0-check-testnet.mjs
-```
-
-### 1) Logging and verbosity
-
-Demonstrates how to use `setLogLevel()` to surface the SDK's internal tracing while performing a quick storage roundtrip.
-
-```bash
-node 1-logging.mjs --testnet --level debug
-```
-
-Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
-
-### 2) Signup with a recovery file
+### 1) Signup with a recovery file
 
 Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 
 ```bash
-node 2-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
+node 1-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
 
 # example (testnet homeserver)
-node 2-signup.mjs 8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+node 1-signup.mjs 8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
 ```
 
 You’ll be prompted for the recovery **passphrase**.
 
-### 3) Approve a Pubky Auth URL (authenticator)
+### 2) Approve a Pubky Auth URL (authenticator)
 
 Given a `pubkyauth://` URL (QR/deeplink), approves it using a recovery file.
 With `--testnet`, it first ensures the user exists by doing a signup (no invite required).
 
 ```bash
-node 3-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+node 2-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
 ```
 
 Example URL looks like:
@@ -97,24 +79,24 @@ Example URL looks like:
 pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=<...>&relay=http://localhost:15412/inbox
 ```
 
-You can run a Browser 3rd party app that requires authentication with [**3rd-party-app**](/examples/rust/3-auth_flow/3rd-party-app)
+You can run a Browser 3rd party app that requires authentication with [**3rd-party-app**](/examples/rust/2-auth_flow/3rd-party-app)
 
-### 4) Public storage read (no auth)
+### 3) Public storage read (no auth)
 
 Reads a public resource via the **addressed** form: `pubky<z32>/pub/my-cool-app/path/to/file.txt`.
 This requires a public resource whose Pubky key is already resolvable. It is not the best first smoke test for a fresh local testnet user because PKDNS publication can lag or fail independently of authenticated storage.
 
 ```bash
-node 4-storage.mjs <pubky>/<absolute-path> [--testnet]
+node 3-storage.mjs <pubky>/<absolute-path> [--testnet]
 
 # examples
-node 4-storage.mjs pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
-node 4-storage.mjs pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
+node 3-storage.mjs pubkyq5oo7ma.../pub/my-cool-app/hello.txt --testnet
+node 3-storage.mjs pubkyoperrr8w.../pub/pubky.app/posts/0033X02JAN0SG
 ```
 
 Shows **exists**, **stats**, and downloads the content.
 
-### 5) Raw HTTP request (https://\_pubky.<public_key>)
+### 4) Raw HTTP request (https://\_pubky.<public_key>)
 
 Low-level fetch through the Pubky client. Handy for debugging.
 
@@ -122,13 +104,13 @@ Low-level fetch through the Pubky client. Handy for debugging.
 > As with `storage`, Pubky URLs require a resolvable public key record.
 
 ```bash
-node 5-request.mjs <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
+node 4-request.mjs <METHOD> <URL> [--testnet] [-H "Name: value"]... [-d DATA]
 
 # pubky:// read (testnet)
-node 5-request.mjs GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
+node 4-request.mjs GET https://_pubky.q5oo7ma.../pub/my-cool-app/info.json --testnet
 
 # https:// JSON POST
-node 5-request.mjs \
+node 4-request.mjs \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{"msg":"hello"}' \
@@ -137,17 +119,35 @@ node 5-request.mjs \
 
 ## Browser Examples
 
-### 6) Browser session persistence
+### 5) Browser session persistence
 
 Vite app that creates disposable testnet accounts and shows how to save, list, restore, and forget multiple browser-backed Pubky sessions with `browserSessionStore`.
 
 ```bash
-cd 6-browser-session-persistence
+cd 5-browser-session-persistence
 npm install
 npm run dev
 ```
 
-See [**6-browser-session-persistence**](./6-browser-session-persistence/README.md) for the full flow.
+See [**5-browser-session-persistence**](./5-browser-session-persistence/README.md) for the full flow.
+
+### 6) Check local testnet availability
+
+Helper script that checks whether the local testnet is ready by performing a signup, signin, write, and read roundtrip.
+
+```bash
+node 6-check-testnet.mjs
+```
+
+### 7) Logging and verbosity
+
+Demonstrates how to use `setLogLevel()` to surface the SDK's internal tracing while performing a quick storage roundtrip.
+
+```bash
+node 7-logging.mjs --testnet --level debug
+```
+
+Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
 
 ## Concepts you’ll bump into
 
@@ -185,7 +185,7 @@ See [**6-browser-session-persistence**](./6-browser-session-persistence/README.m
   ```
 
 - **PkarrError: No HTTPS endpoints found**
-  The testnet is not running, is not ready, or the public key has not published/resolved yet. Use `node 0-check-testnet.mjs` as the first smoke test because it performs an authenticated write/read without requiring public PKDNS resolution for the new user.
+  The testnet is not running, is not ready, or the public key has not published/resolved yet. Use `node 6-check-testnet.mjs` as the first smoke test because it performs an authenticated write/read without requiring public PKDNS resolution for the new user.
 
 - **401 Unauthorized**
   You tried to write without a valid session cookie (e.g., after `signout()`), or against the wrong user.
