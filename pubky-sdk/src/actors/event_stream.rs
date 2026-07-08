@@ -445,15 +445,26 @@ impl EventStreamBuilder {
             homeserver
         );
 
+        let credential = self
+            .credential
+            .as_ref()
+            .filter(|credential| self.should_attach_credential(credential.as_ref()));
+        let can_attach_credential = match credential {
+            Some(credential) => credential.can_attach_to(&homeserver).await,
+            None => false,
+        };
+        if credential.is_some() && !can_attach_credential {
+            return Err(Error::from(RequestError::Validation {
+                message: "cannot attach session credential to target homeserver".into(),
+            }));
+        }
+
         let url = self.build_request_url(&homeserver)?;
         let mut request = self
             .client
             .cross_request_anonymous(Method::GET, url)
             .await?;
-        if let Some(credential) = &self.credential
-            && self.should_attach_credential(credential.as_ref())
-            && credential.can_attach_to(&homeserver).await
-        {
+        if let Some(credential) = credential {
             request = credential.attach(request, &self.client).await?;
         }
         let response = request.send().await?;
@@ -1079,6 +1090,35 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn private_stream_with_unbound_cookie_returns_validation_error() {
+        let client = crate::PubkyHttpClient::testnet().unwrap();
+        let keys = test_pubkeys(2);
+        let user = &keys[0];
+        let homeserver = &keys[1];
+        let session =
+            PubkySession::from_cookie_credential(client.clone(), cookie_credential_for(user));
+
+        let result = EventStreamBuilder::for_homeserver(client, homeserver)
+            .add_users([(user, None)])
+            .unwrap()
+            .path("/priv/app/")
+            .session(&session)
+            .subscribe_internal()
+            .await;
+
+        let Err(err) = result else {
+            panic!("private stream should fail before request");
+        };
+        let Error::Request(RequestError::Validation { message }) = err else {
+            panic!("expected validation error");
+        };
+        assert!(
+            message.contains("cannot attach session credential"),
+            "got: {message}"
+        );
     }
 
     #[test]
