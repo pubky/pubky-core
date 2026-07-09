@@ -23,41 +23,32 @@ impl MultiRepublishResult {
         self.results.is_empty()
     }
 
-    /// Successfully published keys
-    pub fn success(&self) -> Vec<PublicKey> {
+    /// Number of successfully published keys.
+    pub fn success_count(&self) -> usize {
         self.results
-            .iter()
-            .filter(|(_, result)| result.is_ok())
-            .map(|(key, _)| key.clone())
-            .collect()
+            .values()
+            .filter(|result| result.is_ok())
+            .count()
     }
 
-    /// Keys that failed to publish
-    pub fn publishing_failed(&self) -> Vec<PublicKey> {
+    /// Number of keys that failed to publish.
+    pub fn publishing_failed_count(&self) -> usize {
         self.results
-            .iter()
-            .filter(|(_, val)| {
-                if let Err(e) = val {
-                    return e.is_publish_failed();
-                }
-                false
+            .values()
+            .filter(|result| {
+                result
+                    .as_ref()
+                    .is_err_and(RepublishError::is_publish_failed)
             })
-            .map(|entry| entry.0.clone())
-            .collect()
+            .count()
     }
 
-    /// Keys that are missing and could not be republished
-    pub fn missing(&self) -> Vec<PublicKey> {
+    /// Number of keys that are missing and could not be republished.
+    pub fn missing_count(&self) -> usize {
         self.results
-            .iter()
-            .filter(|(_, val)| {
-                if let Err(e) = val {
-                    return e.is_missing();
-                }
-                false
-            })
-            .map(|entry| entry.0.clone())
-            .collect()
+            .values()
+            .filter(|result| result.as_ref().is_err_and(RepublishError::is_missing))
+            .count()
     }
 }
 
@@ -74,13 +65,12 @@ impl MultiRepublisher {
     /// pkarr clients instead of just one.
     pub fn new_with_settings(
         mut settings: RepublisherSettings,
-        client_builder: Option<pkarr::ClientBuilder>,
+        client_builder: pkarr::ClientBuilder,
     ) -> Self {
         settings.client = None; // Remove client if it's there because every thread will have it's own.
-        let builder = client_builder.unwrap_or_default();
         Self {
             settings,
-            client_builder: builder,
+            client_builder,
         }
     }
 
@@ -119,11 +109,7 @@ impl MultiRepublisher {
                     )
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to republish public_key {} within {elapsed}ms. {}",
-                        key,
-                        e
-                    );
+                    tracing::warn!("Failed to republish public_key {key} within {elapsed}ms. {e}");
                 }
             }
 
@@ -147,7 +133,7 @@ impl MultiRepublisher {
             .collect::<Vec<_>>();
 
         // Run in parallel
-        let mut handles = vec![];
+        let mut handles = Vec::new();
         for chunk in chunks {
             let publisher = self.clone();
             let handle = tokio::spawn(async move { publisher.run_serially(chunk).await });
@@ -157,14 +143,11 @@ impl MultiRepublisher {
         // Join results of all tasks
         let mut results = HashMap::with_capacity(public_keys.len());
         for handle in handles {
-            let join_result = handle.await;
-            if let Err(e) = join_result {
-                tracing::error!("Failed to join handle in MultiRepublisher::run: {e}");
-                continue;
-            }
-            let result = join_result.unwrap()?;
-            for entry in result {
-                results.insert(entry.0, entry.1);
+            match handle.await {
+                Ok(result) => results.extend(result?),
+                Err(e) => {
+                    tracing::error!("Failed to join handle in MultiRepublisher::run: {e}");
+                }
             }
         }
 
@@ -211,7 +194,7 @@ mod tests {
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(3).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
+        let publisher = MultiRepublisher::new_with_settings(settings, pkarr_builder);
         let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
         if let Err(e) = result {
@@ -237,7 +220,7 @@ mod tests {
         settings
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(4).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
+        let publisher = MultiRepublisher::new_with_settings(settings, pkarr_builder);
         let results = publisher.run_serially(public_keys).await.unwrap();
         let result = results.get(&public_key).unwrap();
         assert!(result.is_err());
