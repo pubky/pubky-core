@@ -20,8 +20,6 @@ use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
-
 /// Errors that can occur when building a `HomeserverApp`.
 #[derive(thiserror::Error, Debug)]
 pub enum HomeserverAppBuildError {
@@ -49,9 +47,8 @@ pub struct HomeserverApp {
     // Republishing is stopped when the UserKeysRepublisherJob is dropped.
     _user_keys_republisher_job: Option<UserKeysRepublisherJob>,
 
-    #[allow(dead_code)]
-    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
-    key_republisher: HomeserverKeyRepublisher,
+    // Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    _key_republisher: HomeserverKeyRepublisher,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: Option<AdminServer>,
@@ -92,11 +89,10 @@ impl HomeserverApp {
         pkarr_builder.no_relays(); // Disable relays to avoid their rate limiting.
         let republish_interval =
             Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
-        let user_keys_republisher_job = UserKeysRepublisherJob::start_delayed(
+        let user_keys_republisher_job = UserKeysRepublisherJob::start(
             context.sql_db.clone(),
             pkarr_builder,
             republish_interval,
-            INITIAL_DELAY_BEFORE_REPUBLISH,
         );
 
         let admin_server = if context.config_toml.admin.enabled {
@@ -125,7 +121,7 @@ impl HomeserverApp {
             admin_server,
             metrics_server,
             _user_keys_republisher_job: user_keys_republisher_job,
-            key_republisher,
+            _key_republisher: key_republisher,
         })
     }
 

@@ -27,12 +27,13 @@ pub(crate) struct UserKeysRepublisherJob {
 }
 
 impl UserKeysRepublisherJob {
+    const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
+
     /// Run the user keys republisher with an initial delay.
-    pub fn start_delayed(
+    pub fn start(
         db: SqlDb,
         pkarr_builder: pkarr::ClientBuilder,
         mut republish_interval: Duration,
-        initial_delay: Duration,
     ) -> Option<Self> {
         if republish_interval.is_zero() {
             tracing::info!("User keys republisher is disabled.");
@@ -49,7 +50,7 @@ impl UserKeysRepublisherJob {
         tracing::info!(
             "Initialize user keys republisher with an interval of {:?} and an initial delay of {:?}",
             republish_interval,
-            initial_delay
+            Self::INITIAL_DELAY_BEFORE_REPUBLISH
         );
 
         if republish_interval < Duration::from_secs(60 * 60) {
@@ -60,7 +61,7 @@ impl UserKeysRepublisherJob {
 
         let republisher = UserKeysRepublisher { db, pkarr_builder };
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(initial_delay).await;
+            tokio::time::sleep(Self::INITIAL_DELAY_BEFORE_REPUBLISH).await;
             let mut interval = interval(republish_interval);
             loop {
                 interval.tick().await;
