@@ -26,6 +26,10 @@ name = "authenticator"
 path = "./2-auth_flow/authenticator.rs"
 
 [[bin]]
+name = "auth_client"
+path = "./2-auth_flow/client.rs"
+
+[[bin]]
 name = "storage"
 path = "./3-storage/main.rs"
 

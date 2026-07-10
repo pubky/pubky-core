@@ -1,5 +1,5 @@
 {
-  "name": "pubky-auth-3rd-party",
+  "name": "pubky-js-auth-flow",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@synonymdev/pubky": "file:../../../../pubky-sdk/bindings/js/pkg",
+    "@synonymdev/pubky": "file:../../../pubky-sdk/bindings/js/pkg",
     "lit": "^3.2.0",
     "qrcode": "^1.5.4"
   },

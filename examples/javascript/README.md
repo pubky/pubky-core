@@ -67,10 +67,19 @@ node 1-signup.mjs <homeserver_pubky> --recovery-file ./alice.recovery --signup-c
 
 This example defaults to `../sample_recovery.key`, which has an empty passphrase. You’ll be prompted for the recovery **passphrase** when using an encrypted recovery file.
 
-### 2) Approve a Pubky Auth URL (authenticator)
+### 2) Grant authorization flow
 
-Given a `pubkyauth://` URL (QR/deeplink), approves it using a recovery file.
-With `--testnet`, it first ensures the user exists by doing a signup (no invite required).
+Two-process example showing third-party grant authorization. The browser app starts a `signin_grant` flow and waits for approval. The authenticator CLI approves the generated `pubkyauth://` URL using a recovery file.
+
+Start the browser app:
+
+```bash
+cd 2-auth-flow
+npm install
+npm run dev
+```
+
+Click **Generate auth link**, copy the generated URL, then approve it from another terminal:
 
 ```bash
 node 2-authenticator.mjs "<AUTH_URL>" [--recovery-file <path>] [--testnet]
@@ -82,15 +91,17 @@ node 2-authenticator.mjs "<AUTH_URL>" --testnet
 node 2-authenticator.mjs "<AUTH_URL>" --testnet --recovery-file ./alice.recovery
 ```
 
-This example defaults to `../sample_recovery.key`, which has an empty passphrase. You’ll be prompted for the recovery **passphrase** when using an encrypted recovery file.
+The URL uses the `signin_grant` intent and includes `cid` for the requesting app ID and `cpk` for the grant Proof-of-Possession client key:
 
-Example URL looks like:
-
-```
-pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=<...>&relay=http://localhost:15412/inbox
+```text
+pubkyauth://signin_grant?caps=/pub/pubky.app/:rw&relay=http://localhost:15412/inbox&secret=<...>&cid=grant-auth.example&cpk=<...>
 ```
 
-You can run a Browser 3rd party app that requires authentication with [**3rd-party-app**](/examples/rust/2-auth_flow/3rd-party-app)
+After approval, the browser receives a grant-backed session and displays the user's public key, client ID, grant ID, requested capabilities, and expiration metadata.
+
+The authenticator defaults to `../sample_recovery.key`, which has an empty passphrase. You'll be prompted for the recovery **passphrase** when using an encrypted recovery file.
+
+See [**2-auth-flow**](./2-auth-flow/README.md) for the browser app details. The Rust tree has a headless version of the third-party client at [**Authorization Flow**](/examples/rust/2-auth_flow/README.md).
 
 ### 3) Public storage read (no auth)
 

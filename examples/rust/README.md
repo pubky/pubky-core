@@ -10,7 +10,7 @@ Minimal examples for different flows and functions you might need to implement u
 ## Examples
 
 1. [**Authentication**](./1-signup/README.md): shows how to signup, signin or signout to and from a homeserver.
-2. [**Authorization Flow**](./2-auth_flow/README.md): shows how to setup Pubky authz for a 3rd party application and how to implement an authenticator to sign in such app.
+2. [**Authorization Flow**](./2-auth_flow/README.md): shows how to set up Pubky grant auth with a headless third-party client and an authenticator CLI.
 3. [**Storage**](./3-storage/README.md): authenticated write, read, and delete lifecycle on homeserver storage.
 4. [**Request**](./4-request/README.md): shows how to make direct HTTP requests to Pubky URLs.
 5. [**Signup Authorization Flow**](./5-auth_flow_signup/README.md): shows how to setup Pubky authz for a 3rd party application and how to implement an authenticator to sign up such app.

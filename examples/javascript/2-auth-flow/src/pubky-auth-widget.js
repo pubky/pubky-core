@@ -6,6 +6,7 @@ import * as pubky from "@synonymdev/pubky";
 
 const CLIENT_ID = "grant-auth.example";
 const DEFAULT_CAPABILITIES = "/pub/pubky.app/:rw,/pub/example.com/nested:rw";
+const TESTNET_RELAY = "http://localhost:15412/inbox";
 
 export class PubkyAuthWidget extends LitElement {
   static get properties() {
@@ -17,9 +18,11 @@ export class PubkyAuthWidget extends LitElement {
       _error: { type: String, state: true },
       _grantCapabilities: { type: Array, state: true },
       _grantClientId: { type: String, state: true },
+      _grantExpiresAt: { type: String, state: true },
       _grantId: { type: String, state: true },
       _phase: { type: String, state: true },
       _pubkyZ32: { type: String, state: true },
+      _tokenExpiresAt: { type: String, state: true },
     };
   }
 
@@ -34,22 +37,15 @@ export class PubkyAuthWidget extends LitElement {
     this._error = "";
     this._grantCapabilities = [];
     this._grantClientId = "";
+    this._grantExpiresAt = "";
     this._grantId = "";
     this._phase = "idle";
     this._pubkyZ32 = "";
+    this._tokenExpiresAt = "";
 
     this._canvas = null;
     this._flowRunId = 0;
     this._sdk = pubky.Pubky.testnet();
-  }
-
-  switchTestnet() {
-    this._setTestnet(!this.testnet);
-  }
-
-  setCapabilities(caps) {
-    this.caps = caps || "";
-    this._resetFlow();
   }
 
   _setTestnet(enabled) {
@@ -63,7 +59,8 @@ export class PubkyAuthWidget extends LitElement {
   }
 
   _toggleCapabilities(event) {
-    this.setCapabilities(event.target.checked ? DEFAULT_CAPABILITIES : "");
+    this.caps = event.target.checked ? DEFAULT_CAPABILITIES : "";
+    this._resetFlow();
   }
 
   _resetFlow() {
@@ -72,9 +69,11 @@ export class PubkyAuthWidget extends LitElement {
     this._error = "";
     this._grantCapabilities = [];
     this._grantClientId = "";
+    this._grantExpiresAt = "";
     this._grantId = "";
     this._phase = "idle";
     this._pubkyZ32 = "";
+    this._tokenExpiresAt = "";
     this.updateComplete.then(() => this._updateQr());
   }
 
@@ -84,15 +83,20 @@ export class PubkyAuthWidget extends LitElement {
     this._error = "";
     this._grantCapabilities = [];
     this._grantClientId = "";
+    this._grantExpiresAt = "";
     this._grantId = "";
     this._phase = "connecting";
     this._pubkyZ32 = "";
+    this._tokenExpiresAt = "";
 
     try {
+      const options = { clientId: CLIENT_ID };
+      if (this.testnet) options.relay = TESTNET_RELAY;
+
       const flow = await this._sdk.startGrantAuthFlow(
         this.caps,
         pubky.AuthFlowKind.signin(),
-        { clientId: CLIENT_ID },
+        options,
       );
       if (runId !== this._flowRunId) return;
 
@@ -110,6 +114,8 @@ export class PubkyAuthWidget extends LitElement {
       this._grantClientId = grantInfo.clientId;
       this._grantId = grantInfo.grantId;
       this._grantCapabilities = grantInfo.capabilities;
+      this._tokenExpiresAt = this._formatTime(grantInfo.tokenExpiresAt);
+      this._grantExpiresAt = this._formatTime(grantInfo.grantExpiresAt);
       this._logGrantMetadata(grantInfo);
       this._phase = "approved";
     } catch (e) {
@@ -152,6 +158,12 @@ export class PubkyAuthWidget extends LitElement {
       .filter(Boolean);
   }
 
+  _formatTime(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const date = new Date(typeof value === "number" ? value * 1000 : value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  }
+
   _logGrantMetadata(grantInfo) {
     console.log("Pubky grant metadata:", {
       publicKey: grantInfo.publicKey.z32(),
@@ -182,12 +194,12 @@ export class PubkyAuthWidget extends LitElement {
     return html`
       <section class="auth-shell">
         <div class="content">
-          <p class="eyebrow">Pubky Grant Auth · Rust example</p>
+          <p class="eyebrow">Pubky Grant Auth - JavaScript example</p>
           <h1>Grant Auth, step by step</h1>
           <p class="intro">
-            A demo for using Pubky Grant Auth in an unhosted app. Follow the flow
-            in order: create a request, approve it with the authenticator, then
-            receive a grant-backed session.
+            A browser demo for using Pubky Grant Auth in an unhosted app. Create
+            a request, approve it with the JS authenticator CLI, then receive a
+            grant-backed session.
           </p>
 
           ${this._renderConfigureStep(requestedCaps)}
@@ -231,6 +243,7 @@ export class PubkyAuthWidget extends LitElement {
             <div class="code-card">
               <div>client_id = ${CLIENT_ID}</div>
               <div>network = ${this.testnet ? "testnet" : "default"}</div>
+              <div>relay = ${this.testnet ? TESTNET_RELAY : "default"}</div>
               <div>caps = ${requestedCaps.length ? requestedCaps.join(", ") : "none"}</div>
             </div>
           </div>
@@ -247,7 +260,7 @@ export class PubkyAuthWidget extends LitElement {
           <div class="line"></div>
         </div>
         <div class="step-body">
-          <h2>Scan and approve</h2>
+          <h2>Copy and approve</h2>
           <div class="panel approve-panel">
             ${idle
               ? html`
@@ -266,15 +279,16 @@ export class PubkyAuthWidget extends LitElement {
                     <span>${this._authUrl}</span>
                     <strong>${this.showCopied ? "Copied" : "Copy"}</strong>
                   </button>
+                  <div class="code-card full-width">
+                    node 2-authenticator.mjs "&lt;AUTH_URL&gt;" ${this.testnet ? "--testnet" : ""}
+                  </div>
                   <div class="waiting-row">
                     <span class="spinner"></span>
                     <span>Waiting for authenticator approval...</span>
                   </div>
                 `
               : ""}
-            ${approved
-              ? html`<p class="success">Approved by user</p>`
-              : ""}
+            ${approved ? html`<p class="success">Approved by user</p>` : ""}
             ${errored
               ? html`
                   <p class="error">${this._error}</p>
@@ -308,6 +322,14 @@ export class PubkyAuthWidget extends LitElement {
                     <div>
                       <span>Grant ID</span>
                       <strong>${this._grantId}</strong>
+                    </div>
+                    <div>
+                      <span>Token expires</span>
+                      <strong>${this._tokenExpiresAt}</strong>
+                    </div>
+                    <div>
+                      <span>Grant expires</span>
+                      <strong>${this._grantExpiresAt}</strong>
                     </div>
                   </div>
                   ${this._grantCapabilities.length
@@ -446,7 +468,8 @@ export class PubkyAuthWidget extends LitElement {
         padding: 1rem;
       }
 
-      .controls {
+      .controls,
+      .session-panel {
         display: flex;
         flex-direction: column;
         gap: 0.625rem;
@@ -483,6 +506,11 @@ export class PubkyAuthWidget extends LitElement {
         font-size: 0.6875rem;
         line-height: 1.6;
         padding: 0.625rem 0.75rem;
+      }
+
+      .full-width {
+        width: 100%;
+        overflow-wrap: anywhere;
       }
 
       .approve-panel {
@@ -580,12 +608,6 @@ export class PubkyAuthWidget extends LitElement {
         font-size: 0.8125rem;
         line-height: 1.5;
         text-align: center;
-      }
-
-      .session-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
       }
 
       .detail-label {

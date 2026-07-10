@@ -12,10 +12,10 @@ Usage:
   node 2-authenticator.mjs "<AUTH_URL>" [--recovery-file <path>] [--testnet]
 
 Examples:
-  node 2-authenticator.mjs "pubkyauth:///?caps=/pub/my-cool-app/:rw&secret=...&relay=http://localhost:15412/inbox" --testnet
+  node 2-authenticator.mjs "<AUTH_URL>" --testnet
   node 2-authenticator.mjs "<AUTH_URL>" --testnet --recovery-file ./alice.recovery
 
-You can try this out with the example backend-less third party browser application in /examples/rust/2-auth_flow/3rd-party-app
+Try this with the browser grant auth example in examples/javascript/2-auth-flow.
 `;
 
 const a = args(process.argv.slice(2), { usage });
@@ -54,5 +54,5 @@ if (a.testnet) {
 // 4) Approve the auth request URL
 await signer.approveAuthRequest(authUrl);
 console.log(
-  "Auth token delivered to relay. The 3rd-party app should have a valid Session or AuthToken now.",
+  "Auth approval delivered to relay. The 3rd-party app should have a grant-backed session now.",
 );
