@@ -160,6 +160,19 @@ node 7-logging.mjs --testnet --level debug
 
 Override `--homeserver` when pointing at mainnet infrastructure, or change `--level` to reduce the noise.
 
+### 8) Session management
+
+Create, list, and delete grant-backed sessions from the command line.
+
+```bash
+node 8-session-management.mjs --testnet list
+node 8-session-management.mjs --testnet create
+node 8-session-management.mjs --testnet create --client-id my-app.example
+node 8-session-management.mjs --testnet delete <grant-id>
+```
+
+This example defaults to `../sample_recovery.key`, which has an empty passphrase. Listing and deleting sessions creates a temporary root-capability management session, then signs it out.
+
 ## Concepts you’ll bump into
 
 - **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).

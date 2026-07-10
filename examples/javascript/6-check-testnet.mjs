@@ -44,7 +44,7 @@ async function isTestnetAvailable() {
     await session.storage.putText(path, "hi");
 
     const roundtrip = await session.storage.getText(path);
-
+    await session.signout();
     return true
   } catch (e) {
     console.error("Testnet roundtrip failed, error:", e);
