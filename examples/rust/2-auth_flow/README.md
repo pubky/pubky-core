@@ -14,12 +14,6 @@ It consists of 2 parts:
 This example defaults to `../sample_recovery.key`, which has an empty passphrase.
 If that sample key cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
 
-(Optional) Generate a recovery file using the [keygen utility](../keygen.rs) when you want to use your own key:
-
-```bash
-cargo run --bin keygen
-```
-
 ## Usage
 
 First you need to be running a local testnet Homeserver, in the root of this repo run
