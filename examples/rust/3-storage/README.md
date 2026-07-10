@@ -6,7 +6,7 @@ This example defaults to:
 
 - path: `/pub/my-app/data.json`
 - content: `my data`
-- recovery file: `../sample_recovery.key`, which has an empty passphrase
+- recovery file: `../../sample_recovery.key`, which has an empty passphrase
 
 If the recovery file cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
 

@@ -4,7 +4,7 @@ Minimal examples for different flows and functions you might need to implement u
 
 ## Utilities
 
-- [**sample_recovery.key**](./sample_recovery.key): Sample recovery file with an empty passphrase, used by default in examples 1, 2, 3, and 7.
+- [**sample_recovery.key**](../sample_recovery.key): Sample recovery file with an empty passphrase, used by default in examples 1, 2, 3, and 7.
 - [**keygen**](./keygen.rs): Generate a keypair and save a passphrase-encrypted recovery file when you want to use your own key.
 
 ## Examples

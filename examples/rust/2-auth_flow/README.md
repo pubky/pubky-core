@@ -11,7 +11,7 @@ It consists of 2 parts:
 
 ## Recovery File
 
-This example defaults to `../sample_recovery.key`, which has an empty passphrase.
+This example defaults to `../../sample_recovery.key`, which has an empty passphrase.
 If that sample key cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
 
 ## Usage

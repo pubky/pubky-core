@@ -2,7 +2,7 @@
 
 Create, list, and delete grant-backed sessions from the command line.
 
-This example defaults to `../sample_recovery.key`, which has an empty passphrase. If the recovery file cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
+This example defaults to `../../sample_recovery.key`, which has an empty passphrase. If the recovery file cannot be decrypted with an empty passphrase, the CLI prompts for a passphrase.
 
 ## Usage
 

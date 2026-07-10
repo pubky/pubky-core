@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 pub const SAMPLE_RECOVERY_FILE: &str = "sample_recovery.key";
 
 pub fn sample_recovery_file() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_RECOVERY_FILE)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(SAMPLE_RECOVERY_FILE)
 }
 
 pub fn decrypt_recovery_file(path: &Path, prompt: &str) -> Result<Keypair> {

@@ -6,7 +6,7 @@ as opposed to using a the 3rd party [authorization flow](../2-auth_flow).
 
 ## Usage
 
-This example defaults to `../sample_recovery.key`, which has an empty passphrase.
+This example defaults to `../../sample_recovery.key`, which has an empty passphrase.
 Use `--recovery-file <PATH>` when you want to use your own recovery file.
 
 ### Signup

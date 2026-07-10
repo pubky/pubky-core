@@ -56,13 +56,16 @@ Each script is a single, commented file under the project root. Run examples exp
 Decrypts a recovery file, creates a `Signer`, and signs up on a homeserver.
 
 ```bash
-node 1-signup.mjs <homeserver_pubky> </path/to/recovery_file> [invitation_code] [--testnet]
+node 1-signup.mjs [homeserver_pubky] [--recovery-file <path>] [--signup-code <code>] [--testnet]
 
-# example (testnet homeserver)
-node 1-signup.mjs 8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo ./alice.recovery INVITE-123 --testnet
+# use the local testnet homeserver and sample recovery file
+node 1-signup.mjs --testnet
+
+# with a custom recovery file and signup code
+node 1-signup.mjs <homeserver_pubky> --recovery-file ./alice.recovery --signup-code INVITE-123
 ```
 
-You’ll be prompted for the recovery **passphrase**.
+This example defaults to `../sample_recovery.key`, which has an empty passphrase. You’ll be prompted for the recovery **passphrase** when using an encrypted recovery file.
 
 ### 2) Approve a Pubky Auth URL (authenticator)
 
