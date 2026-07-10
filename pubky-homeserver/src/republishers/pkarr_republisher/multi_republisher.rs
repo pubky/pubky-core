@@ -1,184 +1,124 @@
-use super::republisher::{RepublishError, RepublishInfo, RepublisherSettings};
+use super::republish_summary::{RepublishResult, RepublishSummary};
+use super::republisher::RepublisherSettings;
 use super::resilient_client::{ResilientClient, ResilientClientBuilderError};
-use pkarr::PublicKey;
-use std::collections::HashMap;
+use futures_util::{stream::FuturesUnordered, TryStreamExt};
+use pkarr::{ClientBuilder, PublicKey};
+use std::{num::NonZeroUsize, sync::Mutex};
 use tokio::time::Instant;
 
-#[derive(Debug, Clone)]
-pub struct MultiRepublishResult {
-    results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>>,
-}
+type PublicKeyQueue = Mutex<Vec<PublicKey>>;
 
-impl MultiRepublishResult {
-    pub fn new(results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>>) -> Self {
-        Self { results }
-    }
-
-    /// Number of keys
-    pub fn len(&self) -> usize {
-        self.results.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.results.is_empty()
-    }
-
-    /// Number of successfully published keys.
-    pub fn success_count(&self) -> usize {
-        self.results
-            .values()
-            .filter(|result| result.is_ok())
-            .count()
-    }
-
-    /// Number of keys that failed to publish.
-    pub fn publishing_failed_count(&self) -> usize {
-        self.results
-            .values()
-            .filter(|result| {
-                result
-                    .as_ref()
-                    .is_err_and(RepublishError::is_publish_failed)
-            })
-            .count()
-    }
-
-    /// Number of keys that are missing and could not be republished.
-    pub fn missing_count(&self) -> usize {
-        self.results
-            .values()
-            .filter(|result| result.as_ref().is_err_and(RepublishError::is_missing))
-            .count()
-    }
-}
-
-/// Republish multiple keys in a serially or multi-threaded way/
+/// Republish multiple keys serially or concurrently.
 #[derive(Debug, Clone, Default)]
 pub struct MultiRepublisher {
     settings: RepublisherSettings,
-    client_builder: pkarr::ClientBuilder,
+    client_builder: ClientBuilder,
 }
 
 impl MultiRepublisher {
     /// Create a new republisher with the settings.
-    /// The republisher ignores the settings.client but instead uses the client_builder to create multiple
-    /// pkarr clients instead of just one.
-    pub fn new_with_settings(
-        mut settings: RepublisherSettings,
-        client_builder: pkarr::ClientBuilder,
-    ) -> Self {
-        settings.client = None; // Remove client if it's there because every thread will have it's own.
+    pub fn new_with_settings(settings: RepublisherSettings, client_builder: ClientBuilder) -> Self {
         Self {
             settings,
             client_builder,
         }
     }
 
-    /// Go through the list of all public keys and republish them serially.
-    async fn run_serially(
-        &self,
-        public_keys: Vec<PublicKey>,
-    ) -> Result<
-        HashMap<PublicKey, Result<RepublishInfo, RepublishError>>,
-        ResilientClientBuilderError,
-    > {
-        let mut results: HashMap<PublicKey, Result<RepublishInfo, RepublishError>> =
-            HashMap::with_capacity(public_keys.len());
-        tracing::debug!("Start to republish {} public keys.", public_keys.len());
-        // TODO: Inspect pkarr reliability.
-        // pkarr client gets really unreliable when used in parallel. To get around this, we use one client per run().
-        let client = self.client_builder.clone().build()?;
-        let rclient =
-            ResilientClient::new_with_client(client, self.settings.retry_settings.clone())?;
-        for key in public_keys {
-            let start = Instant::now();
-            let res = rclient
-                .republish(
-                    key.clone(),
-                    Some(self.settings.min_sufficient_node_publish_count),
-                )
-                .await;
-
-            let elapsed = start.elapsed().as_millis();
-            match &res {
-                Ok(info) => {
-                    tracing::info!(
-                        "Republished {key} successfully on {} nodes within {elapsed}ms. attemps={}",
-                        info.published_nodes_count,
-                        info.attempts_needed
-                    )
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to republish public_key {key} within {elapsed}ms. {e}");
-                }
-            }
-
-            results.insert(key.clone(), res);
-        }
-        Ok(results)
-    }
-
-    /// Republish keys in a parallel fashion, using multiple threads for better performance.
-    /// A good thread size is around 10 for most computers. With high performance cores, you can push
-    /// it to 40+.
+    /// Republish keys concurrently with at most `max_concurrent_workers` active clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a worker cannot build a DHT-enabled pkarr client.
     pub async fn run(
         &self,
         public_keys: Vec<PublicKey>,
-        thread_count: u8,
-    ) -> Result<MultiRepublishResult, ResilientClientBuilderError> {
-        let chunk_size = public_keys.len().div_ceil(thread_count as usize);
-        let chunks = public_keys
-            .chunks(chunk_size)
-            .map(|chunk| chunk.to_vec())
-            .collect::<Vec<_>>();
+        max_concurrent_workers: NonZeroUsize,
+    ) -> Result<RepublishSummary, ResilientClientBuilderError> {
+        let worker_count = max_concurrent_workers.get().min(public_keys.len());
+        let public_keys = Mutex::new(public_keys);
 
-        // Run in parallel
-        let mut handles = Vec::new();
-        for chunk in chunks {
-            let publisher = self.clone();
-            let handle = tokio::spawn(async move { publisher.run_serially(chunk).await });
-            handles.push(handle);
-        }
-
-        // Join results of all tasks
-        let mut results = HashMap::with_capacity(public_keys.len());
-        for handle in handles {
-            match handle.await {
-                Ok(result) => results.extend(result?),
-                Err(e) => {
-                    tracing::error!("Failed to join handle in MultiRepublisher::run: {e}");
-                }
-            }
-        }
-
-        Ok(MultiRepublishResult::new(results))
+        (0..worker_count)
+            .map(|_| self.run_worker(&public_keys))
+            .collect::<FuturesUnordered<_>>()
+            .try_fold(RepublishSummary::default(), merge_summaries)
+            .await
     }
+
+    async fn run_worker(
+        &self,
+        public_keys: &PublicKeyQueue,
+    ) -> Result<RepublishSummary, ResilientClientBuilderError> {
+        let client = self.client_builder.build()?;
+        let client = ResilientClient::new(client, self.settings.clone())?;
+
+        let mut summary = RepublishSummary::default();
+        while let Some(public_key) = pop(public_keys) {
+            summary.record(republish_key(&client, &public_key).await);
+        }
+        Ok(summary)
+    }
+}
+
+async fn republish_key(client: &ResilientClient, public_key: &PublicKey) -> RepublishResult {
+    let start = Instant::now();
+    let result = client.republish(public_key).await;
+    let elapsed = start.elapsed().as_millis();
+
+    match &result {
+        Ok(info) => tracing::info!(
+            "Republished {public_key} successfully on {} nodes within {elapsed}ms. attempts={}",
+            info.published_nodes_count,
+            info.attempts_needed
+        ),
+        Err(error) => tracing::warn!(
+            "Failed to republish public_key {public_key} within {elapsed}ms. {error}"
+        ),
+    }
+    result
+}
+
+async fn merge_summaries(
+    summary: RepublishSummary,
+    worker_summary: RepublishSummary,
+) -> Result<RepublishSummary, ResilientClientBuilderError> {
+    Ok(summary.merge(worker_summary))
+}
+
+fn pop(public_keys: &PublicKeyQueue) -> Option<PublicKey> {
+    public_keys
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .pop()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU8;
+    use std::num::{NonZeroU8, NonZeroUsize};
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
-    use super::MultiRepublisher;
+    use super::{MultiRepublisher, RepublishSummary};
     use crate::republishers::pkarr_republisher::republisher::RepublisherSettings;
 
     async fn publish_sample_packets(client: &pkarr::Client, count: usize) -> Vec<PublicKey> {
         let keys: Vec<Keypair> = (0..count).map(|_| Keypair::random()).collect();
-        for key in keys.iter() {
+        for key in &keys {
             let packet = pkarr::SignedPacketBuilder::default()
                 .cname(Name::new("test").unwrap(), Name::new("test2").unwrap(), 600)
                 .build(key)
                 .unwrap();
-            let _ = client.publish(&packet, None).await;
+            client
+                .publish(&packet, None)
+                .await
+                .expect("sample packet should publish");
         }
 
         keys.into_iter().map(|key| key.public_key()).collect()
     }
 
-    #[tokio::test]
-    async fn single_key_republish_success() {
+    async fn republish_single_key(
+        min_sufficient_node_publish_count: NonZeroU8,
+    ) -> RepublishSummary {
         let dht = pkarr::mainline::Testnet::builder(3)
             .seeded(false)
             .build()
@@ -186,43 +126,30 @@ mod tests {
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
-
         let public_keys = publish_sample_packets(&pkarr_client, 1).await;
-        let public_key = public_keys.first().unwrap().clone();
 
         let mut settings = RepublisherSettings::default();
-        settings
-            .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(3).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, pkarr_builder);
-        let results = publisher.run_serially(public_keys).await.unwrap();
-        let result = results.get(&public_key).unwrap();
-        if let Err(e) = result {
-            println!("Err {e}");
-        }
-        assert!(result.is_ok());
+        settings.min_sufficient_node_publish_count(min_sufficient_node_publish_count);
+
+        MultiRepublisher::new_with_settings(settings, pkarr_builder)
+            .run(public_keys, NonZeroUsize::MIN)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn single_key_republish_success() {
+        let summary = republish_single_key(NonZeroU8::new(3).unwrap()).await;
+
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary.success_count(), 1);
     }
 
     #[tokio::test]
     async fn single_key_republish_insufficient() {
-        let dht = pkarr::mainline::Testnet::builder(3)
-            .seeded(false)
-            .build()
-            .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
-        let pkarr_client = pkarr_builder.clone().build().unwrap();
+        let summary = republish_single_key(NonZeroU8::new(4).unwrap()).await;
 
-        let public_keys = publish_sample_packets(&pkarr_client, 1).await;
-        let public_key = public_keys.first().unwrap().clone();
-
-        let mut settings = RepublisherSettings::default();
-        settings
-            .pkarr_client(pkarr_client)
-            .min_sufficient_node_publish_count(NonZeroU8::new(4).unwrap());
-        let publisher = MultiRepublisher::new_with_settings(settings, pkarr_builder);
-        let results = publisher.run_serially(public_keys).await.unwrap();
-        let result = results.get(&public_key).unwrap();
-        assert!(result.is_err());
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary.publishing_failed_count(), 1);
     }
 }
