@@ -73,8 +73,16 @@ Given a `pubkyauth://` URL (QR/deeplink), approves it using a recovery file.
 With `--testnet`, it first ensures the user exists by doing a signup (no invite required).
 
 ```bash
-node 2-authenticator.mjs </path/to/recovery_file> "<AUTH_URL>" [--testnet] [--homeserver <pk>]
+node 2-authenticator.mjs "<AUTH_URL>" [--recovery-file <path>] [--testnet]
+
+# local testnet with sample recovery file
+node 2-authenticator.mjs "<AUTH_URL>" --testnet
+
+# custom recovery file
+node 2-authenticator.mjs "<AUTH_URL>" --testnet --recovery-file ./alice.recovery
 ```
+
+This example defaults to `../sample_recovery.key`, which has an empty passphrase. You’ll be prompted for the recovery **passphrase** when using an encrypted recovery file.
 
 Example URL looks like:
 
