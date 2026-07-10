@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 #[path = "../recovery.rs"]
 mod recovery;
+#[path = "../testnet.rs"]
+mod testnet;
 
 /// local testnet HOMESERVER
 const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -102,7 +104,7 @@ async fn create_session_for(cli: &Cli, client_id: &str) -> Result<PubkySession> 
     let signer = pubky.signer(keypair);
     if cli.testnet {
         let homeserver = &PublicKey::try_from(TESTNET_HOMESERVER)?;
-        recovery::ensure_testnet_signup(&signer, homeserver).await?;
+        testnet::ensure_signup(&signer, homeserver).await?;
     }
 
     Ok(signer.signin(ClientId::new(client_id)?).await?)

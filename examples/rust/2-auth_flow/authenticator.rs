@@ -6,6 +6,8 @@ use url::Url;
 
 #[path = "../recovery.rs"]
 mod recovery;
+#[path = "../testnet.rs"]
+mod testnet;
 
 /// local testnet HOMESERVER
 const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -72,7 +74,7 @@ async fn main() -> Result<()> {
 
         // For the purposes of this demo, we need to make sure
         // the user has an account on the local homeserver.
-        recovery::ensure_testnet_signup(&signer, homeserver).await?;
+        testnet::ensure_signup(&signer, homeserver).await?;
 
         signer
     } else {

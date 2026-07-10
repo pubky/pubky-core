@@ -1,5 +1,5 @@
 use anyhow::Result;
-use pubky::{Keypair, PubkySigner, PublicKey};
+use pubky::Keypair;
 use std::path::{Path, PathBuf};
 
 pub const SAMPLE_RECOVERY_FILE: &str = "sample_recovery.key";
@@ -23,23 +23,4 @@ pub fn decrypt_recovery_file(path: &Path, prompt: &str) -> Result<Keypair> {
         &recovery_file,
         &passphrase,
     )?)
-}
-
-pub async fn ensure_testnet_signup(signer: &PubkySigner, homeserver: &PublicKey) -> Result<()> {
-    match signer.signup(homeserver, None).await {
-        Ok(()) => println!("Signed up to the testnet homeserver."),
-        Err(pubky::Error::Request(pubky::errors::RequestError::Server { status, .. }))
-            if status == reqwest::StatusCode::CONFLICT =>
-        {
-            println!("Testnet user already exists, continuing...");
-            signer
-                .pkdns()
-                .publish_homeserver_force(Some(homeserver))
-                .await?;
-            println!("Published testnet homeserver record.");
-        }
-        Err(err) => return Err(err.into()),
-    }
-
-    Ok(())
 }
