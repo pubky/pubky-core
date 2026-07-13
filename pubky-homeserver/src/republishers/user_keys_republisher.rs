@@ -1,7 +1,7 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use super::pkarr_republisher::{
-    MultiRepublisher, RepublishSummary, RepublisherSettings, ResilientClientBuilderError,
+    MultiRepublisher, MultiRepublisherError, RepublishSummary, RepublisherSettings,
 };
 use pubky_common::crypto::PublicKey;
 use tokio::{
@@ -18,7 +18,7 @@ pub(crate) enum UserKeysRepublisherError {
     #[error(transparent)]
     DB(#[from] sqlx::Error),
     #[error(transparent)]
-    Pkarr(#[from] ResilientClientBuilderError),
+    Pkarr(#[from] MultiRepublisherError),
 }
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.
@@ -106,7 +106,7 @@ impl UserKeysRepublisher {
             return Ok(RepublishSummary::default());
         }
         let settings = RepublisherSettings::default();
-        let republisher = MultiRepublisher::new_with_settings(settings, self.pkarr_builder.clone());
+        let republisher = MultiRepublisher::new(settings, self.pkarr_builder.clone());
         // TODO: Only publish if user points to this home server.
         let pkarr_keys = keys.into_iter().map(Into::into).collect();
         let max_concurrent_workers =

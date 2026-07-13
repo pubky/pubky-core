@@ -24,6 +24,7 @@ axum-extra = { version = "0.10", features = [
     "typed-header",
     "async-read-body",
 ] }
+backon = { version = "1", default-features = false, features = ["tokio-sleep"] }
 base32.workspace = true
 base64.workspace = true
 bytes.workspace = true
