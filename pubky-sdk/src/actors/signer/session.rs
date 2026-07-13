@@ -265,8 +265,7 @@ impl PubkySigner {
     ) -> GrantClaims {
         let now = web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
         GrantClaims {
             iss: self.keypair.public_key(),
             client_id,

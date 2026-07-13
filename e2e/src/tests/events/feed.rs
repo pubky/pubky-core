@@ -51,7 +51,13 @@ async fn list_events() {
         let lines = text.split('\n').collect::<Vec<_>>();
 
         // last line is "cursor: <id>"
-        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
+        let cursor = lines
+            .last()
+            .unwrap()
+            .split(' ')
+            .next_back()
+            .unwrap()
+            .to_string();
 
         assert_eq!(
             lines,
@@ -142,7 +148,13 @@ async fn read_after_event() {
 
         let text = resp.text().await.unwrap();
         let lines = text.split('\n').collect::<Vec<_>>();
-        let cursor = lines.last().unwrap().split(' ').last().unwrap().to_string();
+        let cursor = lines
+            .last()
+            .unwrap()
+            .split(' ')
+            .next_back()
+            .unwrap()
+            .to_string();
 
         assert_eq!(
             lines,
