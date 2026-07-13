@@ -9,21 +9,22 @@
 use axum::{
     body::Body,
     extract::{RawQuery, State},
-    http::{header, Response, StatusCode},
+    http::{header, HeaderMap, Response, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
     },
 };
 use futures_util::stream::Stream;
-use pubky_common::crypto::PublicKey;
+use pubky_common::{crypto::PublicKey, storage};
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
+use tower_cookies::Cookies;
 use url::form_urlencoded;
 
 use crate::{
     client_server::{
-        auth::{has_read_permission, AuthSession},
+        auth::{grant::bearer::extract_bearer_token, has_read_permission, AuthSession},
         query_params::ListQueryParams,
         AppState,
     },
@@ -80,6 +81,36 @@ pub struct EventStreamQueryParams {
     /// Repeatable path filters. Each value is a path WITHOUT the `pubky://`
     /// scheme or user pubkey, e.g. `/pub/files/`, `pub/files/`, `/priv/app/`..
     pub paths: Vec<WebDavPath>,
+}
+
+#[derive(Clone, Copy)]
+enum EventStreamTenantScope<'a> {
+    PublicOnly,
+    PrivateSingleTenant(&'a PublicKey),
+    PrivateUnsupported,
+}
+
+impl<'a> EventStreamTenantScope<'a> {
+    fn from_query(paths: &[WebDavPath], user_cursors: &'a [(PublicKey, Option<String>)]) -> Self {
+        if !paths
+            .iter()
+            .any(|path| storage::is_private_path(path.as_str()))
+        {
+            return Self::PublicOnly;
+        }
+
+        match user_cursors {
+            [(tenant, _)] => Self::PrivateSingleTenant(tenant),
+            _ => Self::PrivateUnsupported,
+        }
+    }
+
+    fn tenant(self) -> Option<&'a PublicKey> {
+        match self {
+            Self::PrivateSingleTenant(tenant) => Some(tenant),
+            Self::PublicOnly | Self::PrivateUnsupported => None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -303,15 +334,24 @@ pub async fn feed(
 pub async fn feed_stream(
     State(state): State<AppState>,
     session: Option<AuthSession>,
+    headers: HeaderMap,
+    cookies: Cookies,
     raw_query: RawQuery,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let params =
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
+    let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
-    // Authorize the requested path filters before doing any work. Public paths
-    // need no session; any `/priv/` path requires a session whose single user
-    // matches and that holds a covering read capability.
-    let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
+    // Bearer auth disables the homeserver-addressed cookie fallback.
+    let session = match session {
+        Some(session) => Some(session),
+        None if !has_bearer_auth(&headers) => {
+            resolve_tenant_cookie_session(&state, &cookies, tenant_scope).await
+        }
+        None => None,
+    };
+
+    let allowed_paths = authorized_paths(&params.paths, tenant_scope, session.as_ref())?;
 
     let mut user_cursor_map =
         resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
@@ -480,39 +520,40 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
-/// Authorize the requested `path`s and return the allow-list to apply to both
-/// the historical replay and the live phase.
-///
-/// - No requested path → implicit public-only (`/pub/`), no session needed.
-/// - Public (`/pub/...`) paths need no capability.
-/// - Any private (`/priv/...`) path requires a session (else 401), exactly one
-///   `user=` equal to the session user (else 403), and a read capability
-///   covering each private path (else 403).
-///
-/// If any requested private path is unauthorized the whole subscription is
-/// rejected.
+fn has_bearer_auth(headers: &HeaderMap) -> bool {
+    extract_bearer_token(headers).has_bearer_scheme()
+}
+
+async fn resolve_tenant_cookie_session(
+    state: &AppState,
+    cookies: &Cookies,
+    scope: EventStreamTenantScope<'_>,
+) -> Option<AuthSession> {
+    let EventStreamTenantScope::PrivateSingleTenant(tenant) = scope else {
+        return None;
+    };
+    let cookie_value = cookies.get(&tenant.z32()).map(|c| c.value().to_string());
+    state
+        .auth_state
+        .cookie_auth_service
+        .resolve_session_from_cookie(cookie_value, tenant)
+        .await
+}
+
 fn authorized_paths(
     paths: &[WebDavPath],
-    user_cursors: &[(PublicKey, Option<String>)],
+    scope: EventStreamTenantScope<'_>,
     session: Option<&AuthSession>,
 ) -> Result<Vec<PathFilter>, HttpError> {
-    // No path requested: default to public-only.
     if paths.is_empty() {
         return Ok(vec![
             WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
         ]);
     }
 
-    // The tenant to authorize each path against. A private read is single-tenant,
-    // so a tenant only exists when the subscription names exactly one user.
-    let tenant = match user_cursors {
-        [(pubkey, _)] => Some(pubkey),
-        _ => None,
-    };
-
     let mut allowed = Vec::with_capacity(paths.len());
     for path in paths {
-        has_read_permission(session, tenant, path)?;
+        has_read_permission(session, scope.tenant(), path)?;
         allowed.push(path.clone().into());
     }
     Ok(allowed)
@@ -545,6 +586,7 @@ fn should_include_live_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
     use crate::client_server::auth::grant::session::GrantSession;
     use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
@@ -571,6 +613,19 @@ mod tests {
         })
     }
 
+    fn cookie_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
+        AuthSession::Cookie(SessionEntity {
+            id: 1,
+            secret: SessionSecret::random(),
+            user_id: 1,
+            user_pubkey: user_key,
+            capabilities,
+            created_at: sqlx::types::chrono::DateTime::from_timestamp(0, 0)
+                .expect("valid timestamp")
+                .naive_utc(),
+        })
+    }
+
     fn cursors(keys: &[&PublicKey]) -> Vec<(PublicKey, Option<String>)> {
         keys.iter().map(|k| ((*k).clone(), None)).collect()
     }
@@ -580,6 +635,40 @@ mod tests {
             .expect_err("expected the subscription to be rejected")
             .into_response()
             .status()
+    }
+
+    fn authorize(
+        paths: &[WebDavPath],
+        user_cursors: &[(PublicKey, Option<String>)],
+        session: Option<&AuthSession>,
+    ) -> Result<Vec<PathFilter>, HttpError> {
+        authorized_paths(
+            paths,
+            EventStreamTenantScope::from_query(paths, user_cursors),
+            session,
+        )
+    }
+
+    fn authorization_headers(value: axum::http::HeaderValue) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, value);
+        headers
+    }
+
+    #[test]
+    fn has_bearer_auth_uses_bearer_scheme() {
+        let cases = [
+            (b"Bearer token".as_slice(), true),
+            (b"Bearer \xff".as_slice(), true),
+            (b"Basic \xff".as_slice(), false),
+        ];
+
+        for (value, expected) in cases {
+            let headers = authorization_headers(
+                axum::http::HeaderValue::from_bytes(value).expect("valid header bytes"),
+            );
+            assert_eq!(has_bearer_auth(&headers), expected, "{value:?}");
+        }
     }
 
     #[test]
@@ -613,24 +702,44 @@ mod tests {
     }
 
     #[test]
-    fn no_path_defaults_to_public_dir_filter() {
+    fn authorized_paths_defaults_to_public_dir_filter() {
         let u = pk();
-        let filters = authorized_paths(&[], &cursors(&[&u]), None).unwrap();
+        let filters = authorize(&[], &cursors(&[&u]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 
     #[test]
-    fn anonymous_private_path_is_unauthorized() {
+    fn authorized_paths_rejects_anonymous_private_path() {
         let u = pk();
-        let status = reject_status(authorized_paths(&[wd("/priv/app/")], &cursors(&[&u]), None));
+        let status = reject_status(authorize(&[wd("/priv/app/")], &cursors(&[&u]), None));
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[test]
-    fn private_path_with_multiple_users_is_forbidden() {
+    fn authorized_paths_allows_cookie_session_own_private_path() {
+        let owner = pk();
+        let session = cookie_session(owner.clone(), Capabilities::from(vec![Capability::root()]));
+        let filters = authorize(&[wd("/priv/app/")], &cursors(&[&owner]), Some(&session)).unwrap();
+        assert_eq!(filters, vec![pf("/priv/app/")]);
+    }
+
+    #[test]
+    fn authorized_paths_rejects_wrong_tenant() {
+        let (a, b) = (pk(), pk());
+        let session = cookie_session(a, Capabilities::from(vec![Capability::root()]));
+        let status = reject_status(authorize(
+            &[wd("/priv/app/")],
+            &cursors(&[&b]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn authorized_paths_rejects_private_path_with_multiple_users() {
         let (a, b) = (pk(), pk());
         let session = grant_session(a.clone(), Capabilities::from(vec![Capability::root()]));
-        let status = reject_status(authorized_paths(
+        let status = reject_status(authorize(
             &[wd("/priv/app/")],
             &cursors(&[&a, &b]),
             Some(&session),
@@ -639,14 +748,13 @@ mod tests {
     }
 
     #[test]
-    fn private_path_under_scoped_session_is_forbidden() {
+    fn authorized_paths_rejects_under_scoped_private_path() {
         let owner = pk();
         let session = grant_session(
             owner.clone(),
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        // A sibling scope not covered by the read cap.
-        let status = reject_status(authorized_paths(
+        let status = reject_status(authorize(
             &[wd("/priv/other/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -655,13 +763,13 @@ mod tests {
     }
 
     #[test]
-    fn mixed_public_and_private_authorized_union() {
+    fn authorized_paths_allows_mixed_public_and_private_union() {
         let owner = pk();
         let session = grant_session(
             owner.clone(),
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        let filters = authorized_paths(
+        let filters = authorize(
             &[wd("/pub/"), wd("/priv/app/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -671,9 +779,9 @@ mod tests {
     }
 
     #[test]
-    fn public_paths_with_multiple_users_are_authorized() {
+    fn authorized_paths_allows_public_paths_with_multiple_users() {
         let (a, b) = (pk(), pk());
-        let filters = authorized_paths(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
+        let filters = authorize(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 }

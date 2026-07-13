@@ -14,7 +14,7 @@ use pkarr::{
 
 use crate::{
     Keypair, PubkyHttpClient, PubkySigner, PublicKey, cross_log,
-    errors::{AuthError, Error, PkarrError, Result},
+    errors::{AuthError, Error, PkarrError, RequestError, Result},
 };
 
 /// Default staleness window for homeserver `_pubky` Pkarr records (1 hour).
@@ -139,10 +139,9 @@ impl Pkdns {
 
     // -------------------- Reads --------------------
 
-    /// Resolve current homeserver host for a user public key via Pkarr (no keypair required).
+    /// Resolve a user's homeserver public key via Pkarr.
     ///
-    /// Returns the `_pubky` SVCB/HTTPS target (domain or pubkey-as-host),
-    /// or `None` if the record is missing/unresolvable.
+    /// Returns `None` for missing records and for domain-only `_pubky` targets.
     pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
         cross_log!(
             info,
@@ -159,6 +158,20 @@ impl Pkdns {
             result
         );
         result
+    }
+
+    pub(crate) async fn require_homeserver_of(
+        &self,
+        user_public_key: &PublicKey,
+    ) -> Result<PublicKey> {
+        self.get_homeserver_of(user_public_key)
+            .await
+            .ok_or_else(|| {
+                RequestError::Validation {
+                    message: format!("could not resolve homeserver for {}", user_public_key.z32()),
+                }
+                .into()
+            })
     }
 
     /// Convenience: resolve the homeserver for **this** user (requires keypair on `Pkdns`).
@@ -436,6 +449,27 @@ pub fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
 mod tests {
     use super::*;
     use pkarr::dns::rdata::TXT;
+
+    #[tokio::test]
+    async fn require_homeserver_of_returns_validation_when_unresolved() {
+        let client = PubkyHttpClient::builder()
+            .pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]))
+            .build()
+            .expect("client");
+        let pkdns = Pkdns::with_client(client);
+        let user = Keypair::random().public_key();
+
+        let err = pkdns
+            .require_homeserver_of(&user)
+            .await
+            .expect_err("missing homeserver should be a validation error");
+
+        assert!(matches!(
+            err,
+            Error::Request(crate::errors::RequestError::Validation { message })
+                if message == format!("could not resolve homeserver for {}", user.z32())
+        ));
+    }
 
     #[test]
     fn republish_preserves_non_pubky_records() {
