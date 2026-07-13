@@ -80,6 +80,13 @@ async fn main() -> anyhow::Result<()> {
 
 Use `cargo run -- --data-dir=~/.pubky`.
 
+## Caching and Proxies
+
+Tenant-private responses must never be stored by shared caches. `/priv/...`
+responses and `/events-stream` use `Cache-Control: no-store` and vary on
+`pubky-host`, `Authorization`, and `Cookie`; `/pub/...` file validators keep
+their existing tenant-aware caching behavior.
+
 ## Signup Token
 
 If homeserver is set to require signup tokens, you can create a new signup token using the admin endpoint:
