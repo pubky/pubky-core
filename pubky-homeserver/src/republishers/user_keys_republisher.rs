@@ -1,7 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 use super::pkarr_republisher::{
-    MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
+    MultiRepublisher, RepublishSummary, RepublisherSettings, ResilientClientBuilderError,
 };
 use pubky_common::crypto::PublicKey;
 use tokio::{
@@ -87,29 +87,31 @@ impl UserKeysRepublisher {
     async fn republish(&self) {
         let start = Instant::now();
         tracing::debug!("Republishing user keys...");
-        let result = match self.republish_impl().await {
-            Ok(result) if result.is_empty() => return,
-            Ok(result) => result,
+        let summary = match self.republish_impl().await {
+            Ok(summary) if summary.is_empty() => return,
+            Ok(summary) => summary,
             Err(e) => {
                 tracing::error!("Error republishing user keys: {e:?}");
                 return;
             }
         };
         let elapsed = start.elapsed();
-        Self::log_republish_result(&result, elapsed);
+        Self::log_republish_summary(&summary, elapsed);
     }
 
-    async fn republish_impl(&self) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
+    async fn republish_impl(&self) -> Result<RepublishSummary, UserKeysRepublisherError> {
         let keys = self.get_all_user_keys().await?;
         if keys.is_empty() {
             tracing::debug!("No user keys to republish.");
-            return Ok(MultiRepublishResult::new(HashMap::new()));
+            return Ok(RepublishSummary::default());
         }
         let settings = RepublisherSettings::default();
         let republisher = MultiRepublisher::new_with_settings(settings, self.pkarr_builder.clone());
         // TODO: Only publish if user points to this home server.
         let pkarr_keys = keys.into_iter().map(Into::into).collect();
-        Ok(republisher.run(pkarr_keys, 12).await?)
+        let max_concurrent_workers =
+            NonZeroUsize::new(12).expect("worker count should be non-zero");
+        Ok(republisher.run(pkarr_keys, max_concurrent_workers).await?)
     }
 
     async fn get_all_user_keys(&self) -> Result<Vec<PublicKey>, sqlx::Error> {
@@ -117,12 +119,12 @@ impl UserKeysRepublisher {
         Ok(users.into_iter().map(|user| user.public_key).collect())
     }
 
-    fn log_republish_result(result: &MultiRepublishResult, elapsed: Duration) {
-        let total_count = result.len();
+    fn log_republish_summary(summary: &RepublishSummary, elapsed: Duration) {
+        let total_count = summary.len();
         let elapsed_secs = elapsed.as_secs_f32();
-        let success_count = result.success_count();
-        let missing_count = result.missing_count();
-        let failed_count = result.publishing_failed_count();
+        let success_count = summary.success_count();
+        let missing_count = summary.missing_count();
+        let failed_count = summary.publishing_failed_count();
 
         if missing_count == 0 {
             tracing::debug!(
@@ -161,10 +163,10 @@ mod tests {
         let db = init_db_with_users(10).await;
         let pkarr_builder = pkarr::ClientBuilder::default();
         let worker = UserKeysRepublisher { db, pkarr_builder };
-        let result = worker.republish_impl().await.unwrap();
-        assert_eq!(result.len(), 10);
-        assert_eq!(result.success_count(), 0);
-        assert_eq!(result.missing_count(), 10);
-        assert_eq!(result.publishing_failed_count(), 0);
+        let summary = worker.republish_impl().await.unwrap();
+        assert_eq!(summary.len(), 10);
+        assert_eq!(summary.success_count(), 0);
+        assert_eq!(summary.missing_count(), 10);
+        assert_eq!(summary.publishing_failed_count(), 0);
     }
 }

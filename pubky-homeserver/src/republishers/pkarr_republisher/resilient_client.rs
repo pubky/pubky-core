@@ -1,8 +1,5 @@
-use std::num::NonZeroU8;
-
 use pkarr::PublicKey;
 
-use super::publisher::RetrySettings;
 use super::republisher::{RepublishError, RepublishInfo, Republisher, RepublisherSettings};
 
 #[derive(Debug, thiserror::Error)]
@@ -22,37 +19,24 @@ pub enum ResilientClientBuilderError {
 #[derive(Debug, Clone)]
 pub struct ResilientClient {
     client: pkarr::Client,
-    retry_settings: RetrySettings,
+    settings: RepublisherSettings,
 }
 
 impl ResilientClient {
-    pub fn new_with_client(
+    pub fn new(
         client: pkarr::Client,
-        retry_settings: RetrySettings,
+        settings: RepublisherSettings,
     ) -> Result<Self, ResilientClientBuilderError> {
         if client.dht().is_none() {
             return Err(ResilientClientBuilderError::DhtNotEnabled);
         }
-        Ok(Self {
-            client,
-            retry_settings,
-        })
+        Ok(Self { client, settings })
     }
 
     /// Republishes a pkarr packet with retries. Verifies it's been stored correctly.
-    pub async fn republish(
-        &self,
-        public_key: PublicKey,
-        min_sufficient_node_publish_count: Option<NonZeroU8>,
-    ) -> Result<RepublishInfo, RepublishError> {
-        let mut settings = RepublisherSettings::default();
-        settings.pkarr_client(self.client.clone());
-        if let Some(count) = min_sufficient_node_publish_count {
-            settings.min_sufficient_node_publish_count = count;
-        };
-        settings.retry_settings(self.retry_settings.clone());
-        let publisher = Republisher::new_with_settings(public_key, settings)
-            .expect("infallible because pkarr client provided.");
-        publisher.republish().await
+    pub async fn republish(&self, public_key: &PublicKey) -> Result<RepublishInfo, RepublishError> {
+        Republisher::new_with_settings(self.client.clone(), self.settings.clone())
+            .republish(public_key)
+            .await
     }
 }
