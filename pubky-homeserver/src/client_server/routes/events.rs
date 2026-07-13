@@ -151,10 +151,8 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
                 live = value == "true" || value == "1";
             }
             // `path` is repeatable; empty values are ignored.
-            "path" => {
-                if !value.is_empty() {
-                    paths.push(value.to_string());
-                }
+            "path" if !value.is_empty() => {
+                paths.push(value.to_string());
             }
             _ => {} // Ignore unknown parameters
         }
