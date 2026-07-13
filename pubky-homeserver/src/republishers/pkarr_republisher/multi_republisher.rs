@@ -116,7 +116,9 @@ mod tests {
         keys.into_iter().map(|key| key.public_key()).collect()
     }
 
-    async fn republish_single_key(
+    async fn republish_keys(
+        key_count: usize,
+        max_concurrent_workers: NonZeroUsize,
         min_sufficient_node_publish_count: NonZeroU8,
     ) -> RepublishSummary {
         let dht = pkarr::mainline::Testnet::builder(3)
@@ -126,15 +128,21 @@ mod tests {
         let mut pkarr_builder = pkarr::ClientBuilder::default();
         pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
         let pkarr_client = pkarr_builder.clone().build().unwrap();
-        let public_keys = publish_sample_packets(&pkarr_client, 1).await;
+        let public_keys = publish_sample_packets(&pkarr_client, key_count).await;
 
         let mut settings = RepublisherSettings::default();
         settings.min_sufficient_node_publish_count(min_sufficient_node_publish_count);
 
         MultiRepublisher::new_with_settings(settings, pkarr_builder)
-            .run(public_keys, NonZeroUsize::MIN)
+            .run(public_keys, max_concurrent_workers)
             .await
             .unwrap()
+    }
+
+    async fn republish_single_key(
+        min_sufficient_node_publish_count: NonZeroU8,
+    ) -> RepublishSummary {
+        republish_keys(1, NonZeroUsize::MIN, min_sufficient_node_publish_count).await
     }
 
     #[tokio::test]
@@ -151,5 +159,20 @@ mod tests {
 
         assert_eq!(summary.len(), 1);
         assert_eq!(summary.publishing_failed_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn multiple_keys_republish_with_multiple_workers() {
+        let summary =
+            republish_keys(5, NonZeroUsize::new(2).unwrap(), NonZeroU8::new(3).unwrap()).await;
+
+        assert_eq!(summary.len(), 5);
+        assert_eq!(summary.success_count(), 5);
+        assert_eq!(summary.publishing_failed_count(), 0);
+        assert_eq!(summary.missing_count(), 0);
+        assert_eq!(
+            summary.success_count() + summary.publishing_failed_count() + summary.missing_count(),
+            summary.len()
+        );
     }
 }
