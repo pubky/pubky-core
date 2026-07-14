@@ -9,8 +9,6 @@ mod recovery;
 #[path = "../testnet.rs"]
 mod testnet;
 
-/// local testnet HOMESERVER
-const HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -31,7 +29,7 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
+    let homeserver = &PublicKey::try_from(testnet::TESTNET_HOMESERVER).unwrap();
     let recovery_file = cli
         .recovery_file
         .unwrap_or_else(|| recovery::sample_recovery_file(cli.testnet));

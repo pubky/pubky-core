@@ -1,7 +1,6 @@
-# Authentication examples
+# Signup examples
 
-You can use these examples to test signup to a provided homeserver using a keypair,
-as opposed to using a the 3rd party [authorization flow](../2-auth_flow).
+You can use these examples to test signup to a provided homeserver using a keypair.
 
 
 ## Usage

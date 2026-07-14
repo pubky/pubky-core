@@ -5,9 +5,8 @@ use std::path::PathBuf;
 
 #[path = "../recovery.rs"]
 mod recovery;
-
-/// local testnet HOMESERVER
-const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+#[path = "../testnet.rs"]
+mod testnet;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -62,7 +61,7 @@ async fn main() -> Result<()> {
 fn derive_homeserver(cli: &Cli) -> Result<PublicKey> {
     let homeserver = match (&cli.homeserver, cli.testnet) {
         (Some(homeserver), _) => homeserver.as_str(),
-        (None, true) => TESTNET_HOMESERVER,
+        (None, true) => testnet::TESTNET_HOMESERVER,
         (None, false) => anyhow::bail!("homeserver is required unless --testnet is set"),
     };
 

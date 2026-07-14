@@ -8,9 +8,6 @@ mod recovery;
 #[path = "../testnet.rs"]
 mod testnet;
 
-/// local testnet HOMESERVER
-const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
-
 #[derive(Parser, Debug)]
 #[command(version, about = "Pubky homeserver storage lifecycle example")]
 struct Cli {
@@ -51,7 +48,7 @@ async fn main() -> Result<()> {
 
     let signer = pubky.signer(keypair);
     if cli.testnet {
-        let homeserver = &PublicKey::try_from(TESTNET_HOMESERVER)?;
+        let homeserver = &PublicKey::try_from(testnet::TESTNET_HOMESERVER)?;
         testnet::ensure_signup(&signer, homeserver).await?;
     }
 

@@ -7,10 +7,7 @@
 
 // End-to-end testnet roundtrip: signup -> signin -> write -> read.
 import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
-
-// This is the default testnet homeserver. It comes from the secret `00000...` (bits).
-const TESTNET_HOMESERVER =
-  "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+import { TESTNET_HOMESERVER } from "./_testnet.mjs";
 
 
 let isAvailable = await isTestnetAvailable();

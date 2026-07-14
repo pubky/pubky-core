@@ -2,8 +2,7 @@
 // Demonstrate SDK logging by dialing up verbosity before performing a simple roundtrip.
 import { Pubky, Keypair, PublicKey, setLogLevel } from "@synonymdev/pubky";
 import { args } from "./_cli.mjs";
-
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+import { TESTNET_HOMESERVER } from "./_testnet.mjs";
 
 const usage = `
 Usage:

@@ -2,8 +2,7 @@
 // Create, list, and delete grant-backed sessions from the command line.
 import { GrantManager, Keypair, Pubky, PublicKey } from "@synonymdev/pubky";
 import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
-
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+import { TESTNET_HOMESERVER } from "./_testnet.mjs";
 const MANAGEMENT_CLIENT_ID = "session-management.example";
 const DEFAULT_RECOVERY_FILE = new URL("../sample_recovery.key", import.meta.url);
 

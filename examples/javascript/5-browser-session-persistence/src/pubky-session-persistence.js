@@ -1,13 +1,13 @@
 import { LitElement, css, html } from "lit";
 
 import * as pubky from "@synonymdev/pubky";
+import { TESTNET_HOMESERVER } from "../../_testnet.mjs";
 
 const CLIENT_ID = "multi-account.example";
 const DEMO_PATH = "/pub/multi-account.example/profile.json";
 const ACTIVE_SESSION_KEY = "pubky-browser-session-persistence-active-id";
 const ACCOUNT_LABELS_KEY = "pubky-browser-session-persistence-account-labels";
 const NEXT_ACCOUNT_NUMBER_KEY = "pubky-browser-session-persistence-next-account-number";
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 const AVATAR_COLORS = [
   "b6e3f4",
   "c0aede",

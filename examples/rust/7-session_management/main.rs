@@ -8,8 +8,6 @@ mod recovery;
 #[path = "../testnet.rs"]
 mod testnet;
 
-/// local testnet HOMESERVER
-const TESTNET_HOMESERVER: &str = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 const MANAGEMENT_CLIENT_ID: &str = "session-management.example";
 
 #[derive(Parser, Debug)]
@@ -103,7 +101,7 @@ async fn create_session_for(cli: &Cli, client_id: &str) -> Result<PubkySession> 
 
     let signer = pubky.signer(keypair);
     if cli.testnet {
-        let homeserver = &PublicKey::try_from(TESTNET_HOMESERVER)?;
+        let homeserver = &PublicKey::try_from(testnet::TESTNET_HOMESERVER)?;
         testnet::ensure_signup(&signer, homeserver).await?;
     }
 

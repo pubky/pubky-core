@@ -3,8 +3,7 @@
 // If --testnet, we first ensure the user exists by signing up locally.
 import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
 import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
-
-const TESTNET_HOMESERVER = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
+import { TESTNET_HOMESERVER } from "./_testnet.mjs";
 const DEFAULT_RECOVERY_FILE = new URL("../sample_recovery.key", import.meta.url);
 
 const usage = `
