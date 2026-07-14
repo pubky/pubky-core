@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 // Create, list, and delete grant-backed sessions from the command line.
 import { GrantManager, Keypair, Pubky, PublicKey } from "@synonymdev/pubky";
-import { args, promptHidden, readFileUint8 } from "./_cli.mjs";
+import {
+  args,
+  isConflictError,
+  promptHidden,
+  readFileUint8,
+} from "./_cli.mjs";
 import { TESTNET_HOMESERVER } from "./_testnet.mjs";
 const MANAGEMENT_CLIENT_ID = "session-management.example";
 const DEFAULT_RECOVERY_FILE = new URL("../sample_recovery.key", import.meta.url);
@@ -67,7 +72,12 @@ async function createSessionFor(clientId) {
     try {
       await signer.signup(homeserver);
       console.log("Signed up to the testnet homeserver.");
-    } catch {
+    } catch (error) {
+      if (!isConflictError(error)) {
+        console.error("Failed to sign up to the testnet homeserver:", error);
+        process.exit(1);
+      }
+
       console.log("Testnet user already exists, continuing...");
     }
   }
