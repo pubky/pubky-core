@@ -34,6 +34,10 @@ fn main() -> Result<()> {
         anyhow::bail!("Passphrases do not match");
     }
 
+    if passphrase.is_empty() {
+        println!("Warning: You entered an empty passphrase. This is not recommended for a production environment.");
+    }
+
     let recovery_bytes = create_recovery_file(&keypair, &passphrase);
     std::fs::write(&cli.output, &recovery_bytes)?;
     println!("Recovery file written to {}", cli.output.display());
