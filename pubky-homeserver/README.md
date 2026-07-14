@@ -83,9 +83,12 @@ Use `cargo run -- --data-dir=~/.pubky`.
 ## Caching and Proxies
 
 Tenant-private responses must never be stored by shared caches. `/priv/...`
-responses and `/events-stream` use `Cache-Control: no-store` and vary on
+data responses and `/events-stream` use `Cache-Control: no-store` and vary on
 `pubky-host`, `Authorization`, and `Cookie`; `/pub/...` file validators keep
-their existing tenant-aware caching behavior.
+their existing tenant-aware caching behavior. 
+
+Note: CORS preflight `OPTIONS` is
+handled upstream by the CORS layer and carries no private body.
 
 ## Signup Token
 
