@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     let homeserver = &PublicKey::try_from(HOMESERVER).unwrap();
     let recovery_file = cli
         .recovery_file
-        .unwrap_or_else(recovery::sample_recovery_file);
+        .unwrap_or_else(|| recovery::sample_recovery_file(cli.testnet));
     let url = cli.auth_url;
 
     let deep_link = url

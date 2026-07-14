@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 pub const SAMPLE_RECOVERY_FILE: &str = "sample_recovery.key";
 
-pub fn sample_recovery_file() -> PathBuf {
+pub fn sample_recovery_file(is_testnet: bool) -> PathBuf {
+    if !is_testnet {
+        panic!("Sample recovery file is only available for testnet");
+    }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join(SAMPLE_RECOVERY_FILE)

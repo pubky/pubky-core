@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
 
     let recovery_file = cli
         .recovery_file
-        .unwrap_or_else(recovery::sample_recovery_file);
+        .unwrap_or_else(|| recovery::sample_recovery_file(cli.testnet));
     let keypair =
         recovery::decrypt_recovery_file(&recovery_file, "Enter your recovery file passphrase:")?;
     println!("Decrypted recovery file for {}", keypair.public_key());

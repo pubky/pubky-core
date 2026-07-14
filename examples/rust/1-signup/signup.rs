@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let homeserver = derive_homeserver(&cli)?;
     let recovery_file_path = cli
         .recovery_file
-        .unwrap_or_else(recovery::sample_recovery_file);
+        .unwrap_or_else(|| recovery::sample_recovery_file(cli.testnet));
     let keypair = recovery::decrypt_recovery_file(
         &recovery_file_path,
         "Enter your recovery file's passphrase to signup:",

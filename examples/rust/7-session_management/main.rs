@@ -91,7 +91,7 @@ async fn create_session_for(cli: &Cli, client_id: &str) -> Result<PubkySession> 
     let recovery_file = cli
         .recovery_file
         .clone()
-        .unwrap_or_else(recovery::sample_recovery_file);
+        .unwrap_or_else(|| recovery::sample_recovery_file(cli.testnet));
     let keypair =
         recovery::decrypt_recovery_file(&recovery_file, "Enter your recovery file passphrase:")?;
 
