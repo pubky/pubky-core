@@ -5,6 +5,5 @@ mod republisher;
 mod retrying_republisher;
 mod verify;
 
-pub use batch_republisher::{BatchRepublisher, BatchRepublisherError};
+pub use batch_republisher::{BatchRepublisher, BatchRepublisherError, BatchRepublisherSettings};
 pub use republish_summary::RepublishSummary;
-pub use republisher::RepublisherSettings;

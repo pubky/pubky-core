@@ -1,13 +1,17 @@
-use super::{republisher::RepublishError, retrying_republisher::RepublishInfo};
+use super::{
+    publisher::PublishError, republisher::RepublishOutcome, retrying_republisher::RepublishInfo,
+};
 
-pub(super) type RepublishResult = Result<RepublishInfo, RepublishError>;
+pub(super) type RepublishResult = Result<RepublishInfo, PublishError>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepublishSummary {
     total_count: usize,
     success_count: usize,
-    publishing_failed_count: usize,
+    skipped_count: usize,
     missing_count: usize,
+    invalid_signed_packet_count: usize,
+    failed_count: usize,
 }
 
 impl RepublishSummary {
@@ -15,27 +19,51 @@ impl RepublishSummary {
         self.total_count += 1;
 
         match result {
-            Ok(_) => self.success_count += 1,
-            Err(RepublishError::PublishFailed(_)) => self.publishing_failed_count += 1,
-            Err(RepublishError::Missing) => self.missing_count += 1,
+            Ok(RepublishInfo {
+                outcome: RepublishOutcome::Published(_),
+                ..
+            }) => self.success_count += 1,
+            Ok(RepublishInfo {
+                outcome: RepublishOutcome::Skipped,
+                ..
+            }) => self.skipped_count += 1,
+            Ok(RepublishInfo {
+                outcome: RepublishOutcome::Missing,
+                ..
+            }) => self.missing_count += 1,
+            Ok(RepublishInfo {
+                outcome: RepublishOutcome::InvalidSignedPacket,
+                ..
+            }) => self.invalid_signed_packet_count += 1,
+            Err(_) => self.failed_count += 1,
         }
     }
 
     pub(crate) fn merge(mut self, other: Self) -> Self {
         self.total_count += other.total_count;
         self.success_count += other.success_count;
-        self.publishing_failed_count += other.publishing_failed_count;
+        self.skipped_count += other.skipped_count;
         self.missing_count += other.missing_count;
+        self.invalid_signed_packet_count += other.invalid_signed_packet_count;
+        self.failed_count += other.failed_count;
         self
-    }
-
-    /// Number of republish attempts.
-    pub fn len(&self) -> usize {
-        self.total_count
     }
 
     pub fn is_empty(&self) -> bool {
         self.total_count == 0
+    }
+
+    /// Whether any key was missing, invalid, or failed to publish.
+    pub fn has_issues(&self) -> bool {
+        self.missing_count > 0 || self.invalid_signed_packet_count > 0 || self.failed_count > 0
+    }
+}
+
+#[cfg(test)]
+impl RepublishSummary {
+    /// Number of republish attempts.
+    pub fn len(&self) -> usize {
+        self.total_count
     }
 
     /// Number of successfully published keys.
@@ -43,40 +71,56 @@ impl RepublishSummary {
         self.success_count
     }
 
-    /// Number of keys that failed to publish.
-    pub fn publishing_failed_count(&self) -> usize {
-        self.publishing_failed_count
+    /// Number of keys that did not satisfy the republish condition.
+    pub fn skipped_count(&self) -> usize {
+        self.skipped_count
     }
 
     /// Number of keys that are missing and could not be republished.
     pub fn missing_count(&self) -> usize {
         self.missing_count
     }
+
+    /// Number of resolved packets that were invalid.
+    pub fn invalid_signed_packet_count(&self) -> usize {
+        self.invalid_signed_packet_count
+    }
+
+    /// Number of keys that failed to publish.
+    pub fn failed_count(&self) -> usize {
+        self.failed_count
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{RepublishError, RepublishInfo, RepublishSummary};
-    use crate::republishers::pkarr_republisher::publisher::PublishError;
+    use super::{PublishError, RepublishInfo, RepublishOutcome, RepublishSummary};
 
     #[test]
     fn records_and_merges_republish_outcomes() {
         let mut summary = RepublishSummary::default();
-        summary.record(Ok(RepublishInfo::new(3, 1)));
+        summary.record(Ok(RepublishInfo::new(RepublishOutcome::Published(3), 1)));
+        summary.record(Ok(RepublishInfo::new(RepublishOutcome::Skipped, 1)));
+        assert!(!summary.has_issues());
 
         let mut other = RepublishSummary::default();
-        other.record(Err(RepublishError::Missing));
-        other.record(Err(RepublishError::PublishFailed(
-            PublishError::InsufficientlyPublished {
-                published_nodes_count: 1,
-            },
+        other.record(Ok(RepublishInfo::new(RepublishOutcome::Missing, 1)));
+        other.record(Ok(RepublishInfo::new(
+            RepublishOutcome::InvalidSignedPacket,
+            1,
         )));
+        other.record(Err(PublishError::InsufficientlyPublished {
+            published_nodes_count: 1,
+        }));
 
         let summary = summary.merge(other);
 
-        assert_eq!(summary.len(), 3);
+        assert_eq!(summary.len(), 5);
         assert_eq!(summary.success_count(), 1);
+        assert_eq!(summary.skipped_count(), 1);
         assert_eq!(summary.missing_count(), 1);
-        assert_eq!(summary.publishing_failed_count(), 1);
+        assert_eq!(summary.invalid_signed_packet_count(), 1);
+        assert_eq!(summary.failed_count(), 1);
+        assert!(summary.has_issues());
     }
 }

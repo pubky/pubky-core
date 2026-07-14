@@ -3,20 +3,24 @@ use std::{future::Future, num::NonZeroU8, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use pkarr::PublicKey;
 
-use super::republisher::{RepublishError, Republisher};
+use super::{
+    publisher::PublishError,
+    republisher::{RepublishOutcome, Republisher},
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct RepublishInfo {
-    /// How many nodes the key got published on.
-    pub(super) published_nodes_count: usize,
+    /// Result of the republish attempt.
+    pub(super) outcome: RepublishOutcome,
     /// Number of publishing attempts needed to successfully republish.
+    #[allow(dead_code)]
     pub(super) attempts_needed: usize,
 }
 
 impl RepublishInfo {
-    pub(super) fn new(published_nodes_count: usize, attempts_needed: usize) -> Self {
+    pub(super) fn new(outcome: RepublishOutcome, attempts_needed: usize) -> Self {
         Self {
-            published_nodes_count,
+            outcome,
             attempts_needed,
         }
     }
@@ -76,7 +80,7 @@ impl RetryingRepublisher {
     pub(super) async fn republish(
         &self,
         public_key: &PublicKey,
-    ) -> Result<RepublishInfo, RepublishError> {
+    ) -> Result<RepublishInfo, PublishError> {
         republish_with_retry(public_key, self.backoff, self.max_retry_delay, || {
             self.republisher.republish(public_key)
         })
@@ -89,16 +93,15 @@ async fn republish_with_retry<F, Fut>(
     backoff: ExponentialBuilder,
     max_retry_delay: Duration,
     republish: F,
-) -> Result<RepublishInfo, RepublishError>
+) -> Result<RepublishInfo, PublishError>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = Result<usize, RepublishError>>,
+    Fut: Future<Output = Result<RepublishOutcome, PublishError>>,
 {
     let mut attempts_count = 1;
 
     republish
         .retry(backoff)
-        .when(RepublishError::is_recoverable)
         // BackON adds jitter after applying its maximum delay.
         .adjust(|_, delay| delay.map(|delay| delay.min(max_retry_delay)))
         .notify(|error, delay| {
@@ -112,7 +115,7 @@ where
             attempts_count += 1;
         })
         .await
-        .map(|published_nodes_count| RepublishInfo::new(published_nodes_count, attempts_count))
+        .map(|outcome| RepublishInfo::new(outcome, attempts_count))
 }
 
 #[cfg(test)]
@@ -122,8 +125,7 @@ mod tests {
     use backon::BackoffBuilder;
     use pkarr::Keypair;
 
-    use super::{republish_with_retry, RepublishError, RetrySettings};
-    use crate::republishers::pkarr_republisher::publisher::PublishError;
+    use super::{republish_with_retry, PublishError, RepublishOutcome, RetrySettings};
 
     fn retry_settings(max_attempts: u8) -> RetrySettings {
         RetrySettings {
@@ -133,10 +135,10 @@ mod tests {
         }
     }
 
-    fn recoverable_error() -> RepublishError {
-        RepublishError::PublishFailed(PublishError::InsufficientlyPublished {
+    fn publish_error() -> PublishError {
+        PublishError::InsufficientlyPublished {
             published_nodes_count: 0,
-        })
+        }
     }
 
     #[test]
@@ -172,7 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retries_recoverable_errors_until_success() {
+    async fn retries_publish_errors_until_success() {
         let public_key = Keypair::random().public_key();
         let settings = retry_settings(3);
         let attempts = Cell::new(0);
@@ -185,9 +187,9 @@ mod tests {
                 let attempt = attempts.get() + 1;
                 attempts.set(attempt);
                 ready(if attempt < 3 {
-                    Err(recoverable_error())
+                    Err(publish_error())
                 } else {
-                    Ok(7)
+                    Ok(RepublishOutcome::Published(7))
                 })
             },
         )
@@ -196,11 +198,11 @@ mod tests {
 
         assert_eq!(attempts.get(), 3);
         assert_eq!(info.attempts_needed, 3);
-        assert_eq!(info.published_nodes_count, 7);
+        assert_eq!(info.outcome, RepublishOutcome::Published(7));
     }
 
     #[tokio::test]
-    async fn stops_immediately_on_missing_packet() {
+    async fn returns_missing_outcome_without_retrying() {
         let public_key = Keypair::random().public_key();
         let settings = retry_settings(3);
         let attempts = Cell::new(0);
@@ -211,12 +213,14 @@ mod tests {
             settings.max_retry_delay,
             || {
                 attempts.set(attempts.get() + 1);
-                ready(Err(RepublishError::Missing))
+                ready(Ok(RepublishOutcome::Missing))
             },
         )
-        .await;
+        .await
+        .unwrap();
 
-        assert!(matches!(result, Err(RepublishError::Missing)));
+        assert_eq!(result.outcome, RepublishOutcome::Missing);
+        assert_eq!(result.attempts_needed, 1);
         assert_eq!(attempts.get(), 1);
     }
 
@@ -232,12 +236,15 @@ mod tests {
             settings.max_retry_delay,
             || {
                 attempts.set(attempts.get() + 1);
-                ready(Err(recoverable_error()))
+                ready(Err(publish_error()))
             },
         )
         .await;
 
-        assert!(matches!(result, Err(RepublishError::PublishFailed(_))));
+        assert!(matches!(
+            result,
+            Err(PublishError::InsufficientlyPublished { .. })
+        ));
         assert_eq!(attempts.get(), 3);
     }
 }
