@@ -1,6 +1,6 @@
 use super::republish_summary::{RepublishResult, RepublishSummary};
-use super::republisher::RepublisherSettings;
-use super::resilient_client::{ResilientClient, ResilientClientBuilderError};
+use super::republisher::{Republisher, RepublisherSettings};
+use super::retrying_republisher::RetryingRepublisher;
 use futures_util::{stream::FuturesUnordered, TryStreamExt};
 use pkarr::{ClientBuilder, PublicKey};
 use std::{num::NonZeroUsize, sync::Mutex};
@@ -8,16 +8,24 @@ use tokio::time::Instant;
 
 type PublicKeyQueue = Mutex<Vec<PublicKey>>;
 
+#[derive(Debug, thiserror::Error)]
+pub enum BatchRepublisherError {
+    #[error("pkarr client was built without DHT and is only using relays. This is not supported.")]
+    DhtNotEnabled,
+    #[error(transparent)]
+    BuildError(#[from] pkarr::errors::BuildError),
+}
+
 /// Republish multiple keys serially or concurrently.
 #[derive(Debug, Clone, Default)]
-pub struct MultiRepublisher {
+pub struct BatchRepublisher {
     settings: RepublisherSettings,
     client_builder: ClientBuilder,
 }
 
-impl MultiRepublisher {
+impl BatchRepublisher {
     /// Create a new republisher with the settings.
-    pub fn new_with_settings(settings: RepublisherSettings, client_builder: ClientBuilder) -> Self {
+    pub fn new(settings: RepublisherSettings, client_builder: ClientBuilder) -> Self {
         Self {
             settings,
             client_builder,
@@ -33,7 +41,7 @@ impl MultiRepublisher {
         &self,
         public_keys: Vec<PublicKey>,
         max_concurrent_workers: NonZeroUsize,
-    ) -> Result<RepublishSummary, ResilientClientBuilderError> {
+    ) -> Result<RepublishSummary, BatchRepublisherError> {
         let worker_count = max_concurrent_workers.get().min(public_keys.len());
         let public_keys = Mutex::new(public_keys);
 
@@ -47,21 +55,28 @@ impl MultiRepublisher {
     async fn run_worker(
         &self,
         public_keys: &PublicKeyQueue,
-    ) -> Result<RepublishSummary, ResilientClientBuilderError> {
+    ) -> Result<RepublishSummary, BatchRepublisherError> {
         let client = self.client_builder.build()?;
-        let client = ResilientClient::new(client, self.settings.clone())?;
+        if client.dht().is_none() {
+            return Err(BatchRepublisherError::DhtNotEnabled);
+        }
+        let republisher = Republisher::new_with_settings(client, self.settings.clone());
+        let republisher = RetryingRepublisher::new(republisher, &self.settings.retry_settings);
 
         let mut summary = RepublishSummary::default();
         while let Some(public_key) = pop(public_keys) {
-            summary.record(republish_key(&client, &public_key).await);
+            summary.record(republish_key(&republisher, &public_key).await);
         }
         Ok(summary)
     }
 }
 
-async fn republish_key(client: &ResilientClient, public_key: &PublicKey) -> RepublishResult {
+async fn republish_key(
+    republisher: &RetryingRepublisher,
+    public_key: &PublicKey,
+) -> RepublishResult {
     let start = Instant::now();
-    let result = client.republish(public_key).await;
+    let result = republisher.republish(public_key).await;
     let elapsed = start.elapsed().as_millis();
 
     match &result {
@@ -80,7 +95,7 @@ async fn republish_key(client: &ResilientClient, public_key: &PublicKey) -> Repu
 async fn merge_summaries(
     summary: RepublishSummary,
     worker_summary: RepublishSummary,
-) -> Result<RepublishSummary, ResilientClientBuilderError> {
+) -> Result<RepublishSummary, BatchRepublisherError> {
     Ok(summary.merge(worker_summary))
 }
 
@@ -97,7 +112,7 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
-    use super::{MultiRepublisher, RepublishSummary};
+    use super::{BatchRepublisher, RepublishSummary};
     use crate::republishers::pkarr_republisher::republisher::RepublisherSettings;
 
     async fn publish_sample_packets(client: &pkarr::Client, count: usize) -> Vec<PublicKey> {
@@ -133,7 +148,7 @@ mod tests {
         let mut settings = RepublisherSettings::default();
         settings.min_sufficient_node_publish_count(min_sufficient_node_publish_count);
 
-        MultiRepublisher::new_with_settings(settings, pkarr_builder)
+        BatchRepublisher::new(settings, pkarr_builder)
             .run(public_keys, max_concurrent_workers)
             .await
             .unwrap()

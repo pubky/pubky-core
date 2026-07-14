@@ -1,6 +1,6 @@
-use super::republisher::{RepublishError, RepublishInfo};
+use super::{republisher::RepublishError, retrying_republisher::RepublishInfo};
 
-pub(crate) type RepublishResult = Result<RepublishInfo, RepublishError>;
+pub(super) type RepublishResult = Result<RepublishInfo, RepublishError>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepublishSummary {
@@ -11,7 +11,7 @@ pub struct RepublishSummary {
 }
 
 impl RepublishSummary {
-    pub(crate) fn record(&mut self, result: RepublishResult) {
+    pub(super) fn record(&mut self, result: RepublishResult) {
         self.total_count += 1;
 
         match result {
