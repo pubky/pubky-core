@@ -232,14 +232,6 @@ jobs:
         with:
           tool: wasm-pack
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: pubky-sdk/bindings/js/pkg/node_modules
-          key: node_modules-${{ runner.os }}-${{ hashFiles('pubky-sdk/bindings/js/pkg/package-lock.json') }}
-          restore-keys: |
-            node_modules-${{ runner.os }}-
-
       - name: Install JS dependencies
         working-directory: pubky-sdk/bindings/js/pkg
         run: npm ci --prefer-offline --no-audit --no-fund
