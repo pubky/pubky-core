@@ -2,6 +2,27 @@
 
 Minimal examples for different flows and functions you might need to implement using Pubky.
 
+## How to use these examples
+
+Run the example commands from the `examples/rust` directory.
+
+Examples using `--testnet` expect a local testnet to be running. The testnet requires PostgreSQL; see the [Pubky Testnet README](../../pubky-testnet/README.md) for setup instructions.
+
+From the repository root, start the testnet:
+
+```bash
+cargo run -p pubky-testnet
+```
+
+Wait for `Testnet running` and keep that terminal open. In another terminal, run an example:
+
+```bash
+cd examples/rust
+cargo run --bin signup -- --testnet
+```
+
+The logging and testnet examples start their own ephemeral testnet and require Docker by default.
+
 ## Utilities
 
 - [**sample_recovery.key**](../sample_recovery.key): Sample recovery file with an empty passphrase, used by default in examples 1, 2, 3, and 7.

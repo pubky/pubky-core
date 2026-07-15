@@ -23,16 +23,24 @@ npm install
 
 > The examples depend on the local `@synonymdev/pubky` package in this repo. If you see a missing `index.cjs` or `pubky_bg.wasm`, run `npm run build` in `pubky-sdk/bindings/js/pkg`. If you see a missing `fetch-cookie`, run `npm install` in that SDK package.
 
-## Local Testnet
+## How to use these examples
 
-Scripts that take `--testnet` expect a local testnet process to be running in another terminal:
+Complete the installation steps above first.
+
+Examples using `--testnet` expect a local testnet to be running. The testnet requires PostgreSQL; see the [Pubky Testnet README](../../pubky-testnet/README.md) for setup instructions.
+
+From the repository root, start the testnet:
 
 ```bash
-cd pubky-sdk/bindings/js/pkg
-npm run testnet
+cargo run -p pubky-testnet
 ```
 
-Wait for `Testnet running`. This starts a local DHT, homeserver, Pkarr relay, and HTTP relay. Keep that terminal open while running examples.
+Wait for `Testnet running` and keep that terminal open. In another terminal, run an example:
+
+```bash
+cd examples/javascript
+node 1-signup.mjs --testnet
+```
 
 To check the basic flow from another terminal:
 
