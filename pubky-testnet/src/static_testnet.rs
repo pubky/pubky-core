@@ -330,6 +330,7 @@ impl StaticTestnet {
     /// Creates a fixed http relay.
     async fn run_fixed_http_relay(&mut self) -> anyhow::Result<()> {
         let relay = HttpRelay::builder()
+            .bind_address(BIND_ALL)
             .http_port(testnet_ports::HTTP_RELAY)
             .cors_allow_all(true)
             .run()
