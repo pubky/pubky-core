@@ -14,7 +14,7 @@ use pubky_common::{
 use crate::{
     Capabilities,
     actors::auth::{
-        deep_links::{DeepLink, DeepLinkParseError, SignupParams},
+        deep_links::{DeepLink, DeepLinkParseError, DirectSignupParams},
         grant::constants::DEFAULT_GRANT_LIFETIME_SECS,
     },
     cross_log,
@@ -34,10 +34,10 @@ impl PubkySigner {
     /// - Signer calls `send_auth_token` with that URL.
     ///
     /// Requirements:
-    /// - URL parses as a [`DeepLink::Signin`], [`DeepLink::Signup`],
+    /// - URL parses as a [`DeepLink::Signin`], [`DeepLink::Signup`], [`DeepLink::DirectSignup`],
     ///   [`DeepLink::SigninGrant`], or [`DeepLink::SignupGrant`].
     /// - Channel is derived as `<relay>/<base64url(hash(secret))>`.
-    /// - A direct [`DeepLink::Signup`] registers the account directly on the homeserver via
+    /// - A [`DeepLink::DirectSignup`] registers the account directly on the homeserver via
     ///   [`PubkySigner::signup`] instead of posting to a relay channel.
     ///
     /// # Errors
@@ -70,11 +70,13 @@ impl PubkySigner {
             }
             DeepLink::Signup(d) => {
                 let params = d.params();
-                if params.is_direct_signup() {
-                    self.approve_direct_signup(params).await?;
-                    return Ok(());
-                }
-                self.relayed_signup_delivery(params)?
+                let payload =
+                    self.build_encrypted_token(params.capabilities.clone(), &params.secret);
+                (params.relay.clone(), params.secret, payload)
+            }
+            DeepLink::DirectSignup(d) => {
+                self.approve_direct_signup(d.params()).await?;
+                return Ok(());
             }
             DeepLink::SigninGrant(d) => {
                 let params = d.params();
@@ -138,8 +140,8 @@ impl PubkySigner {
         Ok(())
     }
 
-    /// Register the account directly on the homeserver for a direct signup deep link
-    async fn approve_direct_signup(&self, params: &SignupParams) -> Result<()> {
+    /// Register the account directly on the homeserver for a direct signup deep link.
+    async fn approve_direct_signup(&self, params: &DirectSignupParams) -> Result<()> {
         cross_log!(
             info,
             "Approving direct signup on homeserver {} (token={})",
@@ -148,25 +150,6 @@ impl PubkySigner {
         );
         self.signup(&params.homeserver, params.signup_token.as_deref())
             .await
-    }
-
-    /// Build the delivery for a relayed signup deep link.
-    fn relayed_signup_delivery(&self, params: &SignupParams) -> Result<(Url, [u8; 32], Vec<u8>)> {
-        let relay = params.relay.clone().ok_or_else(|| {
-            AuthError::Validation("relayed signup deep link is missing 'relay'".into())
-        })?;
-        let secret = params.secret.ok_or_else(|| {
-            AuthError::Validation("relayed signup deep link is missing 'secret'".into())
-        })?;
-        let capabilities = params.capabilities.clone();
-        cross_log!(
-            info,
-            "Approving legacy signup via relay {} (caps={:?})",
-            relay,
-            capabilities
-        );
-        let payload = self.build_encrypted_token(capabilities, &secret);
-        Ok((relay, secret, payload))
     }
 
     fn build_encrypted_grant(

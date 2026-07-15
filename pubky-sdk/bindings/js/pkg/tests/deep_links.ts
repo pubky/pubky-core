@@ -1,6 +1,7 @@
 import test from "tape";
 import {
   PublicKey,
+  DirectSignupDeepLink,
   SigninDeepLink,
   SigninGrantDeepLink,
   SignupDeepLink,
@@ -50,33 +51,24 @@ test("signup deep link valid", async (t) => {
 });
 
 test("direct signup deep link valid", async (t) => {
-  const url = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}`;
-  const deepLink = SignupDeepLink.parse(url);
+  const url = `pubkyauth://direct_signup?hs=${HOMESERVER_PUBLICKEY.z32()}`;
+  const deepLink = DirectSignupDeepLink.parse(url);
 
   t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
-  t.equal(deepLink.isDirectSignup, true, "link is a direct signup");
-  t.equal(deepLink.baseRelayUrl, undefined, "no relay on a direct link");
-  t.equal(deepLink.secret, undefined, "no secret on a direct link");
-  t.equal(deepLink.capabilities, "", "no capabilities on a direct link");
   t.equal(deepLink.signupToken, undefined, "no token when absent");
 
-  // Round-trips to only the homeserver.
-  const roundTripped = SignupDeepLink.parse(deepLink.toString());
+  const roundTripped = DirectSignupDeepLink.parse(deepLink.toString());
   t.equal(roundTripped.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
-  t.equal(roundTripped.isDirectSignup, true);
 
   t.end();
 });
 
 test("direct signup deep link with token", async (t) => {
-  const url = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=1234567890`;
-  const deepLink = SignupDeepLink.parse(url);
+  const url = `pubkyauth://direct_signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=1234567890`;
+  const deepLink = DirectSignupDeepLink.parse(url);
 
   t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
-  t.equal(deepLink.isDirectSignup, true, "link is a direct signup");
   t.equal(deepLink.signupToken, "1234567890");
-  t.equal(deepLink.baseRelayUrl, undefined, "no relay on a direct link");
-  t.equal(deepLink.secret, undefined, "no secret on a direct link");
 
   t.end();
 });

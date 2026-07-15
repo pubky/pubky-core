@@ -97,8 +97,8 @@ impl CookieAuthFlowBuilder {
                 DeepLinkScheme::PubkyAuth,
                 SignupParams {
                     capabilities: caps,
-                    relay: Some(base_relay.clone()),
-                    secret: Some(client_secret),
+                    relay: base_relay.clone(),
+                    secret: client_secret,
                     homeserver: *homeserver_public_key,
                     signup_token,
                 },

@@ -193,7 +193,7 @@ async fn signup_via_direct_deeplink() {
     let pubky = testnet.sdk().unwrap();
 
     let signer = pubky.signer(Keypair::random());
-    let deeplink = format!("pubkyauth://signup?hs={}", server.public_key().z32());
+    let deeplink = format!("pubkyauth://direct_signup?hs={}", server.public_key().z32());
 
     // Approving a direct signup link registers the account directly on the
     // homeserver.
@@ -235,7 +235,7 @@ async fn signup_via_direct_deeplink_with_token() {
 
     let signer = pubky.signer(Keypair::random());
     let deeplink = format!(
-        "pubkyauth://signup?hs={}&st={}",
+        "pubkyauth://direct_signup?hs={}&st={}",
         server.public_key().z32(),
         token
     );

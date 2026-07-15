@@ -69,7 +69,7 @@ test("Auth: direct signup deeplink", async (t) => {
   const signer = sdk.signer(Keypair.random());
   const signupToken = await createSignupToken();
   // A direct signup link carries only the homeserver (+ token).
-  const deeplink = `pubkyauth://signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=${encodeURIComponent(
+  const deeplink = `pubkyauth://direct_signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=${encodeURIComponent(
     signupToken,
   )}`;
 

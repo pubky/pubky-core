@@ -268,10 +268,7 @@ mod tests {
         let deep_link = DeepLink::from_str(&auth_url_str).unwrap();
         let secret = match &deep_link {
             DeepLink::Signin(s) => s.params().secret,
-            DeepLink::Signup(s) => s
-                .params()
-                .secret
-                .expect("cookie signup flow builds a relayed link with a secret"),
+            DeepLink::Signup(s) => s.params().secret,
             _ => panic!("Expected signin or signup deep link"),
         };
 
@@ -335,5 +332,16 @@ mod tests {
         let url = "pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
         let result = pubky.resume_cookie_auth_flow(url);
         assert!(result.is_err(), "seed export URL should fail to resume");
+    }
+
+    #[test]
+    fn resume_rejects_direct_signup_url() {
+        let client = PubkyHttpClient::new().unwrap();
+        let pubky = Pubky::with_client(client);
+
+        let url =
+            "pubkyauth://direct_signup?hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let result = pubky.resume_cookie_auth_flow(url);
+        assert!(result.is_err(), "direct signup URL should fail to resume");
     }
 }

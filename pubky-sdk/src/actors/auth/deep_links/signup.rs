@@ -4,8 +4,8 @@ use url::Url;
 use super::{
     DeepLinkParseError,
     query_params::{
-        append_signup_params, optional_query, parse_capabilities_or_default, parse_homeserver,
-        parse_optional_relay, parse_optional_secret,
+        append_signup_params, optional_query, parse_capabilities, parse_homeserver, parse_relay,
+        parse_secret,
     },
     typed_deep_link::{DeepLinkIntent, DeepLinkParams, TypedDeepLink},
 };
@@ -23,40 +23,22 @@ impl DeepLinkIntent for SignupIntent {
 pub struct SignupParams {
     /// Capabilities requested by the app.
     pub capabilities: Capabilities,
-    /// Base HTTP relay URL. `None` for a direct signup link.
-    pub relay: Option<Url>,
-    /// Secret used to derive the encrypted relay channel. `None` for a direct
-    /// signup link.
-    pub secret: Option<[u8; 32]>,
+    /// Base HTTP relay URL.
+    pub relay: Url,
+    /// Secret used to derive the encrypted relay channel.
+    pub secret: [u8; 32],
     /// Homeserver public key.
     pub homeserver: PublicKey,
     /// Optional signup token.
     pub signup_token: Option<String>,
 }
 
-impl SignupParams {
-    /// Returns `true` when this is a direct signup link (no relay/secret).
-    #[must_use]
-    pub fn is_direct_signup(&self) -> bool {
-        self.relay.is_none() && self.secret.is_none()
-    }
-}
-
 impl DeepLinkParams for SignupParams {
     fn parse(url: &Url) -> Result<Self, DeepLinkParseError> {
-        let relay = parse_optional_relay(url)?;
-        let secret = parse_optional_secret(url)?;
-        // `relay` and `secret` are only meaningful together: both present is a
-        // relayed signup, both absent is a direct signup. One without the other
-        // is malformed.
-        if relay.is_some() != secret.is_some() {
-            let missing = if relay.is_none() { "relay" } else { "secret" };
-            return Err(DeepLinkParseError::MissingQueryParameter(missing));
-        }
         Ok(Self {
-            capabilities: parse_capabilities_or_default(url)?,
-            relay,
-            secret,
+            capabilities: parse_capabilities(url)?,
+            relay: parse_relay(url)?,
+            secret: parse_secret(url)?,
             homeserver: parse_homeserver(url)?,
             signup_token: optional_query(url, "st"),
         })
@@ -65,9 +47,9 @@ impl DeepLinkParams for SignupParams {
     fn append_query_pairs(&self, url: &mut Url) {
         append_signup_params(
             url,
-            (!self.capabilities.is_empty()).then_some(&self.capabilities),
-            self.relay.as_ref(),
-            self.secret.as_ref(),
+            &self.capabilities,
+            &self.relay,
+            &self.secret,
             &self.homeserver,
             self.signup_token.as_deref(),
         );
@@ -131,8 +113,8 @@ mod tests {
             DeepLinkScheme::PubkyAuth,
             SignupParams {
                 capabilities,
-                relay: Some(relay),
-                secret: Some([123; 32]),
+                relay,
+                secret: [123; 32],
                 homeserver,
                 signup_token: Some("1234567890".into()),
             },
@@ -143,73 +125,23 @@ mod tests {
     }
 
     #[test]
-    fn parses_direct_signup_deep_link() {
-        let deep_link: SignupDeepLink = format!("pubkyauth://signup?hs={HOMESERVER}")
-            .parse()
-            .unwrap();
-
-        assert_eq!(deep_link.scheme(), DeepLinkScheme::PubkyAuth);
-        assert_eq!(deep_link.intent(), "signup");
-        assert_eq!(deep_link.params().homeserver.z32(), HOMESERVER);
-        assert_eq!(deep_link.params().relay, None);
-        assert_eq!(deep_link.params().secret, None);
-        assert!(deep_link.params().capabilities.is_empty());
-        assert!(deep_link.params().is_direct_signup());
-        assert_eq!(deep_link.params().signup_token, None);
-    }
-
-    #[test]
-    fn parses_direct_signup_deep_link_with_token() {
-        let deep_link: SignupDeepLink = format!("pubkyauth://signup?hs={HOMESERVER}&st=1234567890")
-            .parse()
-            .unwrap();
-
-        assert!(deep_link.params().is_direct_signup());
-        assert_eq!(deep_link.params().signup_token, Some("1234567890".into()));
-    }
-
-    #[test]
-    fn direct_signup_deep_link_round_trips() {
-        let homeserver = PublicKey::from_str(HOMESERVER).unwrap();
-        let deep_link = SignupDeepLink::new(
-            DeepLinkScheme::PubkyAuth,
-            SignupParams {
-                capabilities: Capabilities::default(),
-                relay: None,
-                secret: None,
-                homeserver,
-                signup_token: None,
-            },
-        );
-
-        // A direct link serializes to only the homeserver — no caps/relay/secret.
-        let serialized = deep_link.to_string();
-        assert!(serialized.contains(&format!("hs={HOMESERVER}")));
-        assert!(!serialized.contains("caps="));
-        assert!(!serialized.contains("relay="));
-        assert!(!serialized.contains("secret="));
-
-        let parsed_again = SignupDeepLink::parse_url(&deep_link.to_url()).unwrap();
-        assert_eq!(parsed_again, deep_link);
-    }
-
-    #[test]
-    fn rejects_signup_relay_without_secret() {
-        let error =
-            format!("pubkyauth://signup?hs={HOMESERVER}&relay=https://httprelay.pubky.app/inbox/")
-                .parse::<SignupDeepLink>()
-                .unwrap_err();
+    fn rejects_missing_capabilities() {
+        let error = format!(
+            "pubkyauth://signup?relay=https://httprelay.pubky.app/inbox/&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs={HOMESERVER}"
+        )
+        .parse::<SignupDeepLink>()
+        .unwrap_err();
 
         assert!(matches!(
             error,
-            DeepLinkParseError::MissingQueryParameter("secret")
+            DeepLinkParseError::MissingQueryParameter("caps")
         ));
     }
 
     #[test]
-    fn rejects_signup_secret_without_relay() {
+    fn rejects_missing_relay() {
         let error = format!(
-            "pubkyauth://signup?hs={HOMESERVER}&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8"
+            "pubkyauth://signup?caps=/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs={HOMESERVER}"
         )
         .parse::<SignupDeepLink>()
         .unwrap_err();
@@ -217,6 +149,20 @@ mod tests {
         assert!(matches!(
             error,
             DeepLinkParseError::MissingQueryParameter("relay")
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_secret() {
+        let error = format!(
+            "pubkyauth://signup?caps=/:rw&relay=https://httprelay.pubky.app/inbox/&hs={HOMESERVER}"
+        )
+        .parse::<SignupDeepLink>()
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DeepLinkParseError::MissingQueryParameter("secret")
         ));
     }
 

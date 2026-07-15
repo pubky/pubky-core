@@ -53,9 +53,9 @@ impl DeepLinkParams for SignupGrantParams {
     fn append_query_pairs(&self, url: &mut Url) {
         append_signup_params(
             url,
-            Some(&self.capabilities),
-            Some(&self.relay),
-            Some(&self.secret),
+            &self.capabilities,
+            &self.relay,
+            &self.secret,
             &self.homeserver,
             self.signup_token.as_deref(),
         );
