@@ -172,3 +172,47 @@ async fn read_after_event() {
     let body = resp.bytes().await.unwrap();
     assert_eq!(body.as_ref(), &[0]);
 }
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn feed_excludes_private_paths() {
+    let testnet = build_full_testnet().await;
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let signer = pubky.signer(Keypair::random());
+    let session = signer
+        .signup_cookie(&server.public_key(), None)
+        .await
+        .unwrap();
+
+    // Interleave public and private writes.
+    session.storage().put("/pub/a.txt", vec![1]).await.unwrap();
+    session
+        .storage()
+        .put("/priv/app/secret.txt", vec![2])
+        .await
+        .unwrap();
+    session.storage().put("/pub/b.txt", vec![3]).await.unwrap();
+
+    // The anonymous public feed must never surface a private path.
+    let feed_url = format!("https://{}/events/?limit=100", server.public_key().z32());
+    let text = pubky
+        .client()
+        .request(Method::GET, &feed_url)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    assert!(
+        !text.contains("/priv/"),
+        "public feed leaked a private path:\n{text}"
+    );
+    assert!(
+        text.contains("/pub/a.txt") && text.contains("/pub/b.txt"),
+        "public events should be present:\n{text}"
+    );
+}
