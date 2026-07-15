@@ -1,9 +1,10 @@
-mod multi_republisher;
+mod batch_republisher;
 mod publisher;
+mod republish_summary;
 mod republisher;
-mod resilient_client;
+mod retrying_republisher;
 mod verify;
 
-pub use multi_republisher::{MultiRepublishResult, MultiRepublisher};
+pub use batch_republisher::{BatchRepublisher, BatchRepublisherError};
+pub use republish_summary::RepublishSummary;
 pub use republisher::RepublisherSettings;
-pub use resilient_client::ResilientClientBuilderError;

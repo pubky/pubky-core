@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
+use super::homeserver_url;
 use futures_util::StreamExt;
 use tokio::net::TcpStream;
 
@@ -175,6 +176,39 @@ impl PubkyHttpClient {
         let qname = url.host_str().unwrap_or(&pk).to_string();
         let transport = self.transport.resolve(&qname, &self.pkarr).await;
         self.build_pubky_request(method, &url, &pk, &transport)
+    }
+
+    /// Native has no ambient browser cookie jar, so this is `cross_request`.
+    pub(crate) async fn cross_request_anonymous(
+        &self,
+        method: Method,
+        url: Url,
+    ) -> Result<RequestBuilder> {
+        self.cross_request(method, url).await
+    }
+
+    /// Route through `homeserver` while addressing `pubky_host`.
+    pub(crate) async fn cross_request_via_homeserver(
+        &self,
+        method: Method,
+        homeserver: &PublicKey,
+        pubky_host: &PublicKey,
+        path: &str,
+    ) -> Result<RequestBuilder> {
+        let url = homeserver_url(homeserver, path)?;
+        let homeserver_z32 = homeserver.z32();
+        let pubky_host_z32 = pubky_host.z32();
+        let transport = self.transport.resolve(&homeserver_z32, &self.pkarr).await;
+
+        match transport {
+            ResolvedTransport::PubkyTls => Ok(self
+                .http
+                .request(method, url.as_str())
+                .header("pubky-host", pubky_host_z32)),
+            ResolvedTransport::Icann { .. } => {
+                self.build_pubky_request(method, &url, &pubky_host_z32, &transport)
+            }
+        }
     }
 
     /// Build a [`RequestBuilder`] for a resolved pubky host transport.
@@ -428,6 +462,39 @@ mod tests {
             req.url()
         );
         assert_eq!(req.headers().get("pubky-host").unwrap(), &user_z32);
+    }
+
+    #[tokio::test]
+    async fn cross_request_via_homeserver_routes_to_homeserver_with_user_pubky_host() {
+        let homeserver = Keypair::random();
+        let user = Keypair::random();
+        let icann = SVCB::new(10, "example.com".try_into().unwrap());
+        let homeserver_packet = SignedPacket::builder()
+            .https(".".try_into().unwrap(), icann, 3600)
+            .sign(&homeserver)
+            .unwrap();
+
+        let mut builder = PubkyHttpClient::builder();
+        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        let client = builder.build().unwrap();
+        client
+            .pkarr
+            .cache()
+            .unwrap()
+            .put(&homeserver.public_key().into(), &homeserver_packet);
+        let homeserver_pk = PublicKey::try_from_z32(&homeserver.public_key().to_string()).unwrap();
+        let user_pk = PublicKey::try_from_z32(&user.public_key().to_string()).unwrap();
+
+        let req = client
+            .cross_request_via_homeserver(Method::POST, &homeserver_pk, &user_pk, "/session")
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(req.url().host_str(), Some("example.com"));
+        assert_eq!(req.url().path(), "/session");
+        assert_eq!(req.headers().get("pubky-host").unwrap(), &user_pk.z32());
     }
 
     #[tokio::test]

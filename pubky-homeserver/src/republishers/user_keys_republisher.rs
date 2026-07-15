@@ -1,7 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 use super::pkarr_republisher::{
-    MultiRepublishResult, MultiRepublisher, RepublisherSettings, ResilientClientBuilderError,
+    BatchRepublisher, BatchRepublisherError, RepublishSummary, RepublisherSettings,
 };
 use pubky_common::crypto::PublicKey;
 use tokio::{
@@ -9,37 +9,36 @@ use tokio::{
     time::{interval, Instant},
 };
 
-use crate::{
-    app_context::AppContext,
-    persistence::sql::{user::UserRepository, SqlDb},
-};
+use crate::persistence::sql::{user::UserRepository, SqlDb};
+
+const MIN_REPUBLISH_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum UserKeysRepublisherError {
     #[error(transparent)]
-    DB(sqlx::Error),
+    DB(#[from] sqlx::Error),
     #[error(transparent)]
-    Pkarr(ResilientClientBuilderError),
+    Pkarr(#[from] BatchRepublisherError),
 }
-
-const MIN_REPUBLISH_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.
-pub(crate) struct UserKeysRepublisher {
-    handle: Option<JoinHandle<()>>,
+pub(crate) struct UserKeysRepublisherJob {
+    handle: JoinHandle<()>,
 }
 
-impl UserKeysRepublisher {
+impl UserKeysRepublisherJob {
+    const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
+
     /// Run the user keys republisher with an initial delay.
-    pub fn start_delayed(context: &AppContext, initial_delay: Duration) -> Self {
-        let db = context.sql_db.clone();
-        let is_disabled = context.config_toml.pkdns.user_keys_republisher_interval == 0;
-        if is_disabled {
+    pub fn start(
+        db: SqlDb,
+        pkarr_builder: pkarr::ClientBuilder,
+        mut republish_interval: Duration,
+    ) -> Option<Self> {
+        if republish_interval.is_zero() {
             tracing::info!("User keys republisher is disabled.");
-            return Self { handle: None };
+            return None;
         }
-        let mut republish_interval =
-            Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
         if republish_interval < MIN_REPUBLISH_INTERVAL {
             tracing::warn!(
                 "The configured user keys republisher interval is less than {}s. To avoid spamming the Mainline DHT, the value is set to {}s.",
@@ -51,7 +50,7 @@ impl UserKeysRepublisher {
         tracing::info!(
             "Initialize user keys republisher with an interval of {:?} and an initial delay of {:?}",
             republish_interval,
-            initial_delay
+            Self::INITIAL_DELAY_BEFORE_REPUBLISH
         );
 
         if republish_interval < Duration::from_secs(60 * 60) {
@@ -60,103 +59,81 @@ impl UserKeysRepublisher {
             );
         }
 
-        let mut pkarr_builder = context.pkarr_builder.clone();
-        pkarr_builder.no_relays(); // Disable relays to avoid their rate limiting.
+        let republisher = UserKeysRepublisher { db, pkarr_builder };
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(initial_delay).await;
-            Self::run_loop(&db, republish_interval, pkarr_builder).await
+            tokio::time::sleep(Self::INITIAL_DELAY_BEFORE_REPUBLISH).await;
+            let mut interval = interval(republish_interval);
+            loop {
+                interval.tick().await;
+                republisher.republish().await;
+            }
         });
-        Self {
-            handle: Some(handle),
-        }
-    }
-
-    // Get all user public keys from the database.
-    async fn get_all_user_keys(db: &SqlDb) -> Result<Vec<PublicKey>, sqlx::Error> {
-        let users = UserRepository::get_all(&mut db.pool().into()).await?;
-
-        let keys: Vec<PublicKey> = users.into_iter().map(|user| user.public_key).collect();
-        Ok(keys)
-    }
-
-    /// Republishes all user pkarr keys to the Mainline DHT once.
-    ///
-    /// # Errors
-    ///
-    /// - If the database cannot be read, an error is returned.
-    /// - If the pkarr keys cannot be republished, an error is returned.
-    async fn republish_keys_once(
-        db: &SqlDb,
-        pkarr_builder: pkarr::ClientBuilder,
-    ) -> Result<MultiRepublishResult, UserKeysRepublisherError> {
-        let keys = Self::get_all_user_keys(db)
-            .await
-            .map_err(UserKeysRepublisherError::DB)?;
-        if keys.is_empty() {
-            tracing::debug!("No user keys to republish.");
-            return Ok(MultiRepublishResult::new(HashMap::new()));
-        }
-        let settings = RepublisherSettings::default();
-        let republisher = MultiRepublisher::new_with_settings(settings, Some(pkarr_builder));
-        // TODO: Only publish if user points to this home server.
-        let pkarr_keys: Vec<pkarr::PublicKey> =
-            keys.into_iter().map(pkarr::PublicKey::from).collect();
-        let results = republisher
-            .run(pkarr_keys, 12)
-            .await
-            .map_err(UserKeysRepublisherError::Pkarr)?;
-        Ok(results)
-    }
-
-    /// Internal run loop that publishes all user pkarr keys to the Mainline DHT continuously.
-    async fn run_loop(
-        db: &SqlDb,
-        republish_interval: Duration,
-        pkarr_builder: pkarr::ClientBuilder,
-    ) {
-        let mut interval = interval(republish_interval);
-        loop {
-            interval.tick().await;
-            let start = Instant::now();
-            tracing::debug!("Republishing user keys...");
-            let result = match Self::republish_keys_once(db, pkarr_builder.clone()).await {
-                Ok(result) => result,
-                Err(e) => {
-                    tracing::error!("Error republishing user keys: {:?}", e);
-                    continue;
-                }
-            };
-            let elapsed = start.elapsed();
-            if result.is_empty() {
-                continue;
-            }
-            if result.missing().is_empty() {
-                tracing::debug!(
-                    "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
-                    result.len(),
-                    elapsed.as_secs_f32(),
-                    result.success().len(),
-                    result.missing().len(),
-                    result.publishing_failed().len()
-                );
-            } else {
-                tracing::warn!(
-                    "Republished {} user keys within {:.1}s. {} success, {} missing, {} failed.",
-                    result.len(),
-                    elapsed.as_secs_f32(),
-                    result.success().len(),
-                    result.missing().len(),
-                    result.publishing_failed().len()
-                );
-            }
-        }
+        Some(Self { handle })
     }
 }
 
-impl Drop for UserKeysRepublisher {
+impl Drop for UserKeysRepublisherJob {
     fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.abort();
+        self.handle.abort();
+    }
+}
+
+struct UserKeysRepublisher {
+    db: SqlDb,
+    pkarr_builder: pkarr::ClientBuilder,
+}
+
+impl UserKeysRepublisher {
+    async fn republish(&self) {
+        let start = Instant::now();
+        tracing::debug!("Republishing user keys...");
+        let summary = match self.republish_impl().await {
+            Ok(summary) if summary.is_empty() => return,
+            Ok(summary) => summary,
+            Err(e) => {
+                tracing::error!("Error republishing user keys: {e:?}");
+                return;
+            }
+        };
+        let elapsed = start.elapsed();
+        Self::log_republish_summary(&summary, elapsed);
+    }
+
+    async fn republish_impl(&self) -> Result<RepublishSummary, UserKeysRepublisherError> {
+        let keys = self.get_all_user_keys().await?;
+        if keys.is_empty() {
+            tracing::debug!("No user keys to republish.");
+            return Ok(RepublishSummary::default());
+        }
+        let settings = RepublisherSettings::default();
+        let republisher = BatchRepublisher::new(settings, self.pkarr_builder.clone());
+        // TODO: Only publish if user points to this home server.
+        let pkarr_keys = keys.into_iter().map(Into::into).collect();
+        let max_concurrent_workers =
+            NonZeroUsize::new(12).expect("worker count should be non-zero");
+        Ok(republisher.run(pkarr_keys, max_concurrent_workers).await?)
+    }
+
+    async fn get_all_user_keys(&self) -> Result<Vec<PublicKey>, sqlx::Error> {
+        let users = UserRepository::get_all(&mut self.db.pool().into()).await?;
+        Ok(users.into_iter().map(|user| user.public_key).collect())
+    }
+
+    fn log_republish_summary(summary: &RepublishSummary, elapsed: Duration) {
+        let total_count = summary.len();
+        let elapsed_secs = elapsed.as_secs_f32();
+        let success_count = summary.success_count();
+        let missing_count = summary.missing_count();
+        let failed_count = summary.publishing_failed_count();
+
+        if missing_count == 0 {
+            tracing::debug!(
+                "Republished {total_count} user keys within {elapsed_secs:.1}s. {success_count} success, {missing_count} missing, {failed_count} failed.",
+            );
+        } else {
+            tracing::warn!(
+                "Republished {total_count} user keys within {elapsed_secs:.1}s. {success_count} success, {missing_count} missing, {failed_count} failed.",
+            );
         }
     }
 }
@@ -185,12 +162,11 @@ mod tests {
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
         let pkarr_builder = pkarr::ClientBuilder::default();
-        let result = UserKeysRepublisher::republish_keys_once(&db, pkarr_builder)
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 10);
-        assert_eq!(result.success().len(), 0);
-        assert_eq!(result.missing().len(), 10);
-        assert_eq!(result.publishing_failed().len(), 0);
+        let worker = UserKeysRepublisher { db, pkarr_builder };
+        let summary = worker.republish_impl().await.unwrap();
+        assert_eq!(summary.len(), 10);
+        assert_eq!(summary.success_count(), 0);
+        assert_eq!(summary.missing_count(), 10);
+        assert_eq!(summary.publishing_failed_count(), 0);
     }
 }

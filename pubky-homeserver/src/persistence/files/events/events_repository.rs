@@ -311,6 +311,79 @@ impl EventRepository {
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
         Ok(events)
     }
+
+    /// Get **all** events (public and private) by a single global cursor, with optional reverse,
+    /// path, and user-id filters. `path_filters` is a union — an event is returned if it matches
+    /// **any** of them (empty = no path restriction); each uses [`PathFilter`] file-vs-directory
+    /// matching. Backs the admin events stream.
+    pub async fn get_all_filtered_by_cursor<'a>(
+        cursor: Option<EventCursor>,
+        limit: Option<u16>,
+        reverse: bool,
+        path_filters: &[PathFilter],
+        user_ids: Option<&[i32]>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<Vec<EventEntity>, sqlx::Error> {
+        // An explicit empty user filter matches nothing; short-circuit before querying.
+        if matches!(user_ids, Some(ids) if ids.is_empty()) {
+            return Ok(Vec::new());
+        }
+
+        let limit = limit
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT);
+        let order = if reverse { Order::Desc } else { Order::Asc };
+
+        let mut statement = Query::select()
+            .columns([
+                (EVENT_TABLE, EventIden::Id),
+                (EVENT_TABLE, EventIden::User),
+                (EVENT_TABLE, EventIden::Type),
+                (EVENT_TABLE, EventIden::Path),
+                (EVENT_TABLE, EventIden::CreatedAt),
+                (EVENT_TABLE, EventIden::ContentHash),
+            ])
+            .column((USER_TABLE, UserIden::PublicKey))
+            .from(EVENT_TABLE)
+            .left_join(
+                USER_TABLE,
+                Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
+            )
+            .order_by((EVENT_TABLE, EventIden::Id), order)
+            .limit(limit as u64)
+            .to_owned();
+
+        if let Some(cursor) = cursor {
+            let id_col = Expr::col((EVENT_TABLE, EventIden::Id));
+            statement = statement
+                .and_where(if reverse {
+                    id_col.lt(cursor.id())
+                } else {
+                    id_col.gt(cursor.id())
+                })
+                .to_owned();
+        }
+
+        // Union of path filters: an event matches if it satisfies ANY of them.
+        if !path_filters.is_empty() {
+            let mut path_condition = Condition::any();
+            for filter in path_filters {
+                path_condition = path_condition.add(filter.to_condition());
+            }
+            statement = statement.cond_where(path_condition).to_owned();
+        }
+
+        if let Some(ids) = user_ids {
+            statement = statement
+                .and_where(Expr::col((EVENT_TABLE, EventIden::User)).is_in(ids.iter().copied()))
+                .to_owned();
+        }
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
+        Ok(events)
+    }
 }
 
 #[derive(Iden)]
