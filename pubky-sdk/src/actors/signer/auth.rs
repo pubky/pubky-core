@@ -70,6 +70,12 @@ impl PubkySigner {
             }
             DeepLink::Signup(d) => {
                 let params = d.params();
+                cross_log!(
+                    info,
+                    "Approving legacy signup via relay {} (caps={:?})",
+                    params.relay,
+                    params.capabilities
+                );
                 let payload =
                     self.build_encrypted_token(params.capabilities.clone(), &params.secret);
                 (params.relay.clone(), params.secret, payload)
