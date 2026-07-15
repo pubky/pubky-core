@@ -234,11 +234,14 @@ async fn signup_via_direct_deeplink_with_token() {
         .unwrap();
 
     let signer = pubky.signer(Keypair::random());
-    let deeplink = format!(
-        "pubkyauth://direct_signup?hs={}&st={}",
-        server.public_key().z32(),
-        token
-    );
+    let deeplink = DirectSignupDeepLink::new(
+        DeepLinkScheme::PubkyAuth,
+        DirectSignupParams {
+            homeserver: server.public_key(),
+            signup_token: Some(token),
+        },
+    )
+    .to_string();
 
     signer.approve_auth(&deeplink).await.unwrap();
 
@@ -251,4 +254,68 @@ async fn signup_via_direct_deeplink_with_token() {
         &signer.public_key(),
         "Signed-in session should belong to the signer"
     );
+}
+
+#[tokio::test]
+#[pubky_testnet::test]
+async fn direct_signup_deeplink_rejects_missing_or_invalid_token() {
+    let mut config = ConfigToml::default_test_config();
+    config.general.signup_mode = SignupMode::TokenRequired;
+
+    let testnet = EphemeralTestnet::builder()
+        .config(config)
+        .build()
+        .await
+        .unwrap();
+
+    let server = testnet.homeserver_app();
+    let pubky = testnet.sdk().unwrap();
+
+    let missing_token_link = DirectSignupDeepLink::new(
+        DeepLinkScheme::PubkyAuth,
+        DirectSignupParams {
+            homeserver: server.public_key(),
+            signup_token: None,
+        },
+    )
+    .to_string();
+    let missing_token_error = pubky
+        .signer(Keypair::random())
+        .approve_auth(&missing_token_link)
+        .await
+        .expect_err("direct signup without a token should fail");
+    assert_signup_rejected(
+        missing_token_error,
+        StatusCode::BAD_REQUEST,
+        "Token required",
+    );
+
+    let invalid_token_link = DirectSignupDeepLink::new(
+        DeepLinkScheme::PubkyAuth,
+        DirectSignupParams {
+            homeserver: server.public_key(),
+            signup_token: Some("AAAA-BBBB-CCCC".into()),
+        },
+    )
+    .to_string();
+    let invalid_token_error = pubky
+        .signer(Keypair::random())
+        .approve_auth(&invalid_token_link)
+        .await
+        .expect_err("direct signup with an invalid token should fail");
+    assert_signup_rejected(
+        invalid_token_error,
+        StatusCode::UNAUTHORIZED,
+        "Invalid token",
+    );
+}
+
+fn assert_signup_rejected(error: Error, expected_status: StatusCode, expected_message: &str) {
+    match error {
+        Error::Request(RequestError::Server { status, message }) => {
+            assert_eq!(status, expected_status);
+            assert_eq!(message, expected_message);
+        }
+        error => panic!("expected a homeserver signup error, got {error:?}"),
+    }
 }

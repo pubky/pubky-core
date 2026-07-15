@@ -70,6 +70,10 @@ test("direct signup deep link with token", async (t) => {
   t.equal(deepLink.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
   t.equal(deepLink.signupToken, "1234567890");
 
+  const roundTripped = DirectSignupDeepLink.parse(deepLink.toString());
+  t.equal(roundTripped.homeserver.z32(), HOMESERVER_PUBLICKEY.z32());
+  t.equal(roundTripped.signupToken, "1234567890");
+
   t.end();
 });
 
