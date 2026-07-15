@@ -9,8 +9,9 @@ use pubky_common::storage;
 
 use crate::shared::webdav::WebDavPath;
 
-pub(crate) const CACHE_CONTROL_NO_STORE: &str = "no-store";
-pub(crate) const VARY_PRIVATE: &str = "pubky-host, Authorization, Cookie";
+pub(crate) const CACHE_CONTROL_NO_STORE: HeaderValue = HeaderValue::from_static("no-store");
+pub(crate) const VARY_PRIVATE: HeaderValue =
+    HeaderValue::from_static("pubky-host, Authorization, Cookie");
 
 pub(crate) async fn private_cache_policy(request: Request, next: Next) -> Response {
     let is_private = is_private_tenant_request_path(request.uri().path());
@@ -34,11 +35,8 @@ pub(crate) async fn sse_cache_policy(request: Request, next: Next) -> Response {
 
 fn apply_private_cache_headers(response: &mut Response) {
     let headers = response.headers_mut();
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(CACHE_CONTROL_NO_STORE),
-    );
-    headers.insert(header::VARY, HeaderValue::from_static(VARY_PRIVATE));
+    headers.insert(header::CACHE_CONTROL, CACHE_CONTROL_NO_STORE);
+    headers.insert(header::VARY, VARY_PRIVATE);
 }
 
 fn remove_validators(response: &mut Response) {
