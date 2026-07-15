@@ -448,13 +448,19 @@ paths:
               schema:
                 type: string
             Cache-Control:
+              description: |
+                `/pub/...` files use `private, must-revalidate`; `/priv/...`
+                files and private directory listings use `no-store`.
               schema:
                 type: string
-                example: private, must-revalidate
+                example: no-store
             Vary:
+              description: |
+                `/pub/...` files vary by `pubky-host`; authentication-dependent
+                `/priv/...` responses vary by `pubky-host, Authorization, Cookie`.
               schema:
                 type: string
-                example: pubky-host
+                example: pubky-host, Authorization, Cookie
           content:
             application/octet-stream:
               schema:
@@ -479,15 +485,30 @@ paths:
               schema:
                 type: string
             Cache-Control:
+              description: |
+                `private, must-revalidate` for `/pub/...`; `no-store` for `/priv/...`.
               schema:
                 type: string
             Vary:
+              description: |
+                `pubky-host` for `/pub/...`; `pubky-host, Authorization, Cookie` for `/priv/...`.
               schema:
                 type: string
         "400":
           description: Invalid cursor
         "404":
           description: File or directory not found, or tenant (user) does not exist
+          headers:
+            Cache-Control:
+              description: Present as `no-store` for private-path errors.
+              schema:
+                type: string
+                example: no-store
+            Vary:
+              description: Present as full auth vary for private-path errors.
+              schema:
+                type: string
+                example: pubky-host, Authorization, Cookie
 
     head:
       tags: [Data]
@@ -513,6 +534,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
+                example: no-store
             Vary:
               schema:
                 type: string
@@ -711,6 +733,15 @@ paths:
       responses:
         "200":
           description: SSE event stream
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+            Vary:
+              schema:
+                type: string
+                example: pubky-host, Authorization, Cookie
           content:
             text/event-stream:
               schema:

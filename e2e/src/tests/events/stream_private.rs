@@ -108,6 +108,20 @@ async fn events_stream_private_path_requires_auth() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("vary")
+            .and_then(|value| value.to_str().ok()),
+        Some("pubky-host, Authorization, Cookie")
+    );
 }
 
 /// An authorized owner (root capability) receives their own private events,
@@ -151,6 +165,20 @@ async fn events_stream_authorized_owner_receives_private() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("vary")
+            .and_then(|value| value.to_str().ok()),
+        Some("pubky-host, Authorization, Cookie")
+    );
     let mut stream = response.bytes_stream().eventsource();
     let event = stream.next().await.unwrap().unwrap();
     assert!(event
