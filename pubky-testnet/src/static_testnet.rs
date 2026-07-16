@@ -276,6 +276,7 @@ impl StaticTestnet {
     pub fn bootstrap_nodes(&self) -> Vec<String> {
         let mut nodes = vec![];
         if let Some(dht) = &self.fixed_bootstrap_node {
+            #[allow(deprecated, reason = "mainline has no synchronous replacement")]
             nodes.push(dht.info().local_addr().to_string());
         }
         nodes.extend(
@@ -317,9 +318,17 @@ impl StaticTestnet {
             .http_port(testnet_ports::PKARR_RELAY)
             .storage(temp_dir.path().to_path_buf())
             .disable_rate_limiter()
-            .pkarr(|pkarr| {
-                pkarr.no_default_network();
-                pkarr.bootstrap(&self.testnet.dht.bootstrap)
+            .report_policy(pkarr::dht::ReportPolicy::testnet())
+            .dht(|config| {
+                config.bootstrap = Some(
+                    self.testnet
+                        .dht
+                        .bootstrap
+                        .iter()
+                        .map(|address| address.parse().expect("testnet bootstrap address is valid"))
+                        .collect(),
+                );
+                config
             });
         let relay = unsafe { builder.run() }.await?;
         self.testnet.pkarr_relays.push(relay);

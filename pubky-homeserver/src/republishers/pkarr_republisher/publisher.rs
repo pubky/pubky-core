@@ -2,10 +2,8 @@
 //! Publishes a single pkarr packet.
 //!
 
-use pkarr::{mainline::async_dht::AsyncDht, PublicKey, SignedPacket};
+use pkarr::SignedPacket;
 use std::num::NonZeroU8;
-
-use super::verify::count_key_on_dht;
 
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum PublishError {
@@ -59,7 +57,6 @@ impl PublisherSettings {
 pub struct Publisher {
     packet: SignedPacket,
     client: pkarr::Client,
-    dht: AsyncDht,
     min_sufficient_node_publish_count: NonZeroU8,
 }
 
@@ -72,30 +69,16 @@ impl Publisher {
             Some(c) => c.clone(),
             None => pkarr::Client::builder().build()?,
         };
-        let dht = client.dht().expect("infallible").as_async();
         Ok(Self {
             packet,
             client,
-            dht,
             min_sufficient_node_publish_count: settings.min_sufficient_node_publish_count,
         })
     }
 
-    /// Get the public key of the signer of the packet
-    fn get_public_key(&self) -> PublicKey {
-        self.packet.public_key()
-    }
-
     /// Publish a single public key.
     pub async fn publish(&self) -> Result<usize, PublishError> {
-        if let Err(e) = self.client.publish(&self.packet, None).await {
-            return Err(e.into());
-        }
-
-        // TODO: This counting could really be done with the put response in the mainline library already. It's not exposed though.
-        // This would really speed up the publishing and reduce the load on the DHT.
-        // -- Sev April 2025 --
-        let published_nodes_count = count_key_on_dht(&self.get_public_key(), &self.dht).await;
+        let published_nodes_count = self.client.publish(&self.packet).await? as usize;
         if published_nodes_count < self.min_sufficient_node_publish_count.get().into() {
             return Err(PublishError::InsufficientlyPublished {
                 published_nodes_count,
@@ -112,6 +95,7 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey, SignedPacket};
 
+    use super::super::test_client_builder;
     use super::{PublishError, Publisher, PublisherSettings};
 
     fn sample_packet() -> (PublicKey, SignedPacket) {
@@ -129,8 +113,7 @@ mod tests {
             .seeded(false)
             .build()
             .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 
@@ -151,8 +134,7 @@ mod tests {
             .seeded(false)
             .build()
             .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let (_, packet) = sample_packet();
 

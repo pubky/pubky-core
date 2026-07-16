@@ -10,6 +10,7 @@ type PublicKeyQueue = Mutex<Vec<PublicKey>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BatchRepublisherError {
+    #[allow(dead_code)]
     #[error("pkarr client was built without DHT and is only using relays. This is not supported.")]
     DhtNotEnabled,
     #[error(transparent)]
@@ -54,7 +55,7 @@ impl BatchRepublisher {
     ///
     /// # Errors
     ///
-    /// Returns an error if a worker cannot build a DHT-enabled pkarr client.
+    /// Returns an error if a worker cannot build a pkarr client.
     pub async fn run(
         &self,
         public_keys: Vec<PublicKey>,
@@ -78,9 +79,6 @@ impl BatchRepublisher {
         public_keys: &PublicKeyQueue,
     ) -> Result<RepublishSummary, BatchRepublisherError> {
         let client = self.client_builder.build()?;
-        if client.dht().is_none() {
-            return Err(BatchRepublisherError::DhtNotEnabled);
-        }
         let republisher = Republisher::new(client, self.settings.republisher.clone());
         let republisher = RetryingRepublisher::new(republisher, &self.settings.retry);
 
@@ -132,6 +130,7 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
+    use super::super::test_client_builder;
     use super::{
         BatchRepublisher, BatchRepublisherSettings, RepublishSummary, RepublisherSettings,
     };
@@ -144,7 +143,7 @@ mod tests {
                 .build(key)
                 .unwrap();
             client
-                .publish(&packet, None)
+                .publish(&packet)
                 .await
                 .expect("sample packet should publish");
         }
@@ -161,8 +160,7 @@ mod tests {
             .seeded(false)
             .build()
             .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_keys = publish_sample_packets(&pkarr_client, key_count).await;
 

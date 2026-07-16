@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use pkarr::{
-    SignedPacket, Timestamp,
+    ResolvePolicy, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
 };
 
@@ -148,7 +148,12 @@ impl Pkdns {
             "Resolving homeserver for public key {} via PKARR",
             user_public_key
         );
-        let packet = self.client.pkarr().resolve(user_public_key).await?;
+        let packet = self
+            .client
+            .pkarr()
+            .resolve(user_public_key, ResolvePolicy::CacheFirst)
+            .await
+            .ok()?;
         let s = extract_host_from_packet(&packet)?;
         let result = PublicKey::try_from_z32(&s).ok();
         cross_log!(
@@ -239,7 +244,12 @@ impl Pkdns {
             pubky,
             mode
         );
-        let existing = self.client.pkarr().resolve_most_recent(&pubky).await;
+        let existing = self
+            .client
+            .pkarr()
+            .resolve(&pubky, ResolvePolicy::NetworkOnly)
+            .await
+            .ok();
 
         // 2) Decide host string to publish.
         let Some(host_str) = Self::select_host(&pubky, host_override, existing.as_ref()) else {
@@ -273,7 +283,7 @@ impl Pkdns {
 
         self.client
             .pkarr()
-            .publish(&signed_packet, existing.map(|s| s.timestamp()))
+            .publish(&signed_packet)
             .await
             .map_err(PkarrError::from)?;
 
@@ -453,7 +463,7 @@ mod tests {
     #[tokio::test]
     async fn require_homeserver_of_returns_validation_when_unresolved() {
         let client = PubkyHttpClient::builder()
-            .pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]))
+            .isolated_pkarr_test()
             .build()
             .expect("client");
         let pkdns = Pkdns::with_client(client);
