@@ -16,7 +16,7 @@ Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), 
     - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
   - [Configure the Homeserver with PostgreSQL](#configure-the-homeserver-with-postgresql)
   - [Run](#run)
-    - [Foreground](#foreground) | [systemd Service](#systemd-service)
+    - [systemd Service](#systemd-service)
 - [Next Steps](#next-steps)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -215,11 +215,7 @@ sed -i 's|^# \[general\]|[general]|; s|^# database_url = .*|database_url = "post
 
 ## Run
 
-You can run the homeserver directly in the foreground, which is useful for development and initial testing. For a long-lived server, you'll typically want to run it as a background service instead.
-
-### Foreground
-
-Start the homeserver in the foreground:
+Start the homeserver:
 
 ```bash
 pubky-homeserver
@@ -234,6 +230,8 @@ docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserv
 Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
 
 ### systemd Service
+
+> **Note:** This section applies to native (non-Docker) installs. If you run the homeserver via Docker, use Docker's own restart policy (`--restart unless-stopped`) or Docker Compose instead of systemd.
 
 Below is an example setup using systemd, which is available on most Linux distributions. This will run the homeserver in the background, start it on boot, and restart it automatically on failure.
 
