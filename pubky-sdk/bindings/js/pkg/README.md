@@ -225,6 +225,16 @@ like a bearer token. Delegated browser grant sessions should use
 await signer.approveAuthRequest("pubkyauth://signin?caps=...&secret=...&relay=...");
 ```
 
+**Handle a pubkyauth deep link**
+
+General entry point for any supported `pubkyauth://` link. Auth request links
+are approved through their relay (like `approveAuthRequest`), while a
+`direct_signup` link creates the account directly on its target homeserver:
+
+```js
+await signer.handleDeepLink("pubkyauth://direct_signup?hs=...");
+```
+
 ---
 
 ### GrantAuthFlow (pubkyauth)

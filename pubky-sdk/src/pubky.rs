@@ -410,6 +410,10 @@ fn parse_auth_deep_link(url: &str) -> Result<(Capabilities, url::Url, [u8; 32], 
                 .into(),
         )
         .into()),
+        DeepLink::DirectSignup(_) => Err(AuthError::Validation(
+            "Direct signup URLs cannot be resumed as cookie auth flows.".into(),
+        )
+        .into()),
         DeepLink::SeedExport(_) => {
             Err(AuthError::Validation("Only signin and signup URLs can be resumed.".into()).into())
         }

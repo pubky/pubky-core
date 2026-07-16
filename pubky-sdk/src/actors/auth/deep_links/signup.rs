@@ -18,7 +18,7 @@ impl DeepLinkIntent for SignupIntent {
     const NAME: &'static str = "signup";
 }
 
-/// Typed parameters for legacy signup deep links.
+/// Typed parameters for signup deep links.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignupParams {
     /// Capabilities requested by the app.
@@ -122,6 +122,48 @@ mod tests {
         let parsed_again = SignupDeepLink::parse_url(&deep_link.to_url()).unwrap();
 
         assert_eq!(parsed_again, deep_link);
+    }
+
+    #[test]
+    fn rejects_missing_capabilities() {
+        let error = format!(
+            "pubkyauth://signup?relay=https://httprelay.pubky.app/inbox/&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs={HOMESERVER}"
+        )
+        .parse::<SignupDeepLink>()
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DeepLinkParseError::MissingQueryParameter("caps")
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_relay() {
+        let error = format!(
+            "pubkyauth://signup?caps=/:rw&secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8&hs={HOMESERVER}"
+        )
+        .parse::<SignupDeepLink>()
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DeepLinkParseError::MissingQueryParameter("relay")
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_secret() {
+        let error = format!(
+            "pubkyauth://signup?caps=/:rw&relay=https://httprelay.pubky.app/inbox/&hs={HOMESERVER}"
+        )
+        .parse::<SignupDeepLink>()
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DeepLinkParseError::MissingQueryParameter("secret")
+        ));
     }
 
     #[test]

@@ -375,6 +375,17 @@ mod tests {
         assert!(result.is_err(), "seed export URL should fail to resume");
     }
 
+    #[test]
+    fn resume_rejects_direct_signup_url() {
+        let client = PubkyHttpClient::new().unwrap();
+        let pubky = Pubky::with_client(client);
+
+        let url =
+            "pubkyauth://direct_signup?hs=5jsjx1o6fzu6aeeo697r3i5rx15zq41kikcye8wtwdqm4nb4tryo";
+        let result = pubky.resume_cookie_auth_flow(url);
+        assert!(result.is_err(), "direct signup URL should fail to resume");
+    }
+
     #[tokio::test]
     async fn signup_flow_binds_cookie_to_deep_link_homeserver() {
         let homeserver = Keypair::random().public_key();
