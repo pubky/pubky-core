@@ -21,8 +21,9 @@
   <a href="https://deepwiki.com/pubky/pubky-core"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </div>
 
+<br/>
 
-[Pubky](https://pubky.org) is an open protocol for building censorship-resistant applications where users own their identity, data, and connections. No platform lock-in, no algorithmic feeds you don't control, no losing everything when a service shuts down. Your keys are your identity, and you choose where your data lives.
+[Pubky](https://pubky.org) is an open protocol for building censorship-resistant applications where users own their identity, data, and connections. No platform lock-in, no losing everything when a service shuts down. Your keys are your identity, and you choose where your data lives.
 
 To learn more about the vision, see [What is Pubky?](https://pubky.org/tldr/), [Censorship Resistance](https://pubky.org/explore/concepts/censorship/), and [Credible Exit](https://pubky.org/explore/concepts/credible-exit/).
 
@@ -30,13 +31,12 @@ This repository contains the core infrastructure: a homeserver that stores and s
 
 ## Who Is This For?
 
-- **App developers**: Use the [SDK](https://pubky.org/explore/pubkycore/sdk/) to build apps that read and write user data on homeservers. Start with [Local Development](./docs/LOCAL_DEVELOPMENT.md) and the [examples](./examples).
 - **Operators**: [Install and run a homeserver](./docs/INSTALL.md) to host user data.
-- **Contributors** [Set up a local testnet](./docs/LOCAL_DEVELOPMENT.md) and [run the tests](./docs/TESTING.md) to develop on pubky-core itself.
+- **App developers**: Use the [SDK](https://pubky.org/explore/pubkycore/sdk/) to build apps that read and write user data on homeservers. Guides coming soon.
 
 ## What Is a Homeserver?
 
-A Pubky homeserver stores and serves user data for Pubky app. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated writes and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
+A Pubky homeserver stores and serves user data. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated writes and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
 
 - Public-key based signup, signin and third-party app authorization
 - File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like)

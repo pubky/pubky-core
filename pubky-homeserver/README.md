@@ -2,13 +2,26 @@
 
 A homeserver for Pubky. Stores and serves user data via HTTP APIs with public-key authentication.
 
-For standalone installation and operation, see [Install and Run Pubky Homeserver](../docs/INSTALL.md). For local app development, use the [local testnet guide](../docs/LOCAL_DEVELOPMENT.md).
+For standalone deployment, see the [install guide](../docs/INSTALL.md).
 
-## Usage
+## Development
 
-### Library
+Run the homeserver directly from the source tree:
+
+```bash
+cargo run -p pubky-homeserver -- --data-dir ~/.pubky
+```
+
+See [config.sample.toml](config.sample.toml) for all configuration options.
+
+## Library Usage
 
 Use the homeserver as a library in other crates or for testing.
+
+```toml
+[dependencies]
+pubky-homeserver = "0.x"  # replace with the latest version
+```
 
 `HomeserverApp` starts the full server stack (client server, admin server, metrics server, DHT republishers):
 
@@ -61,26 +74,3 @@ their existing tenant-aware caching behavior.
 
 Note: CORS preflight `OPTIONS` is
 handled upstream by the CORS layer and carries no private body.
-
-## Signup Token
-
-If the homeserver is set to require signup tokens, create one using the admin endpoint:
-
-```bash
-curl "http://127.0.0.1:6288/generate_signup_token" \
-     -H "X-Admin-Password: admin"
-     # Use your admin password. "admin" is the testnet default.
-```
-
-Or from JavaScript:
-
-```js
-const url = "http://127.0.0.1:6288/generate_signup_token";
-const response = await client.fetch(url, {
-  method: "GET",
-  headers: {
-    "X-Admin-Password": "admin", // use your admin password, defaults to testnet password.
-  },
-});
-const signupToken = await response.text();
-```

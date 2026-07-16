@@ -2,11 +2,8 @@
 
 How to set up and operate a Pubky homeserver.
 
-> [!WARNING]
-> This project is under active development. Do not use it to run public, production, or mission-critical services without accepting that risk. Production deployments require infrastructure that is hardened, monitored, and maintained beyond what this guide covers.
-
 > **Looking for something else?**
-> See [Local Development](./LOCAL_DEVELOPMENT.md) for deploying a standalone homeserver and [Testing](./TESTING.md) for test databases and CI setup.
+> See [Pubky Testnet](../pubky-testnet/README.md) for running a local development testnet and [Testing](./TESTING.md) for test databases and CI setup.
 
 ## Contents
 
@@ -72,7 +69,7 @@ git checkout v${PUBKY_CORE_VERSION}
 Make sure you have the Rust toolchain installed and working.
 
 <details>
-<summary>Install Rust</summary>
+<summary>How to Install the Rust Toolchain</summary>
 
 Quick setup using [rustup](https://rustup.rs/) (recommended) on macOS or Linux:
 
@@ -265,12 +262,13 @@ Review the full documented sample at [`pubky-homeserver/config.sample.toml`](../
 
 Before using a homeserver in production:
 
-- Use a persistent PostgreSQL instance with password authentication and back it up.
-- Back up the homeserver `secret` file and any filesystem or bucket storage.
+- Back up homeserver's state:
+  - The keypair `.pubky/secret`
+  - Any user data depending on the configured option. For example, by default files are saved in `.pubky/data/files`
+  - Postgres
 - Do not expose the admin or metrics APIs to the public internet.
 - Change the default admin password in `[admin].admin_password`.
 - Configure `pkdns.public_ip`, `pkdns.icann_domain`, and public ports for your deployment.
-- Use persistent filesystem storage or a configured bucket backend, not in-memory storage.
 - The homeserver exposes two sockets: a **Pubky TLS** socket (`pubky_listen_socket`, default port 6287) and a regular **HTTP** socket (`icann_listen_socket`, default port 6286). Pubky TLS uses PKARR-based TLS and does not need a certificate so can be exposed directly. The HTTP socket serves browsers and should be put behind a reverse proxy if you need standard HTTPS with a domain certificate.
 
 ## Troubleshooting

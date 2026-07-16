@@ -1,15 +1,20 @@
 # Testing
 
-This guide is for contributors running Rust tests, integration tests, or CI jobs. 
-
-> **Looking for something else?** 
-See [Local Development](./LOCAL_DEVELOPMENT.md) for running a local development testnet and [Install and Run Pubky Homeserver](./INSTALL.md) for deploying a standalone homeserver.
+This guide is for contributors running Rust tests, integration tests, or CI jobs. For writing tests with a local testnet (ephemeral or persistent), see the [pubky-testnet README](../pubky-testnet/README.md).
 
 ## PostgreSQL for Tests
 
-Many homeserver and testnet tests need PostgreSQL. See [Local Development - Set Up PostgreSQL](./LOCAL_DEVELOPMENT.md#set-up-postgresql) for setup options.
+Many homeserver and testnet tests need PostgreSQL. Start a local instance with Docker:
 
-Run tests with a test connection string:
+```bash
+docker run --name pubky-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 127.0.0.1:5432:5432 \
+  -d postgres:18
+```
+
+Then run tests with a test connection string:
 
 ```bash
 TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
@@ -34,7 +39,7 @@ The macro ensures registered test databases are dropped after the test completes
 
 ## Docker PostgreSQL in Tests
 
-The `docker-postgres` feature lets tests automatically start a PostgreSQL container via Docker, removing the need for an external postgres instance. It's used by the [Rust examples](../examples/rust) (enabled by default) and the pubky-testnet integration tests. It's a good option for self-contained tests or CI environments where you don't want to manage a separate database.
+The `docker-postgres` feature lets tests automatically start a PostgreSQL container via Docker, removing the need for an external postgres instance. It's used by the [Rust examples](../examples/rust) and the pubky-testnet integration tests. It's a good option for self-contained tests or CI environments where you don't want to manage a separate database.
 
 Enable it in your crate:
 
@@ -113,13 +118,3 @@ Run the full workspace test suite:
 TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true' \
   cargo test --workspace --all-features
 ```
-
-## Troubleshooting
-
-### PostgreSQL Connection Refused
-
-See [Install Guide — PostgreSQL Connection Refused](./INSTALL.md#postgresql-connection-refused) for detailed debugging steps.
-
-### Stale Test Databases
-
-Test databases are named `pubky_test_*`. If a test process is killed before cleanup, drop stale databases manually with your PostgreSQL tooling.
