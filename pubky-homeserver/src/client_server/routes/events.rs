@@ -18,13 +18,17 @@ use axum::{
 use futures_util::stream::Stream;
 use pubky_common::{crypto::PublicKey, storage};
 use serde::Deserialize;
-use std::{collections::HashMap, convert::Infallible, time::Instant};
+use std::{collections::HashMap, convert::Infallible, future, time::Instant};
+use tokio::sync::broadcast;
 use tower_cookies::Cookies;
 use url::form_urlencoded;
 
 use crate::{
     client_server::{
-        auth::{grant::bearer::extract_bearer_token, has_read_permission, AuthSession},
+        auth::{
+            grant::bearer::extract_bearer_token, has_read_permission, AuthRevocation, AuthSession,
+            AuthState,
+        },
         query_params::ListQueryParams,
         AppState,
     },
@@ -88,6 +92,33 @@ enum EventStreamTenantScope<'a> {
     PublicOnly,
     PrivateSingleTenant(&'a PublicKey),
     PrivateUnsupported,
+}
+
+/// Authentication state held for the lifetime of a private event stream.
+struct PrivateStreamAuth {
+    session: AuthSession,
+    revocation_rx: broadcast::Receiver<AuthRevocation>,
+}
+
+/// A stream is either public or carries the state needed to enforce private
+/// stream revocation. This keeps those two cases disjoint rather than relying
+/// on correlated optional values.
+enum StreamAuth {
+    Public,
+    Private(Box<PrivateStreamAuth>),
+}
+
+/// Subscription state acquired before resolving middleware authentication.
+/// Subscribing first ensures a revocation cannot be missed in that gap.
+enum PendingStreamAuth {
+    Public,
+    Private(broadcast::Receiver<AuthRevocation>),
+}
+
+enum RevocationCheck {
+    Clear,
+    Close,
+    Revalidate,
 }
 
 impl<'a> EventStreamTenantScope<'a> {
@@ -321,6 +352,14 @@ pub async fn feed(
 /// If a client cannot consume events fast enough in live mode, the broadcast channel will lag and the connection will be closed.
 /// It is recommended that low memory clients poll this endpoint: Ie `live=true` with a low `limit`
 ///
+/// ## Revocation Behavior
+/// A stream that includes a private path is bound to the cookie or grant that
+/// authorized it. It closes promptly when that credential is revoked. A mixed
+/// public/private subscription closes as a whole; public-only streams are not
+/// tied to authentication and remain unaffected. Credential expiry and bearer
+/// token rotation are enforced when opening a stream and do not terminate an
+/// already-open stream.
+///
 /// ## Response Format
 /// Each event is sent as an SSE message with the event type and multiline data:
 /// ```text
@@ -340,6 +379,22 @@ pub async fn feed_stream(
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
     let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
+    // Subscribe before resolving the auth context. A final DB validation below
+    // closes the remaining middleware-to-subscription race for bearer auth.
+    let pending_stream_auth = match tenant_scope {
+        EventStreamTenantScope::PrivateSingleTenant(_) => {
+            PendingStreamAuth::Private(state.auth_revocation_service.subscribe().map_err(|_| {
+                HttpError::new_with_message(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Private event streams are temporarily unavailable",
+                )
+            })?)
+        }
+        EventStreamTenantScope::PublicOnly | EventStreamTenantScope::PrivateUnsupported => {
+            PendingStreamAuth::Public
+        }
+    };
+
     // Bearer auth disables the homeserver-addressed cookie fallback.
     let session = match session {
         Some(session) => Some(session),
@@ -350,6 +405,24 @@ pub async fn feed_stream(
     };
 
     let allowed_paths = authorized_paths(&params.paths, tenant_scope, session.as_ref())?;
+
+    let mut stream_auth = match (pending_stream_auth, session) {
+        (PendingStreamAuth::Private(revocation_rx), Some(session)) => {
+            state
+                .auth_state
+                .validate_private_stream_session(&session)
+                .await?;
+            StreamAuth::Private(Box::new(PrivateStreamAuth {
+                session,
+                revocation_rx,
+            }))
+        }
+        (PendingStreamAuth::Private(_), None) => return Err(HttpError::unauthorized()),
+        (PendingStreamAuth::Public, _) => StreamAuth::Public,
+    };
+    if !stream_auth_is_valid(&state.auth_state, &mut stream_auth).await {
+        return Err(HttpError::unauthorized());
+    }
 
     let mut user_cursor_map =
         resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
@@ -367,6 +440,10 @@ pub async fn feed_stream(
 
         // Phase 1: Batch Mode
         loop {
+            if !stream_auth_is_valid(&state.auth_state, &mut stream_auth).await {
+                return;
+            }
+
             // Drain any buffered events before querying as they'll be included in this or a future database query
             while rx.try_recv().is_ok() {}
 
@@ -396,6 +473,10 @@ pub async fn feed_stream(
 
             // Stream each historical event
             for event in events {
+                if !stream_auth_is_valid(&state.auth_state, &mut stream_auth).await {
+                    return;
+                }
+
                 // Update the cursor for this specific user
                 user_cursor_map.insert(event.user_id, Some(event.cursor()));
 
@@ -433,8 +514,33 @@ pub async fn feed_stream(
             let half_capacity = state.events_service.channel_capacity() / 2;
 
             loop {
-                match rx.recv().await {
-                    Ok(event) => {
+                tokio::select! {
+                    biased;
+                    revocation = next_revocation(&mut stream_auth) => {
+                        match revocation {
+                            Ok(revocation) => match &stream_auth {
+                                StreamAuth::Private(private) if revocation.matches(&private.session) => {
+                                    tracing::debug!("closing private event stream after auth revocation");
+                                    return;
+                                }
+                                StreamAuth::Private(_) => continue,
+                                StreamAuth::Public => unreachable!("public streams never wait for auth revocations"),
+                            }
+                            Err(broadcast::error::RecvError::Lagged(_)) => {
+                                if stream_auth_is_valid(&state.auth_state, &mut stream_auth).await {
+                                    continue;
+                                }
+                                tracing::warn!("auth revocation receiver lagged and stream session is no longer valid; closing private event stream");
+                                return;
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                tracing::warn!("auth revocation receiver closed; closing private event stream");
+                                return;
+                            }
+                        }
+                    }
+                    event = rx.recv() => match event {
+                        Ok(event) => {
                         // Check if receiver queue is at half capacity (early warning of slow clients)
                         if rx.len() >= half_capacity {
                             state.metrics.record_broadcast_half_full();
@@ -460,15 +566,16 @@ pub async fn feed_stream(
                             }
                         }
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        state.metrics.record_broadcast_lagged();
-                        tracing::warn!(
-                            "Slow client detected: broadcast channel lagged by {} events. Closing connection.",
-                            skipped
-                        );
-                        return;
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            state.metrics.record_broadcast_lagged();
+                            tracing::warn!(
+                                "Slow client detected: broadcast channel lagged by {} events. Closing connection.",
+                                skipped
+                            );
+                            return;
+                        }
+                        Err(_) => break, // Channel closed
                     }
-                    Err(_) => break, // Channel closed
                 }
             }
         }
@@ -520,6 +627,58 @@ async fn resolve_user_cursors(
 
 fn has_bearer_auth(headers: &HeaderMap) -> bool {
     extract_bearer_token(headers).has_bearer_scheme()
+}
+
+fn pending_revocation(private: &mut PrivateStreamAuth) -> RevocationCheck {
+    loop {
+        match private.revocation_rx.try_recv() {
+            Ok(revocation) if revocation.matches(&private.session) => {
+                return RevocationCheck::Close
+            }
+            Ok(_) => continue,
+            Err(broadcast::error::TryRecvError::Empty) => return RevocationCheck::Clear,
+            // Revalidate the stream's own credential instead of disconnecting
+            // every private stream after an unrelated revocation burst.
+            Err(broadcast::error::TryRecvError::Lagged(_)) => return RevocationCheck::Revalidate,
+            Err(broadcast::error::TryRecvError::Closed) => return RevocationCheck::Close,
+        }
+    }
+}
+
+/// Drain buffered revocations before emitting another event. A receiver lag
+/// only closes this stream when its own credential no longer validates.
+async fn stream_auth_is_valid(auth_state: &AuthState, stream_auth: &mut StreamAuth) -> bool {
+    let StreamAuth::Private(private) = stream_auth else {
+        return true;
+    };
+
+    loop {
+        match pending_revocation(private) {
+            RevocationCheck::Clear => return true,
+            RevocationCheck::Close => return false,
+            RevocationCheck::Revalidate => {
+                if let Err(error) = auth_state
+                    .validate_private_stream_session(&private.session)
+                    .await
+                {
+                    tracing::warn!(
+                        ?error,
+                        "auth revocation receiver lagged and private stream validation failed"
+                    );
+                    return false;
+                }
+            }
+        }
+    }
+}
+
+async fn next_revocation(
+    stream_auth: &mut StreamAuth,
+) -> Result<AuthRevocation, broadcast::error::RecvError> {
+    match stream_auth {
+        StreamAuth::Private(private) => private.revocation_rx.recv().await,
+        StreamAuth::Public => future::pending().await,
+    }
 }
 
 async fn resolve_tenant_cookie_session(
@@ -667,6 +826,41 @@ mod tests {
             );
             assert_eq!(has_bearer_auth(&headers), expected, "{value:?}");
         }
+    }
+
+    #[test]
+    fn buffered_revocation_closes_a_private_stream_before_historical_replay() {
+        let session = cookie_session(pk(), Capabilities::default());
+        let (sender, receiver) = broadcast::channel(1);
+        sender.send(AuthRevocation::CookieSession(1)).unwrap();
+        let mut private = PrivateStreamAuth {
+            session,
+            revocation_rx: receiver,
+        };
+
+        // Models a revocation that arrives after the endpoint subscribes but
+        // before its final session validation and historical replay begin.
+        assert!(matches!(
+            pending_revocation(&mut private),
+            RevocationCheck::Close
+        ));
+    }
+
+    #[test]
+    fn lagged_revocation_receiver_requests_revalidation() {
+        let session = cookie_session(pk(), Capabilities::default());
+        let (sender, receiver) = broadcast::channel(1);
+        sender.send(AuthRevocation::CookieSession(2)).unwrap();
+        sender.send(AuthRevocation::CookieSession(3)).unwrap();
+        let mut private = PrivateStreamAuth {
+            session,
+            revocation_rx: receiver,
+        };
+
+        assert!(matches!(
+            pending_revocation(&mut private),
+            RevocationCheck::Revalidate
+        ));
     }
 
     #[test]

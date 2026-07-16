@@ -114,6 +114,7 @@ impl ClientServer {
     ) -> std::result::Result<Router, ClientServerBuildError> {
         let state = AppState {
             auth_state: auth::AuthState::new(context),
+            auth_revocation_service: context.auth_revocation_service.clone(),
             sql_db: context.sql_db.clone(),
             file_service: context.file_service.clone(),
             signup_mode: context.config_toml.general.signup_mode.clone(),

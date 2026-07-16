@@ -32,8 +32,7 @@ use super::persistence::{
 };
 use super::service_error::AuthServiceError;
 use super::session::GrantSession;
-use crate::client_server::auth::AuthSession;
-use crate::client_server::auth::SignupService;
+use crate::client_server::auth::{AuthRevocation, AuthSession, SignupService};
 
 /// Default session bearer lifetime: 1 hour.
 const DEFAULT_SESSION_TOKEN_LIFETIME_SECS: u64 = 3600;
@@ -123,6 +122,7 @@ impl GrantAuthService {
         let mut tx = self.sql_db.pool().begin().await?;
         GrantRepository::revoke(grant_id, uexecutor!(tx)).await?;
         GrantSessionRepository::delete_all_for_grant(grant_id, uexecutor!(tx)).await?;
+        AuthRevocation::notify_grant_in_transaction(grant_id, uexecutor!(tx)).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -162,6 +162,17 @@ impl GrantAuthService {
         self.revoke_grant(&session.grant_id).await
     }
 
+    /// Recheck the grant status immediately before a private long-lived stream
+    /// starts. Subsequent revocation is handled by the notification listener.
+    pub(crate) async fn validate_active_session(
+        &self,
+        session: &GrantSession,
+    ) -> Result<(), AuthServiceError> {
+        self.validate_active_grant_session(session.token_expires_at, &session.grant_id)
+            .await?;
+        Ok(())
+    }
+
     /// Resolve an opaque bearer into a `GrantSession`.
     ///
     /// Hashes the bearer, looks up the matching session row, loads the
@@ -177,13 +188,9 @@ impl GrantAuthService {
             AuthServiceError::SessionNotFound,
         )?;
 
-        let now = Utc::now().timestamp();
-        if session.expires_at <= now {
-            return Err(AuthServiceError::SessionExpired);
-        }
-
-        let grant = self.get_grant(&session.grant_id).await?;
-        grant.require_active(now)?;
+        let grant = self
+            .validate_active_grant_session(session.expires_at as u64, &session.grant_id)
+            .await?;
 
         Ok(GrantSession {
             user_key: grant.user_pubkey.clone(),
@@ -214,6 +221,23 @@ impl GrantAuthService {
     }
 
     // ── Private helpers ─────────────────────────────────────────────────
+
+    /// Shared active-session validation used both when resolving a bearer and
+    /// immediately before a long-lived private stream begins.
+    async fn validate_active_grant_session(
+        &self,
+        token_expires_at: u64,
+        grant_id: &GrantId,
+    ) -> Result<GrantEntity, AuthServiceError> {
+        let now = Utc::now().timestamp();
+        if token_expires_at <= now as u64 {
+            return Err(AuthServiceError::SessionExpired);
+        }
+
+        let grant = self.get_grant(grant_id).await?;
+        grant.require_active(now)?;
+        Ok(grant)
+    }
 
     /// Shared verification pipeline: verify grant → check revocation → verify PoP → check nonce.
     async fn verify_grant_and_pop(
