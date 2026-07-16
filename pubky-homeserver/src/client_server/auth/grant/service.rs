@@ -162,17 +162,6 @@ impl GrantAuthService {
         self.revoke_grant(&session.grant_id).await
     }
 
-    /// Recheck the grant status immediately before a private long-lived stream
-    /// starts. Subsequent revocation is handled by the notification listener.
-    pub(crate) async fn validate_active_session(
-        &self,
-        session: &GrantSession,
-    ) -> Result<(), AuthServiceError> {
-        self.validate_active_grant_session(session.token_expires_at, &session.grant_id)
-            .await?;
-        Ok(())
-    }
-
     /// Resolve an opaque bearer into a `GrantSession`.
     ///
     /// Hashes the bearer, looks up the matching session row, loads the
@@ -222,9 +211,11 @@ impl GrantAuthService {
 
     // ── Private helpers ─────────────────────────────────────────────────
 
-    /// Shared active-session validation used both when resolving a bearer and
-    /// immediately before a long-lived private stream begins.
-    async fn validate_active_grant_session(
+    /// Validate a grant session and return its active backing grant.
+    ///
+    /// Used both when resolving a bearer and immediately before a private
+    /// long-lived stream begins.
+    pub(crate) async fn validate_active_grant_session(
         &self,
         token_expires_at: u64,
         grant_id: &GrantId,

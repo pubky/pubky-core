@@ -122,26 +122,19 @@ impl From<WireAuthRevocation> for AuthRevocation {
     }
 }
 
-#[derive(Debug)]
-struct AuthRevocationInner {
-    sender: broadcast::Sender<AuthRevocation>,
-    listener_healthy: AtomicBool,
-}
-
 /// Local fan-out service for committed authentication revocations.
 #[derive(Clone, Debug)]
 pub(crate) struct AuthRevocationService {
-    inner: Arc<AuthRevocationInner>,
+    notifications: broadcast::Sender<AuthRevocation>,
+    listener_healthy: Arc<AtomicBool>,
 }
 
 impl AuthRevocationService {
     pub(crate) fn new() -> Self {
         let (sender, _) = broadcast::channel(AUTH_REVOCATION_CHANNEL_CAPACITY);
         Self {
-            inner: Arc::new(AuthRevocationInner {
-                sender,
-                listener_healthy: AtomicBool::new(false),
-            }),
+            notifications: sender,
+            listener_healthy: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -150,8 +143,8 @@ impl AuthRevocationService {
     pub(crate) fn subscribe(
         &self,
     ) -> Result<broadcast::Receiver<AuthRevocation>, AuthRevocationUnavailable> {
-        let receiver = self.inner.sender.subscribe();
-        if self.inner.listener_healthy.load(Ordering::Acquire) {
+        let receiver = self.notifications.subscribe();
+        if self.listener_healthy.load(Ordering::Acquire) {
             Ok(receiver)
         } else {
             Err(AuthRevocationUnavailable)
@@ -160,17 +153,17 @@ impl AuthRevocationService {
 
     fn broadcast(&self, revocation: AuthRevocation) {
         // No receivers is normal when no private streams are connected.
-        let _ = self.inner.sender.send(revocation);
+        let _ = self.notifications.send(revocation);
     }
 
     fn mark_healthy(&self) {
-        self.inner.listener_healthy.store(true, Ordering::Release);
+        self.listener_healthy.store(true, Ordering::Release);
     }
 
     /// Stop all existing private streams before reconnecting. New private
     /// streams are rejected until the next successful `LISTEN`.
     fn mark_unhealthy(&self) {
-        self.inner.listener_healthy.store(false, Ordering::Release);
+        self.listener_healthy.store(false, Ordering::Release);
         self.broadcast(AuthRevocation::All);
     }
 }

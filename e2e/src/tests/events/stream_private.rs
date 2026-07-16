@@ -3,7 +3,11 @@
 //! guarantee that private events never leak to unauthorized callers
 
 use super::*;
+use eventsource_stream::Event;
+use futures::{Stream, StreamExt};
 use pubky_testnet::pubky::ClientId;
+use std::{fmt::Debug, future::Future, time::Duration};
+use tokio::time::{sleep, timeout};
 
 /// Sign up a fresh user and return an authenticated grant session plus the
 /// bearer the homeserver minted for it (for raw, credentialed requests).
@@ -27,37 +31,41 @@ async fn signed_in_user(
     (signer.public_key(), session, bearer)
 }
 
-macro_rules! assert_revocation_closes_private_stream {
-    ($stream:ident, $writer:expr, $before_path:literal, $revoke:expr, $after_path:literal) => {{
-        sleep(Duration::from_millis(300)).await;
-        ($writer)
-            .storage()
-            .put($before_path, vec![1])
-            .await
-            .unwrap();
-        let before = timeout(Duration::from_secs(5), $stream.next())
-            .await
-            .expect("private stream should receive a live event")
-            .expect("private stream should not close before revocation")
-            .expect("private stream should decode its live event");
-        assert!(before.data.contains($before_path));
+async fn assert_revocation_closes_private_stream<StreamError, Revoke, RevokeError>(
+    stream: &mut (impl Stream<Item = Result<Event, StreamError>> + Unpin),
+    writer: &pubky_testnet::pubky::PubkySession,
+    before_path: &str,
+    revoke: Revoke,
+    after_path: &str,
+) where
+    StreamError: Debug,
+    Revoke: Future<Output = Result<(), RevokeError>>,
+    RevokeError: Debug,
+{
+    sleep(Duration::from_millis(300)).await;
+    writer.storage().put(before_path, vec![1]).await.unwrap();
+    let before = timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("private stream should receive a live event")
+        .expect("private stream should not close before revocation")
+        .expect("private stream should decode its live event");
+    assert!(before.data.contains(before_path));
 
-        ($revoke).await.unwrap();
+    revoke.await.unwrap();
 
-        let closed = timeout(Duration::from_secs(5), $stream.next())
+    let closed = timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("revocation should promptly close the private stream");
+    assert!(closed.is_none(), "revoked private stream should close");
+
+    writer.storage().put(after_path, vec![2]).await.unwrap();
+    assert!(
+        timeout(Duration::from_millis(500), stream.next())
             .await
-            .expect("revocation should promptly close the private stream");
-        assert!(closed.is_none(), "revoked private stream should close");
-
-        ($writer).storage().put($after_path, vec![2]).await.unwrap();
-        assert!(
-            timeout(Duration::from_millis(500), $stream.next())
-                .await
-                .expect("closed stream should stay closed")
-                .is_none(),
-            "revoked stream must not receive later private events"
-        );
-    }};
+            .expect("closed stream should stay closed")
+            .is_none(),
+        "revoked stream must not receive later private events"
+    );
 }
 
 /// Anonymous, unfiltered stream is public-only: a `/priv/` write must never
@@ -562,10 +570,7 @@ async fn events_stream_cookie_not_used_when_bearer_present() {
 #[pubky_testnet::test]
 async fn events_stream_live_closes_when_grant_is_revoked() {
     use eventsource_stream::Eventsource;
-    use futures::StreamExt;
     use pubky_testnet::pubky::GrantManager;
-    use std::time::Duration;
-    use tokio::time::{sleep, timeout};
 
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -601,13 +606,14 @@ async fn events_stream_live_closes_when_grant_is_revoked() {
     let mut stream = response.bytes_stream().eventsource();
 
     let grant_id = streamed_session.as_grant().unwrap().grant_id().await;
-    assert_revocation_closes_private_stream!(
-        stream,
+    assert_revocation_closes_private_stream(
+        &mut stream,
         &root,
         "/priv/app/before-revoke.txt",
         GrantManager::new(&root).revoke(&grant_id),
-        "/priv/app/after-revoke.txt"
-    );
+        "/priv/app/after-revoke.txt",
+    )
+    .await;
 }
 
 /// Cookie signout invalidates only the cookie session used by the stream; a
@@ -618,9 +624,6 @@ async fn events_stream_live_closes_when_grant_is_revoked() {
 #[allow(deprecated, reason = "Test exercises the deprecated cookie auth flow")]
 async fn events_stream_live_closes_when_cookie_session_is_revoked() {
     use eventsource_stream::Eventsource;
-    use futures::StreamExt;
-    use std::time::Duration;
-    use tokio::time::{sleep, timeout};
 
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
@@ -657,13 +660,14 @@ async fn events_stream_live_closes_when_cookie_session_is_revoked() {
     assert_eq!(response.status(), StatusCode::OK);
     let mut stream = response.bytes_stream().eventsource();
 
-    assert_revocation_closes_private_stream!(
-        stream,
+    assert_revocation_closes_private_stream(
+        &mut stream,
         &writer_session,
         "/priv/app/before-cookie-revoke.txt",
         streamed_session.signout(),
-        "/priv/app/after-cookie-revoke.txt"
-    );
+        "/priv/app/after-cookie-revoke.txt",
+    )
+    .await;
 }
 
 /// Public-only subscriptions remain anonymous and continue receiving public
