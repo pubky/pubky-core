@@ -86,10 +86,9 @@ Docker must be running on the host. The container is automatically cleaned up on
 
 ### Sharing Docker Postgres Across Tests
 
-When using `docker-postgres`, each call to `.with_docker_postgres()` starts a **separate** PostgreSQL container.
-
-Use `DockerPostgres::shared()` to start **one** container and share its connection string across all tests.
-Docker handles cleanup automatically when the process exits.
+Each `.with_docker_postgres()` starts a **separate** container. To avoid that overhead,
+use `DockerPostgres::shared()` to start one container and reuse it. Tests remain isolated
+— each testnet gets its own ephemeral database.
 
 ```rust
 # #[cfg(feature = "docker-postgres")]
