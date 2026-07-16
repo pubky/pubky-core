@@ -1,6 +1,6 @@
 # Install and Run Pubky Homeserver
 
-How to set up and operate a Pubky homeserver.
+How to set up and operate a Pubky homeserver on Linux. Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), adapt as needed for other distributions.
 
 > **Looking for something else?**
 > See [Pubky Testnet](../pubky-testnet/README.md) for running a local development testnet and [Testing](./TESTING.md) for test databases and CI setup.
@@ -21,25 +21,26 @@ How to set up and operate a Pubky homeserver.
 
 ## Install the Homeserver
 
-Pick a version from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). The commands below use this variable, so set it first:
+Pick a version and platform from the [Pubky Core releases page](https://github.com/pubky/pubky-core/releases). The commands below use these variables, so set them first:
 
 ```bash
-PUBKY_CORE_VERSION=0.9.3
+PUBKY_CORE_VERSION=0.x
+PUBKY_CORE_PLATFORM=linux-amd64  # or linux-arm64. Alternatively: osx-arm64, osx-amd64, windows-amd64
 ```
 
 ### Release Binary
 
-Download and extract the archive (requires `curl`; on Ubuntu/Debian: `apt install curl`):
+Download and extract the archive (requires `curl`; `sudo apt install curl`):
 
 ```bash
-curl -LO https://github.com/pubky/pubky-core/releases/download/v${PUBKY_CORE_VERSION}/pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64.tar.gz
-tar -xf pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64.tar.gz
+curl -LO https://github.com/pubky/pubky-core/releases/download/v${PUBKY_CORE_VERSION}/pubky-core-v${PUBKY_CORE_VERSION}-${PUBKY_CORE_PLATFORM}.tar.gz
+tar -xf pubky-core-v${PUBKY_CORE_VERSION}-${PUBKY_CORE_PLATFORM}.tar.gz
 ```
 
 Place the binary on your `PATH`:
 
 ```bash
-cp pubky-core-v${PUBKY_CORE_VERSION}-linux-amd64/pubky-homeserver /usr/local/bin
+cp pubky-core-v${PUBKY_CORE_VERSION}-${PUBKY_CORE_PLATFORM}/pubky-homeserver /usr/local/bin
 ```
 
 Verify the install:
@@ -50,10 +51,10 @@ pubky-homeserver --version
 
 ### Build From Source
 
-Install build dependencies (Ubuntu/Debian):
+Install build dependencies:
 
 ```bash
-apt update && apt install -y build-essential pkg-config libssl-dev git curl
+sudo apt update && sudo apt install -y build-essential pkg-config libssl-dev git curl
 ```
 
 Clone the repository:
@@ -71,14 +72,14 @@ Make sure you have the Rust toolchain installed and working.
 <details>
 <summary>How to Install the Rust Toolchain</summary>
 
-Quick setup using [rustup](https://rustup.rs/) (recommended) on macOS or Linux:
+Quick setup using [rustup](https://rustup.rs/) (recommended):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 ```
 
-For other platforms or methods, see the [Rust Install Guide](https://rust-lang.org/tools/install/).
+For other methods, see the [Rust Install Guide](https://rust-lang.org/tools/install/).
 
 </details>
 
@@ -158,7 +159,7 @@ docker run --name pubky-postgres \
 Install PostgreSQL:
 
 ```bash
-apt update && apt install -y postgresql
+sudo apt update && sudo apt install -y postgresql
 ```
 
 Start the server (not needed on systems with `systemd`, where PostgreSQL starts automatically):
@@ -170,7 +171,8 @@ pg_ctlcluster $(pg_lsclusters -h | awk '{print $1, $2}') start
 Set a password and create the database:
 
 ```bash
-su - postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres';\" && createdb pubky_homeserver"
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+sudo -u postgres createdb pubky_homeserver
 ```
 
 Verify the connection:
@@ -205,8 +207,7 @@ database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
 Here's a handy sed command to edit as above:
 
 ```bash
-sed -i 's|^# \[general\]|[general]|' ~/.pubky/config.toml
-sed -i 's|^# database_url = .*|database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"|' ~/.pubky/config.toml
+sed -i 's|^# \[general\]|[general]|; s|^# database_url = .*|database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"|' ~/.pubky/config.toml
 ```
 
 ## Run
@@ -225,8 +226,6 @@ docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserv
 
 Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
 
-> **macOS note:** Docker Desktop for macOS does not support `--network=host`. Use `-p 6286:6286 -p 6287:6287 -p 6288:6288 -p 6289:6289` instead to map the ports manually.
-
 The default endpoints are:
 
 | Endpoint | Default |
@@ -234,7 +233,6 @@ The default endpoints are:
 | Public HTTP API | `http://127.0.0.1:6286` |
 | Pubky TLS API | `127.0.0.1:6287` |
 | Admin API | `http://127.0.0.1:6288` |
-| Metrics API | `http://127.0.0.1:6289` |
 
 Standalone homeservers require signup tokens by default. Generate one through the admin API:
 
@@ -262,14 +260,14 @@ Review the full documented sample at [`pubky-homeserver/config.sample.toml`](../
 
 Before using a homeserver in production:
 
-- Back up homeserver's state:
+- Back up the homeserver's state:
   - The keypair `.pubky/secret`
   - Any user data depending on the configured option. For example, by default files are saved in `.pubky/data/files`
   - Postgres
 - Do not expose the admin or metrics APIs to the public internet.
 - Change the default admin password in `[admin].admin_password`.
 - Configure `pkdns.public_ip`, `pkdns.icann_domain`, and public ports for your deployment.
-- The homeserver exposes two sockets: a **Pubky TLS** socket (`pubky_listen_socket`, default port 6287) and a regular **HTTP** socket (`icann_listen_socket`, default port 6286). Pubky TLS uses PKARR-based TLS and does not need a certificate so can be exposed directly. The HTTP socket serves browsers and should be put behind a reverse proxy if you need standard HTTPS with a domain certificate.
+- The homeserver exposes two sockets: a **Pubky TLS** socket (`pubky_listen_socket`, default port 6287) and a regular **HTTP** socket (`icann_listen_socket`, default port 6286). Pubky TLS uses PKARR-based TLS and does not need a certificate, so can be exposed directly. The HTTP socket serves browsers and should be put behind a reverse proxy if you need standard HTTPS with a domain certificate.
 
 ## Troubleshooting
 

@@ -47,7 +47,12 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-For testing, use `MockDataDir` to create a temporary directory that is cleaned up on drop:
+For testing, use `MockDataDir` to create a temporary directory that is cleaned up on drop. Enable the `testing` feature:
+
+```toml
+[dev-dependencies]
+pubky-homeserver = { version = "0.x", features = ["testing"] }
+```
 
 ```rust,ignore
 use pubky_homeserver::{HomeserverApp, MockDataDir, ConfigToml};
@@ -70,7 +75,7 @@ pubky-homeserver --data-dir ~/.pubky
 Tenant-private responses must never be stored by shared caches. `/priv/...`
 data responses and `/events-stream` use `Cache-Control: no-store` and vary on
 `pubky-host`, `Authorization`, and `Cookie`; `/pub/...` file validators keep
-their existing tenant-aware caching behavior. 
+their existing tenant-aware caching behavior.
 
 Note: CORS preflight `OPTIONS` is
 handled upstream by the CORS layer and carries no private body.

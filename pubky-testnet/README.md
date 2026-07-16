@@ -137,8 +137,9 @@ Or pass the connection string programmatically:
 ```rust,no_run
 use pubky_testnet::{EphemeralTestnet, pubky_homeserver::ConnectionString};
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+#[pubky_testnet::test]
+async fn my_test() {
     let connection_string = ConnectionString::new(
         "postgres://postgres:postgres@localhost:5432/postgres?pubky-test=true"
     ).unwrap();
@@ -151,7 +152,7 @@ async fn main() {
 }
 ```
 
-The `?pubky-test=true` parameter tells the homeserver to create an ephemeral database that is cleaned up when the testnet is dropped.
+The `?pubky-test=true` parameter tells the homeserver to create an ephemeral `pubky_test_*` database. The `#[pubky_testnet::test]` macro ensures the database is cleaned up after the test completes or panics.
 
 ### Custom Configuration
 

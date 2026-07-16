@@ -6,7 +6,7 @@
 
 <div align="center">
   <h3>
-    <a href="https://docs.pubky.org/">Docs</a>
+    <a href="https://pubky.org/">Docs</a>
     <span> | </span>
     <a href="https://docs.rs/pubky">Rust SDK</a>
     <span> | </span>
@@ -38,10 +38,10 @@ This repository contains the core infrastructure: a homeserver that stores and s
 
 A Pubky homeserver stores and serves user data. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated writes and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
 
-- Public-key based signup, signin and third-party app authorization
-- File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like)
-- PKARR/PKDNS publishing for homeserver discovery
-- Admin and metrics endpoints for operators
+- Public-key based sign-up, sign-in and third-party app authorization.
+- File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like).
+- PKARR/PKDNS publishing for homeserver discovery.
+- Admin and metrics endpoints for operators.
 
 ## Repository Layout
 
