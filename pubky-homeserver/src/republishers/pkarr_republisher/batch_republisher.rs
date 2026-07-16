@@ -1,6 +1,6 @@
 use super::republish_summary::{RepublishResult, RepublishSummary};
-use super::republisher::{Republisher, RepublisherSettings};
-use super::retrying_republisher::RetryingRepublisher;
+use super::republisher::{RepublishOutcome, Republisher, RepublisherSettings};
+use super::retrying_republisher::{RetrySettings, RetryingRepublisher};
 use futures_util::{stream::FuturesUnordered, TryStreamExt};
 use pkarr::{ClientBuilder, PublicKey};
 use std::{num::NonZeroUsize, sync::Mutex};
@@ -16,23 +16,41 @@ pub enum BatchRepublisherError {
     BuildError(#[from] pkarr::errors::BuildError),
 }
 
+/// Settings for republishing a batch of keys.
+#[derive(Debug, Clone)]
+pub struct BatchRepublisherSettings {
+    republisher: RepublisherSettings,
+    retry: RetrySettings,
+    max_concurrent_workers: NonZeroUsize,
+}
+
+impl Default for BatchRepublisherSettings {
+    fn default() -> Self {
+        Self {
+            republisher: RepublisherSettings::default(),
+            retry: RetrySettings::default(),
+            max_concurrent_workers: NonZeroUsize::new(12).expect("worker count should be non-zero"),
+        }
+    }
+}
+
 /// Republish multiple keys serially or concurrently.
 #[derive(Debug, Clone, Default)]
 pub struct BatchRepublisher {
-    settings: RepublisherSettings,
+    settings: BatchRepublisherSettings,
     client_builder: ClientBuilder,
 }
 
 impl BatchRepublisher {
-    /// Create a new republisher with the settings.
-    pub fn new(settings: RepublisherSettings, client_builder: ClientBuilder) -> Self {
+    /// Create a batch republisher with the provided settings.
+    pub fn new(settings: BatchRepublisherSettings, client_builder: ClientBuilder) -> Self {
         Self {
             settings,
             client_builder,
         }
     }
 
-    /// Republish keys concurrently with at most `max_concurrent_workers` active clients.
+    /// Republish keys concurrently with at most the configured number of active clients.
     ///
     /// # Errors
     ///
@@ -40,9 +58,12 @@ impl BatchRepublisher {
     pub async fn run(
         &self,
         public_keys: Vec<PublicKey>,
-        max_concurrent_workers: NonZeroUsize,
     ) -> Result<RepublishSummary, BatchRepublisherError> {
-        let worker_count = max_concurrent_workers.get().min(public_keys.len());
+        let worker_count = self
+            .settings
+            .max_concurrent_workers
+            .get()
+            .min(public_keys.len());
         let public_keys = Mutex::new(public_keys);
 
         (0..worker_count)
@@ -60,8 +81,8 @@ impl BatchRepublisher {
         if client.dht().is_none() {
             return Err(BatchRepublisherError::DhtNotEnabled);
         }
-        let republisher = Republisher::new_with_settings(client, self.settings.clone());
-        let republisher = RetryingRepublisher::new(republisher, &self.settings.retry_settings);
+        let republisher = Republisher::new(client, self.settings.republisher.clone());
+        let republisher = RetryingRepublisher::new(republisher, &self.settings.retry);
 
         let mut summary = RepublishSummary::default();
         while let Some(public_key) = pop(public_keys) {
@@ -80,14 +101,13 @@ async fn republish_key(
     let elapsed = start.elapsed().as_millis();
 
     match &result {
-        Ok(info) => tracing::info!(
-            "Republished {public_key} successfully on {} nodes within {elapsed}ms. attempts={}",
-            info.published_nodes_count,
-            info.attempts_needed
-        ),
-        Err(error) => tracing::warn!(
-            "Failed to republish public_key {public_key} within {elapsed}ms. {error}"
-        ),
+        Ok(info) => match info.outcome {
+            RepublishOutcome::Published(_) => {
+                tracing::info!(%public_key, ?info, %elapsed, "Republished successfully")
+            }
+            _ => tracing::debug!(%public_key, ?info, %elapsed, "Did not republish"),
+        },
+        Err(error) => tracing::warn!(%public_key, %error, %elapsed, "Republishing failed"),
     }
     result
 }
@@ -112,8 +132,9 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
-    use super::{BatchRepublisher, RepublishSummary};
-    use crate::republishers::pkarr_republisher::republisher::RepublisherSettings;
+    use super::{
+        BatchRepublisher, BatchRepublisherSettings, RepublishSummary, RepublisherSettings,
+    };
 
     async fn publish_sample_packets(client: &pkarr::Client, count: usize) -> Vec<PublicKey> {
         let keys: Vec<Keypair> = (0..count).map(|_| Keypair::random()).collect();
@@ -145,11 +166,17 @@ mod tests {
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_keys = publish_sample_packets(&pkarr_client, key_count).await;
 
-        let mut settings = RepublisherSettings::default();
-        settings.min_sufficient_node_publish_count(min_sufficient_node_publish_count);
+        let settings = BatchRepublisherSettings {
+            republisher: RepublisherSettings {
+                min_sufficient_node_publish_count,
+                ..RepublisherSettings::default()
+            },
+            max_concurrent_workers,
+            ..BatchRepublisherSettings::default()
+        };
 
         BatchRepublisher::new(settings, pkarr_builder)
-            .run(public_keys, max_concurrent_workers)
+            .run(public_keys)
             .await
             .unwrap()
     }
@@ -173,7 +200,7 @@ mod tests {
         let summary = republish_single_key(NonZeroU8::new(4).unwrap()).await;
 
         assert_eq!(summary.len(), 1);
-        assert_eq!(summary.publishing_failed_count(), 1);
+        assert_eq!(summary.failed_count(), 1);
     }
 
     #[tokio::test]
@@ -183,10 +210,16 @@ mod tests {
 
         assert_eq!(summary.len(), 5);
         assert_eq!(summary.success_count(), 5);
-        assert_eq!(summary.publishing_failed_count(), 0);
+        assert_eq!(summary.failed_count(), 0);
         assert_eq!(summary.missing_count(), 0);
+        assert_eq!(summary.skipped_count(), 0);
+        assert_eq!(summary.invalid_signed_packet_count(), 0);
         assert_eq!(
-            summary.success_count() + summary.publishing_failed_count() + summary.missing_count(),
+            summary.success_count()
+                + summary.skipped_count()
+                + summary.failed_count()
+                + summary.missing_count()
+                + summary.invalid_signed_packet_count(),
             summary.len()
         );
     }

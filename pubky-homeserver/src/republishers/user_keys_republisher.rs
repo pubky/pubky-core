@@ -1,7 +1,7 @@
-use std::{num::NonZeroUsize, time::Duration};
+use std::time::Duration;
 
 use super::pkarr_republisher::{
-    BatchRepublisher, BatchRepublisherError, RepublishSummary, RepublisherSettings,
+    BatchRepublisher, BatchRepublisherError, BatchRepublisherSettings, RepublishSummary,
 };
 use pubky_common::crypto::PublicKey;
 use tokio::{
@@ -96,7 +96,11 @@ impl UserKeysRepublisher {
             }
         };
         let elapsed = start.elapsed();
-        Self::log_republish_summary(&summary, elapsed);
+        if summary.has_issues() {
+            tracing::warn!(?summary, ?elapsed, "Processed user keys");
+        } else {
+            tracing::debug!(?summary, ?elapsed, "Processed user keys");
+        }
     }
 
     async fn republish_impl(&self) -> Result<RepublishSummary, UserKeysRepublisherError> {
@@ -105,36 +109,16 @@ impl UserKeysRepublisher {
             tracing::debug!("No user keys to republish.");
             return Ok(RepublishSummary::default());
         }
-        let settings = RepublisherSettings::default();
+        let settings = BatchRepublisherSettings::default();
         let republisher = BatchRepublisher::new(settings, self.pkarr_builder.clone());
         // TODO: Only publish if user points to this home server.
         let pkarr_keys = keys.into_iter().map(Into::into).collect();
-        let max_concurrent_workers =
-            NonZeroUsize::new(12).expect("worker count should be non-zero");
-        Ok(republisher.run(pkarr_keys, max_concurrent_workers).await?)
+        Ok(republisher.run(pkarr_keys).await?)
     }
 
     async fn get_all_user_keys(&self) -> Result<Vec<PublicKey>, sqlx::Error> {
         let users = UserRepository::get_all(&mut self.db.pool().into()).await?;
         Ok(users.into_iter().map(|user| user.public_key).collect())
-    }
-
-    fn log_republish_summary(summary: &RepublishSummary, elapsed: Duration) {
-        let total_count = summary.len();
-        let elapsed_secs = elapsed.as_secs_f32();
-        let success_count = summary.success_count();
-        let missing_count = summary.missing_count();
-        let failed_count = summary.publishing_failed_count();
-
-        if missing_count == 0 {
-            tracing::debug!(
-                "Republished {total_count} user keys within {elapsed_secs:.1}s. {success_count} success, {missing_count} missing, {failed_count} failed.",
-            );
-        } else {
-            tracing::warn!(
-                "Republished {total_count} user keys within {elapsed_secs:.1}s. {success_count} success, {missing_count} missing, {failed_count} failed.",
-            );
-        }
     }
 }
 
@@ -167,6 +151,6 @@ mod tests {
         assert_eq!(summary.len(), 10);
         assert_eq!(summary.success_count(), 0);
         assert_eq!(summary.missing_count(), 10);
-        assert_eq!(summary.publishing_failed_count(), 0);
+        assert_eq!(summary.failed_count(), 0);
     }
 }
