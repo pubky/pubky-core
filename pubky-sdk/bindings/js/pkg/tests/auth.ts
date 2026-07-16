@@ -73,8 +73,7 @@ test("Auth: direct signup deeplink", async (t) => {
     signupToken,
   )}`;
 
-  // Approving it registers the account directly on the homeserver.
-  await signer.approveAuthRequest(deeplink);
+  await signer.handleDeepLink(deeplink);
 
   const session = await signer.signin("direct-signup-js.test");
   t.equal(

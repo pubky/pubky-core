@@ -195,9 +195,7 @@ async fn signup_via_direct_deeplink() {
     let signer = pubky.signer(Keypair::random());
     let deeplink = format!("pubkyauth://direct_signup?hs={}", server.public_key().z32());
 
-    // Approving a direct signup link registers the account directly on the
-    // homeserver.
-    signer.approve_auth(&deeplink).await.unwrap();
+    signer.handle_deeplink(&deeplink).await.unwrap();
 
     let session = signer
         .signin(ClientId::new("direct.signup.test").unwrap())
@@ -243,7 +241,7 @@ async fn signup_via_direct_deeplink_with_token() {
     )
     .to_string();
 
-    signer.approve_auth(&deeplink).await.unwrap();
+    signer.handle_deeplink(&deeplink).await.unwrap();
 
     let session = signer
         .signin(ClientId::new("direct.signup.token.test").unwrap())
@@ -281,7 +279,7 @@ async fn direct_signup_deeplink_rejects_missing_or_invalid_token() {
     .to_string();
     let missing_token_error = pubky
         .signer(Keypair::random())
-        .approve_auth(&missing_token_link)
+        .handle_deeplink(&missing_token_link)
         .await
         .expect_err("direct signup without a token should fail");
     assert_signup_rejected(
@@ -300,7 +298,7 @@ async fn direct_signup_deeplink_rejects_missing_or_invalid_token() {
     .to_string();
     let invalid_token_error = pubky
         .signer(Keypair::random())
-        .approve_auth(&invalid_token_link)
+        .handle_deeplink(&invalid_token_link)
         .await
         .expect_err("direct signup with an invalid token should fail");
     assert_signup_rejected(
