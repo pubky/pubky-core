@@ -108,15 +108,7 @@ impl StreamAuth {
                 RevocationCheck::Clear => return true,
                 RevocationCheck::Close => return false,
                 RevocationCheck::Revalidate => {
-                    let Self::Private { session, .. } = self else {
-                        unreachable!("public streams cannot require revalidation");
-                    };
-
-                    if let Err(error) = auth_state.validate_private_stream_session(session).await {
-                        tracing::warn!(
-                            ?error,
-                            "auth revocation receiver lagged and private stream validation failed"
-                        );
+                    if !self.revalidate_session(auth_state).await {
                         return false;
                     }
                 }
@@ -139,12 +131,7 @@ impl StreamAuth {
             }
             Ok(_) => false,
             Err(broadcast::error::RecvError::Lagged(_)) => {
-                if self.is_valid(auth_state).await {
-                    false
-                } else {
-                    tracing::warn!("auth revocation receiver lagged and stream session is no longer valid; closing private event stream");
-                    true
-                }
+                !self.revalidate_session(auth_state).await
             }
             Err(broadcast::error::RecvError::Closed) => {
                 tracing::warn!("auth revocation receiver closed; closing private event stream");
@@ -159,11 +146,28 @@ impl StreamAuth {
             Self::Public => false,
         }
     }
+
+    async fn revalidate_session(&self, auth_state: &AuthState) -> bool {
+        let Self::Private { session, .. } = self else {
+            return true;
+        };
+
+        if let Err(error) = auth_state.validate_private_stream_session(session).await {
+            tracing::warn!(
+                ?error,
+                "auth revocation receiver lagged and private stream validation failed"
+            );
+            return false;
+        }
+
+        true
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_context::AppContext;
     use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
     use pubky_common::{capabilities::Capabilities, crypto::Keypair};
 
@@ -207,5 +211,20 @@ mod tests {
             stream_auth.pending_revocation(),
             RevocationCheck::Revalidate
         ));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn live_lag_revalidates_when_matching_revocation_was_evicted() {
+        let auth_state = AuthState::new(&AppContext::test().await);
+        let (sender, receiver) = broadcast::channel(1);
+        sender.send(AuthRevocation::CookieSession(1)).unwrap();
+        sender.send(AuthRevocation::CookieSession(2)).unwrap();
+        let mut stream_auth = StreamAuth::Private {
+            session: Box::new(cookie_session()),
+            revocation_rx: receiver,
+        };
+
+        assert!(stream_auth.handle_next_revocation(&auth_state).await);
     }
 }
