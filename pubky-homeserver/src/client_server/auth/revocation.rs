@@ -22,7 +22,7 @@ use std::{
 use pubky_common::auth::jws::GrantId;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgListener, PgPool};
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use crate::persistence::sql::UnifiedExecutor;
@@ -175,7 +175,6 @@ pub(crate) struct AuthRevocationUnavailable;
 
 /// Background Postgres listener for [`AuthRevocationService`].
 pub(crate) struct PgAuthRevocationListener {
-    handle: Option<JoinHandle<()>>,
     cancel: CancellationToken,
 }
 
@@ -190,18 +189,14 @@ impl PgAuthRevocationListener {
         service.mark_healthy();
 
         let cancel = CancellationToken::new();
-        let handle = {
-            let pool = pool.clone();
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                Self::listen_loop(pool, service, listener, cancel).await;
-            })
-        };
+        drop(tokio::spawn(Self::listen_loop(
+            pool.clone(),
+            service,
+            listener,
+            cancel.clone(),
+        )));
 
-        Ok(Self {
-            handle: Some(handle),
-            cancel,
-        })
+        Ok(Self { cancel })
     }
 
     async fn connect(pool: &PgPool) -> Result<PgListener, sqlx::Error> {
@@ -285,9 +280,6 @@ impl PgAuthRevocationListener {
 impl Drop for PgAuthRevocationListener {
     fn drop(&mut self) {
         self.cancel.cancel();
-        if let Some(handle) = self.handle.take() {
-            handle.abort();
-        }
     }
 }
 
@@ -321,6 +313,17 @@ mod tests {
             grant_id: id,
             token_expires_at: u64::MAX,
         })
+    }
+
+    #[test]
+    fn dropping_listener_cancels_its_worker() {
+        let cancel = CancellationToken::new();
+        let worker_cancel = cancel.clone();
+        let listener = PgAuthRevocationListener { cancel };
+
+        drop(listener);
+
+        assert!(worker_cancel.is_cancelled());
     }
 
     #[test]
