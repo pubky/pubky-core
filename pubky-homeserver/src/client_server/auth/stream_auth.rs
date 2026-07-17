@@ -19,12 +19,14 @@ pub(crate) enum PendingStreamAuth {
 }
 
 impl PendingStreamAuth {
-    pub(crate) fn subscribe(
+    /// Take a revocation receiver for a private stream. A public stream is not
+    /// tied to a credential, so it never waits on the listener.
+    pub(crate) async fn subscribe(
         is_private: bool,
         service: &AuthRevocationService,
     ) -> Result<Self, AuthRevocationUnavailable> {
         if is_private {
-            Ok(Self::Private(service.subscribe()?))
+            Ok(Self::Private(service.subscribe().await?))
         } else {
             Ok(Self::Public)
         }

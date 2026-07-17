@@ -357,6 +357,7 @@ pub async fn feed_stream(
         matches!(tenant_scope, EventStreamTenantScope::PrivateSingleTenant(_)),
         &state.auth_revocation_service,
     )
+    .await
     .map_err(|_| {
         HttpError::new_with_message(
             StatusCode::SERVICE_UNAVAILABLE,

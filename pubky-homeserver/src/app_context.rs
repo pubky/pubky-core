@@ -9,7 +9,7 @@ use crate::services::user_service::UserService;
 #[cfg(any(test, feature = "testing"))]
 use crate::MockDataDir;
 use crate::{
-    client_server::auth::{AuthRevocationService, PgAuthRevocationListener},
+    client_server::auth::AuthRevocationService,
     observability::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
@@ -48,9 +48,9 @@ pub enum AppContextConversionError {
     /// Failed to start the Postgres event listener.
     #[error("Failed to start Postgres event listener: {0}")]
     PgEventListener(sqlx::Error),
-    /// Failed to start the Postgres auth-revocation listener.
-    #[error("Failed to start Postgres auth-revocation listener: {0}")]
-    PgAuthRevocationListener(sqlx::Error),
+    /// Failed to start the auth-revocation service.
+    #[error("Failed to start the auth revocation service: {0}")]
+    AuthRevocationService(sqlx::Error),
     /// Failed to initialize metrics.
     #[error("Failed to initialize metrics: {0}")]
     Metrics(MetricsInitError),
@@ -86,9 +86,8 @@ pub struct AppContext {
     /// Kept alive for the background task, not for direct access.
     _pg_event_listener: Arc<PgEventListener>,
     /// Auth revocations are forwarded to private SSE streams on this instance.
+    /// Its Postgres listener stops once the last clone is dropped.
     pub(crate) auth_revocation_service: AuthRevocationService,
-    /// Kept alive so the auth-revocation listener continues running.
-    _pg_auth_revocation_listener: Arc<PgAuthRevocationListener>,
     /// User service for quota resolution and user creation with defaults.
     pub(crate) user_service: UserService,
 }
@@ -127,11 +126,9 @@ impl AppContext {
         let pg_event_listener = PgEventListener::start(sql_db.pool(), events_service.clone())
             .await
             .map_err(AppContextConversionError::PgEventListener)?;
-        let auth_revocation_service = AuthRevocationService::new();
-        let pg_auth_revocation_listener =
-            PgAuthRevocationListener::start(sql_db.pool(), auth_revocation_service.clone())
-                .await
-                .map_err(AppContextConversionError::PgAuthRevocationListener)?;
+        let auth_revocation_service = AuthRevocationService::start(sql_db.pool())
+            .await
+            .map_err(AppContextConversionError::AuthRevocationService)?;
 
         let user_service = UserService::new(sql_db.clone());
 
@@ -160,7 +157,6 @@ impl AppContext {
             metrics: Metrics::new().map_err(AppContextConversionError::Metrics)?,
             _pg_event_listener: Arc::new(pg_event_listener),
             auth_revocation_service,
-            _pg_auth_revocation_listener: Arc::new(pg_auth_revocation_listener),
             user_service,
         })
     }
