@@ -26,7 +26,7 @@ use crate::{
     client_server::{
         auth::{
             grant::bearer::extract_bearer_token, has_read_permission, AuthSession,
-            PendingStreamAuth,
+            PendingStreamAuth, RevocationSignal,
         },
         query_params::ListQueryParams,
         AppState,
@@ -351,8 +351,20 @@ pub async fn feed_stream(
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
     let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
-    // Subscribe before resolving the auth context. A final DB validation below
-    // closes the remaining middleware-to-subscription race for bearer auth.
+    // Bearer auth disables the homeserver-addressed cookie fallback.
+    let session = match session {
+        Some(session) => Some(session),
+        None if !has_bearer_auth(&headers) => {
+            resolve_tenant_cookie_session(&state, &cookies, tenant_scope).await
+        }
+        None => None,
+    };
+
+    let allowed_paths = authorized_paths(&params.paths, tenant_scope, session.as_ref())?;
+
+    // Subscribe after path authorization but before the final DB validation.
+    // The validation catches revocations committed before this subscription;
+    // the receiver catches anything committed after it.
     let pending_stream_auth = PendingStreamAuth::subscribe(
         matches!(tenant_scope, EventStreamTenantScope::PrivateSingleTenant(_)),
         &state.auth_revocation_service,
@@ -364,17 +376,6 @@ pub async fn feed_stream(
             "Private event streams are temporarily unavailable",
         )
     })?;
-
-    // Bearer auth disables the homeserver-addressed cookie fallback.
-    let session = match session {
-        Some(session) => Some(session),
-        None if !has_bearer_auth(&headers) => {
-            resolve_tenant_cookie_session(&state, &cookies, tenant_scope).await
-        }
-        None => None,
-    };
-
-    let allowed_paths = authorized_paths(&params.paths, tenant_scope, session.as_ref())?;
 
     let mut stream_auth = pending_stream_auth
         .authorize(session, &state.auth_state)
@@ -472,9 +473,15 @@ pub async fn feed_stream(
             loop {
                 tokio::select! {
                     biased;
-                    should_close = stream_auth.handle_next_revocation(&state.auth_state) => {
-                        if should_close {
-                            return;
+                    signal = stream_auth.next_revocation_signal() => {
+                        match signal {
+                            RevocationSignal::Continue => {}
+                            RevocationSignal::Close => return,
+                            RevocationSignal::Revalidate => {
+                                if !stream_auth.revalidate_session(&state.auth_state).await {
+                                    return;
+                                }
+                            }
                         }
                     }
                     event = rx.recv() => match event {

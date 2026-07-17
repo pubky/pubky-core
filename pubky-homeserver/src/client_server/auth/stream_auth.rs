@@ -11,8 +11,9 @@ use super::{
     AuthState,
 };
 
-/// Subscription state acquired before resolving middleware authentication.
-/// Subscribing first ensures a revocation cannot be missed in that gap.
+/// Subscription state acquired before final session validation.
+/// Revocations committed before subscribing are caught by validation; later
+/// ones are buffered by the receiver.
 pub(crate) enum PendingStreamAuth {
     Public,
     Private(broadcast::Receiver<AuthRevocation>),
@@ -69,33 +70,34 @@ pub(crate) enum StreamAuth {
     },
 }
 
-enum RevocationCheck {
-    Clear,
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RevocationSignal {
+    Continue,
     Close,
     Revalidate,
 }
 
 impl StreamAuth {
-    fn pending_revocation(&mut self) -> RevocationCheck {
+    fn pending_revocation(&mut self) -> RevocationSignal {
         let Self::Private {
             session,
             revocation_rx,
         } = self
         else {
-            return RevocationCheck::Clear;
+            return RevocationSignal::Continue;
         };
 
         loop {
             match revocation_rx.try_recv() {
-                Ok(revocation) if revocation.matches(session) => return RevocationCheck::Close,
+                Ok(revocation) if revocation.matches(session) => return RevocationSignal::Close,
                 Ok(_) => continue,
-                Err(broadcast::error::TryRecvError::Empty) => return RevocationCheck::Clear,
+                Err(broadcast::error::TryRecvError::Empty) => return RevocationSignal::Continue,
                 // Revalidate this stream's own credential instead of
                 // disconnecting every private stream after an unrelated burst.
                 Err(broadcast::error::TryRecvError::Lagged(_)) => {
-                    return RevocationCheck::Revalidate
+                    return RevocationSignal::Revalidate
                 }
-                Err(broadcast::error::TryRecvError::Closed) => return RevocationCheck::Close,
+                Err(broadcast::error::TryRecvError::Closed) => return RevocationSignal::Close,
             }
         }
     }
@@ -105,9 +107,9 @@ impl StreamAuth {
     pub(crate) async fn is_valid(&mut self, auth_state: &AuthState) -> bool {
         loop {
             match self.pending_revocation() {
-                RevocationCheck::Clear => return true,
-                RevocationCheck::Close => return false,
-                RevocationCheck::Revalidate => {
+                RevocationSignal::Continue => return true,
+                RevocationSignal::Close => return false,
+                RevocationSignal::Revalidate => {
                     if !self.revalidate_session(auth_state).await {
                         return false;
                     }
@@ -116,9 +118,10 @@ impl StreamAuth {
         }
     }
 
-    /// Wait for the next auth-revocation signal and return whether the stream
-    /// must close. Public streams wait forever because they are unaffected.
-    pub(crate) async fn handle_next_revocation(&mut self, auth_state: &AuthState) -> bool {
+    /// Wait only for the next auth-revocation signal. Any database revalidation
+    /// happens after this future wins `select!`, so it cannot be cancelled by a
+    /// concurrently ready file event.
+    pub(crate) async fn next_revocation_signal(&mut self) -> RevocationSignal {
         let received = match self {
             Self::Private { revocation_rx, .. } => revocation_rx.recv().await,
             Self::Public => future::pending().await,
@@ -127,15 +130,13 @@ impl StreamAuth {
         match received {
             Ok(revocation) if self.matches(&revocation) => {
                 tracing::debug!("closing private event stream after auth revocation");
-                true
+                RevocationSignal::Close
             }
-            Ok(_) => false,
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                !self.revalidate_session(auth_state).await
-            }
+            Ok(_) => RevocationSignal::Continue,
+            Err(broadcast::error::RecvError::Lagged(_)) => RevocationSignal::Revalidate,
             Err(broadcast::error::RecvError::Closed) => {
                 tracing::warn!("auth revocation receiver closed; closing private event stream");
-                true
+                RevocationSignal::Close
             }
         }
     }
@@ -147,7 +148,7 @@ impl StreamAuth {
         }
     }
 
-    async fn revalidate_session(&self, auth_state: &AuthState) -> bool {
+    pub(crate) async fn revalidate_session(&self, auth_state: &AuthState) -> bool {
         let Self::Private { session, .. } = self else {
             return true;
         };
@@ -193,7 +194,7 @@ mod tests {
 
         assert!(matches!(
             stream_auth.pending_revocation(),
-            RevocationCheck::Close
+            RevocationSignal::Close
         ));
     }
 
@@ -209,14 +210,15 @@ mod tests {
 
         assert!(matches!(
             stream_auth.pending_revocation(),
-            RevocationCheck::Revalidate
+            RevocationSignal::Revalidate
         ));
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn live_lag_revalidates_when_matching_revocation_was_evicted() {
-        let auth_state = AuthState::new(&AppContext::test().await);
+    async fn live_lag_revalidation_is_not_cancelled_by_a_ready_event() {
+        let context = AppContext::test().await;
+        let auth_state = AuthState::new(&context);
         let (sender, receiver) = broadcast::channel(1);
         sender.send(AuthRevocation::CookieSession(1)).unwrap();
         sender.send(AuthRevocation::CookieSession(2)).unwrap();
@@ -225,6 +227,20 @@ mod tests {
             revocation_rx: receiver,
         };
 
-        assert!(stream_auth.handle_next_revocation(&auth_state).await);
+        let mut lock = context.sql_db.pool().begin().await.unwrap();
+        sqlx::query("LOCK TABLE sessions IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+
+        let signal = tokio::select! {
+            biased;
+            signal = stream_auth.next_revocation_signal() => signal,
+            _ = future::ready(()) => panic!("ready event bypassed the lag signal"),
+        };
+
+        assert_eq!(signal, RevocationSignal::Revalidate);
+        lock.rollback().await.unwrap();
+        assert!(!stream_auth.revalidate_session(&auth_state).await);
     }
 }
