@@ -20,6 +20,7 @@ mod router;
 mod session;
 mod signup_service;
 mod state;
+mod stream_auth;
 mod user_error_mapping;
 
 pub use authorization::{has_read_permission, has_write_permission};
@@ -31,3 +32,4 @@ pub use router::{base_router, tenant_router};
 pub use session::AuthSession;
 pub use signup_service::{SignupService, SignupServiceError};
 pub use state::AuthState;
+pub(crate) use stream_auth::PendingStreamAuth;
