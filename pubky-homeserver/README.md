@@ -70,6 +70,11 @@ See [Install and Run Pubky Homeserver](../docs/INSTALL.md) for full setup instru
 pubky-homeserver --data-dir ~/.pubky
 ```
 
+## Storage
+
+`/pub/` is public; `/priv/` requires an authenticated session and a covering
+capability. See [Private Storage](../docs/PRIVATE_STORAGE.md) for the full contract.
+
 ## Caching and Proxies
 
 Tenant-private responses must never be stored by shared caches. `/priv/...`

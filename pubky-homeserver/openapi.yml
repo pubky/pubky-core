@@ -24,12 +24,12 @@ info:
     - **Grant-based (current):** `Authorization: Bearer <token>` obtained via `POST /auth/grant/session`.
     - **Cookie-based (deprecated):** Session cookie set by `POST /signup` or `POST /session`.
 
-    Grant middleware runs first; if it produces a session, cookie middleware is skipped.
+    A resolved bearer session takes precedence over cookie authentication.
 
     ## Capabilities
 
-    Write operations are gated by capability-based access control. Capabilities are
-    path-scoped (e.g. `read_write:/pub/app/`) or `root` (full access to `/pub/`).
+    Private reads and all writes are capability-gated. Capabilities use
+    `<scope>:<actions>`, for example `/priv/app/:rw`; `/:rw` covers both roots.
 
     ## Write Path Restriction
 
@@ -369,8 +369,8 @@ paths:
         in: path
         required: true
         description: |
-          WebDAV path relative to the tenant. Must start with `pub/` for all operations
-          (reads and writes). May contain slashes (multi-segment).
+          WebDAV path relative to the tenant. Must start with `pub/` or `priv/`.
+          May contain slashes (multi-segment).
         schema:
           type: string
         examples:
@@ -545,7 +545,7 @@ paths:
       tags: [Data]
       summary: Create or update file
       description: |
-        Writes a file at the given path. Path must be under `/pub/`.
+        Writes a file under `/pub/` or `/priv/`.
         The authenticated user must match the target tenant and have write capability
         covering the path.
 
@@ -568,7 +568,7 @@ paths:
           description: No valid session
         "403":
           description: |
-            Session user does not match target tenant, path outside `/pub/`,
+            Session user does not match target tenant, path outside `/pub/` and `/priv/`,
             session lacks write capability for path, or user account is disabled.
         "507":
           description: Storage quota exceeded
@@ -577,7 +577,7 @@ paths:
       tags: [Data]
       summary: Delete file
       description: |
-        Deletes a file at the given path. Path must be under `/pub/`.
+        Deletes a file under `/pub/` or `/priv/`.
         The authenticated user must match the target tenant and have write capability.
       operationId: deleteEntry
       security:
@@ -589,7 +589,7 @@ paths:
         "401":
           description: No valid session
         "403":
-          description: Insufficient permissions or path outside `/pub/`
+          description: Insufficient permissions or path outside `/pub/` and `/priv/`
         "404":
           description: File not found
 
@@ -601,7 +601,7 @@ paths:
       tags: [Events]
       summary: Historical event feed (plain text)
       description: |
-        Legacy endpoint returning a plain-text feed of file change events.
+        Public, unauthenticated feed containing `/pub/...` events only.
       operationId: getEventFeed
       parameters:
         - name: cursor

@@ -393,10 +393,12 @@ await s.delete("/pub/example.com/data.json");
 
 Path rules:
 
-- Session storage uses **absolute** paths like `"/pub/app/file.txt"`.
+- Session storage uses **absolute** paths under `/pub/` or `/priv/`.
 - Public storage uses **addressed** form `pubky<user>/pub/app/file.txt` (preferred) or `pubky://<user>/...`.
 
 **Convention:** put your app’s public data under a domain-like folder in `/pub`, e.g. `/pub/my-new-app/`.
+
+See [Private Storage](https://github.com/pubky/pubky-core/blob/main/docs/PRIVATE_STORAGE.md) for `/priv/` access and events.
 
 ---
 
