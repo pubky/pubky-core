@@ -250,12 +250,13 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# Path to the pubky-homeserver binary
-ExecStart=/usr/local/bin/pubky-homeserver
-# The homeserver's data directory (contains config.toml and the keypair)
-WorkingDirectory=/home/youruser/.pubky
+# Path to the pubky-homeserver binary. The --data-dir flag tells it where
+# to find config.toml and the keypair (defaults to ~/.pubky).
+ExecStart=/usr/local/bin/pubky-homeserver --data-dir /home/YOUR_USER/.pubky
 # The OS user that the homeserver process runs as
-User=youruser
+User=YOUR_USER
+# The homeserver listens for SIGINT (Ctrl+C), not SIGTERM.
+KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5
 

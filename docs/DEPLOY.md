@@ -4,33 +4,44 @@ How to make a Pubky homeserver reachable from the internet. This guide assumes y
 
 Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), adapt as needed for other distributions.
 
-> **Note:** This guide assumes your homeserver is running on a machine with a static public IP and that you have a domain name you control. It covers homeserver-specific setup only, not general server hardening. If you're new to running public-facing servers, look into basic Linux server security before proceeding.
+> **Note:** This guide covers homeserver-specific setup only, not general server hardening. If you're new to running public-facing servers, look into basic Linux server security before proceeding.
 
 ## Contents
 
+- [Choose Your Setup](#choose-your-setup)
 - [Open Ports](#open-ports)
 - [Configure the Homeserver](#configure-the-homeserver)
-- [Set Up DNS](#set-up-dns)
-- [Set Up Caddy as a Reverse Proxy](#set-up-caddy-as-a-reverse-proxy)
+- [Set Up HTTPS](#set-up-https)
+  - [With a Domain](#with-a-domain)
+  - [IP Address Only](#ip-address-only)
 - [Verify the Deployment](#verify-the-deployment)
   - [Check ICANN HTTPS](#check-icann-https)
   - [Find Your Public Key](#find-your-public-key)
   - [Check PKARR Record](#check-pkarr-record)
+  - [Check Internal Ports Are Not Exposed](#check-internal-ports-are-not-exposed)
   - [Check Pubky TLS](#check-pubky-tls)
-  - [Test a Signup](#test-a-signup)
 - [Production Notes](#production-notes)
 - [Troubleshooting](#troubleshooting)
 
+## Choose Your Setup
+
+There are two ways to expose your homeserver over HTTPS:
+
+- **With a Domain** — requires a domain name and DNS setup. Standard 90-day Let's Encrypt certificates.
+- **IP Address Only** — no domain needed. Uses short-lived (~6-day) Let's Encrypt certificates, so the server must stay healthy for renewals.
+
+This guide covers both options.
+
 ## Open Ports
 
-The homeserver exposes two endpoints: Pubky TLS on port 6287 and a plain HTTP endpoint on port 6286. We'll place [Caddy](https://caddyserver.com/) in front of the HTTP endpoint to serve it over HTTPS on port 443, it will manage the TLS certificates for us.
+The homeserver exposes two endpoints: Pubky TLS on port 6287 and a plain HTTP endpoint on port 6286. The HTTP endpoint does not handle TLS itself, so we'll place [Caddy](https://caddyserver.com/) in front of it to serve HTTPS on port 443; Caddy manages the TLS certificates automatically.
 
 Open these three ports for inbound traffic:
 
 | Port | Purpose |
 | --- | --- |
-| 80 | HTTP — [Caddy](#set-up-caddy-as-a-reverse-proxy) needs this for automatic TLS certificate provisioning. |
-| 443 | HTTPS — serves your domain via [Caddy](#set-up-caddy-as-a-reverse-proxy) with a TLS certificate. |
+| 80 | HTTP — [Caddy](#set-up-https) needs this for automatic TLS certificate provisioning. |
+| 443 | HTTPS — serves your homeserver via [Caddy](#set-up-https). Also used for TLS-ALPN-01 certificate challenges. |
 | 6287 | Pubky TLS — direct Pubky protocol connections (no certificate needed). |
 
 How you open these depends on your setup: a cloud provider's security group, a router's port-forwarding rules, or a host firewall.
@@ -40,8 +51,10 @@ Do **not** expose these ports:
 | Port | Purpose |
 | --- | --- |
 | 6286 | ICANN HTTP — Caddy proxies to this internally. |
-| 6288 | Admin API — sensitive operations, keep behind authentication if exposed. |
+| 6288 | Admin API — admin operations. |
 | 6289 | Metrics — internal monitoring only. |
+
+> **Warning:** The guide below changes `pubky_listen_socket` to `0.0.0.0:6287` so Pubky TLS is reachable externally. Do **not** apply the same `0.0.0.0` bind to `icann_listen_socket`, `admin.listen_socket`, or `metrics.listen_socket` — those must stay on `127.0.0.1` to avoid exposing internal APIs to the internet.
 
 ## Configure the Homeserver
 
@@ -57,52 +70,56 @@ pubky_listen_socket = "0.0.0.0:6287"
 [pkdns]
 # The public-facing IP of this machine. Published to the DHT so that
 # Pubky TLS clients can connect directly to the homeserver.
-public_ip = "your_ip"
+public_ip = "YOUR_IP"
 
-# Your domain name for HTTPS browser access (via the reverse proxy).
-icann_domain = "your_domain.com"
+# With a Domain: your domain name for HTTPS browser access.
+# IP Address Only: set this to your IP address (same as public_ip).
+icann_domain = "YOUR_DOMAIN_OR_IP"
 ```
 
-Replace `your_ip` with the public IP of the machine running the homeserver. You can find it with `curl -4 ifconfig.me`.
+Replace `YOUR_IP` with the public IP of the machine running the homeserver. You can find it with `curl -4 ifconfig.me`.
 
-> **Important:** Ensure your server has a **static (reserved) public IP**. On most cloud providers the default external IP is ephemeral. If your ip changes then both your DNS `A` record and the PKARR record (which embeds `public_ip`) will silently point at a dead address.
+Replace `YOUR_DOMAIN_OR_IP` with your domain name or public IP, depending on [which setup you chose](#choose-your-setup).
+
+For the full list of settings (including `public_pubky_tls_port` and `public_icann_http_port` for non-standard port setups), see [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
+
+> **Important:** Ensure your server has a **static (reserved) public IP**. If your IP changes then the PKARR record (which embeds `public_ip`), your Caddy configuration, and any DNS records will silently point at a dead address.
 
 Restart the homeserver after editing `config.toml` for the changes to take effect. If you have set it up as a background service, see [systemd Service](./INSTALL.md#systemd-service) in the install guide.
 
-## Set Up DNS
+## Set Up HTTPS
+
+Install [Caddy](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
+
+Now follow **one** of the two options below.
+
+---
+
+### With a Domain
+
+This option uses a domain name with standard 90-day Let's Encrypt certificates.
+
+#### Set Up DNS
 
 Configure your domain with an A record pointing to your server's public IP. If your server also has a public IPv6 address, add an AAAA record too.
 
 | Record Type | Name | Value |
 | --- | --- | --- |
-| A | your_domain.com | your IPv4 address |
-| AAAA | your_domain.com | your IPv6 address (optional) |
+| A | YOUR_DOMAIN | YOUR_IPV4_ADDRESS |
+| AAAA | YOUR_DOMAIN | YOUR_IPV6_ADDRESS (optional) |
 
 Wait for DNS propagation, then verify:
 
 ```bash
-dig +short your_domain.com        # A record
-dig +short AAAA your_domain.com   # AAAA record (if configured)
+dig +short YOUR_DOMAIN        # A record
+dig +short AAAA YOUR_DOMAIN   # AAAA record (if configured)
 ```
 
 These should return your server's public IP(s).
 
-## Set Up Caddy as a Reverse Proxy
+#### Configure Caddy
 
-The homeserver's ICANN HTTP endpoint speaks plain HTTP. To serve it securely over HTTPS with a valid TLS certificate, you need a reverse proxy in front of it. We'll use [Caddy](https://caddyserver.com/) as its quick to setup and automatically provisions and renews TLS certificates from Let's Encrypt with zero configuration.
-
-> **Prerequisites:** [DNS propagation](#set-up-dns) must be complete before this step, and [port 80 must be open](#open-ports). Caddy uses port 80 to complete the ACME challenge when obtaining a TLS certificate, if either DNS or port 80 are not ready then certificate provisioning will fail.
-
-Install Caddy (Debian/Ubuntu):
-
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install -y caddy
-```
-
-For other install methods, see the [Caddy install docs](https://caddyserver.com/docs/install).
+> **Prerequisites:** [DNS propagation](#set-up-dns) must be complete before this step, and [port 80 must be open](#open-ports). Caddy uses port 80 to complete the ACME challenge when obtaining a TLS certificate — if either DNS or port 80 are not ready then certificate provisioning will fail.
 
 Edit the Caddyfile:
 
@@ -118,47 +135,99 @@ your_domain.com {
 }
 ```
 
-Reload Caddy:
+> **Important:** The domain in the Caddyfile must exactly match both your DNS A-record name and the `icann_domain` value in `config.toml`. A mismatch between any of these is a common source of silent failures.
+
+Reload Caddy and check the logs:
 
 ```bash
 sudo systemctl reload caddy
-```
-
-Check the Caddy logs — look for "certificate obtained" to confirm success, or any ACME errors:
-
-```bash
 journalctl -u caddy --no-pager | tail -50
 ```
 
-> **Tip:** The most common cause of ACME certificate errors is port 80 not being reachable from the internet. If you see an ACME error in the logs, double-check your cloud firewall rules (e.g. GCP, AWS security groups) and any host-level firewall. If `dig` already returns your IP then DNS is not the issue.
+Look for "certificate obtained" to confirm success, or any ACME errors.
 
-> **Important:** The domain in the Caddyfile must exactly match both your DNS A-record name and the `icann_domain` value in `config.toml`. A mismatch between any of these is a common source of silent failures.
+> **Tip:** The most common cause of ACME certificate errors is port 80 not being reachable from the internet. If you see an ACME error in the logs then double-check your firewall rules.
+
+---
+
+### IP Address Only
+
+This option uses your server's IP address directly with shortlived (~6-day) Let's Encrypt certificates. No domain registration or DNS setup needed.
+
+> **Prerequisites:** [Port 80 must be open](#open-ports). Caddy uses port 80 to complete the ACME HTTP-01 challenge.
+
+IP address certificates require Caddy v2.10.1 or later. Check your version with `caddy version` and run `sudo caddy upgrade` if needed.
+
+#### Configure Caddy
+
+Edit the Caddyfile:
+
+```bash
+sudo nano /etc/caddy/Caddyfile
+```
+
+Replace its contents with:
+
+```
+{
+    default_sni YOUR_IP
+}
+
+YOUR_IP {
+    tls {
+        issuer acme {
+            profile shortlived
+        }
+    }
+    reverse_proxy 127.0.0.1:6286
+}
+```
+
+The `default_sni` line is required because TLS clients don't send SNI when connecting to an IP address. Without it, Caddy can't match incoming connections to your site block.
+
+Replace `YOUR_IP` with your server's public IP address (same value as `public_ip` and `icann_domain` in `config.toml`).
+
+Reload Caddy and check the logs:
+
+```bash
+sudo systemctl reload caddy
+journalctl -u caddy --no-pager | tail -50
+```
+
+Look for "certificate obtained" to confirm success, or any ACME errors.
+
+> **Tip:** The most common cause of ACME certificate errors is port 80 not being reachable from the internet. If you see an ACME error in the logs then double-check firewall rules.
+
+---
 
 ## Verify the Deployment
 
 ### Check ICANN HTTPS
 
-From your local machine, verify that HTTP redirects to HTTPS and the homeserver responds:
+From your local machine, verify that HTTP redirects to HTTPS and the homeserver responds. Replace `YOUR_HOST` with your domain or IP address:
 
 ```bash
-# Should return 308 Permanent Redirect
-curl -I http://your_domain.com
+# Should redirect to HTTPS (Caddy returns 308 by default)
+curl -I http://YOUR_HOST
 
 # Should return 200
-curl -I https://your_domain.com
+curl -I https://YOUR_HOST
 ```
 
 ### Find Your Public Key
 
-The remaining checks need your homeserver's public key. Retrieve it via the admin API:
+The remaining checks need your homeserver's public key. The admin API binds to localhost, so run this from the server itself:
 
 ```bash
-curl -s "http://127.0.0.1:6288/info" -H "X-Admin-Password: admin" | grep public_key  # use your configured password. Default is "admin".
+# Use your configured admin password. Default is "admin".
+curl -s "http://127.0.0.1:6288/info" -H "X-Admin-Password: admin"
 ```
+
+The response is JSON — look for the `public_key` field.
 
 ### Check PKARR Record
 
-Look up your public key on [pkdns.net](https://pkdns.net/). The record should contain your server's public IP and ICANN domain.
+Look up your public key on [pkdns.net](https://pkdns.net/). The record should contain your server's public IP and your domain or IP address (from `icann_domain`).
 
 For a more thorough check, resolve the record from the DHT directly using the `resolve` example from the [pkarr](https://github.com/pubky/pkarr) repository:
 
@@ -166,7 +235,7 @@ For a more thorough check, resolve the record from the DHT directly using the `r
 cargo run --example resolve <homeserver-public-key>
 ```
 
-This performs a cold lookup, a cached lookup, and a network-only lookup, printing the resolved DNS records and timings for each. Verify that the output contains an `A` record with your server's public IP and `HTTPS` (SVCB) records — one for the Pubky TLS port and one pointing to your ICANN domain.
+This performs a cold lookup, a cached lookup, and a network-only lookup, printing the resolved DNS records and timings for each. Verify that the output contains an `A` record with your server's public IP and `HTTPS` (SVCB) records — one for the Pubky TLS port and one pointing to your domain or IP address.
 
 ### Check Pubky TLS
 
@@ -178,6 +247,19 @@ cargo run --features=reqwest-builder --example http-get https://<homeserver-publ
 
 A successful response prints `Pubky Homeserver`.
 
+### Check Internal Ports Are Not Exposed
+
+From your local machine (not the server), verify that internal ports are **not** reachable. Replace `YOUR_HOST` with your domain or IP address:
+
+```bash
+# These should all time out or refuse the connection
+curl --connect-timeout 5 http://YOUR_HOST:6286
+curl --connect-timeout 5 http://YOUR_HOST:6288/info
+curl --connect-timeout 5 http://YOUR_HOST:6289
+```
+
+If any of these respond, your firewall is misconfigured — go back to [Open Ports](#open-ports).
+
 
 ## Production Notes
 
@@ -186,12 +268,17 @@ A successful response prints `Pubky Homeserver`.
   - User data — by default stored in `~/.pubky/data/files` (depends on `storage.type`).
   - The PostgreSQL database.
 - Change the default admin password in `[admin].admin_password`.
+- **IP Address Only users:** Shortlived certificates expire in ~6 days. Caddy renews them automatically, but if renewal fails for more than a few days your HTTPS endpoint will go down. Monitor your Caddy logs and ensure port 80 stays reachable.
 
 ## Troubleshooting
 
 ### Caddy fails to obtain a certificate
 
 Ensure ports 80 and 443 are open and reachable from the internet. Caddy attempts ACME challenges on both port 80 (HTTP-01) and port 443 (TLS-ALPN-01) — both should be open. Check your cloud firewall and any host-level firewall (`ufw`, `iptables`).
+
+**With a Domain:** Verify that DNS has propagated — `dig +short YOUR_DOMAIN` should return your IP.
+
+**IP Address Only:** Ensure you're running Caddy v2.10.1+ (`caddy version`). Older versions don't support IP address certificates. If you see a `rejectedIdentifier` ACME error, make sure the `profile shortlived` is set in your Caddyfile.
 
 ### Pubky TLS connections time out
 
@@ -204,4 +291,3 @@ sudo ss -tlnp | grep 6287
 ### PKARR record shows wrong IP
 
 Check `pkdns.public_ip` in `~/.pubky/config.toml`. It must be the server's public IP, not a private or localhost address. After updating, restart the homeserver and allow a few minutes for the DHT record to propagate.
-
