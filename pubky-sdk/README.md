@@ -141,7 +141,7 @@ for entry in entries {
 # Ok(()) }
 ```
 
-See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/rust/4-storage).
+See the [Public Storage example](https://github.com/pubky/pubky-core/tree/main/examples/rust/3-storage).
 
 Path rules:
 
@@ -228,7 +228,7 @@ Approve an auth request
 signer.approve_auth(authorization_url).await?;
 ```
 
-See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/rust/3-auth_flow).
+See the fully functional [**Auth Flow Example**](https://github.com/pubky/pubky-core/tree/main/examples/rust/2-auth_flow).
 
 #### Relay & reliability
 
