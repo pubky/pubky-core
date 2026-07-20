@@ -34,7 +34,13 @@ This guide covers both options.
 
 ## Open Ports
 
-The homeserver exposes two endpoints: Pubky TLS on port 6287 and a plain HTTP endpoint on port 6286. The HTTP endpoint does not handle TLS itself, so we'll place [Caddy](https://caddyserver.com/) in front of it to serve HTTPS on port 443; Caddy manages the TLS certificates automatically.
+The homeserver speaks two protocols. Both endpoints serve the same data, the difference is how clients find and connect to your server:
+
+**Pubky TLS** is the native protocol: clients resolve your homeserver's public key on the DHT and connect directly on port 6287, bypassing centralized DNS.
+
+**HTTPS** is the standard web protocol: browsers and the browser-based SDK use this on port 443, which requires a TLS certificate for your domain or IP address. 
+
+The HTTPS endpoint does not handle TLS itself, so we'll place [Caddy](https://caddyserver.com/) in front of it to serve HTTPS on port 443; Caddy manages the TLS certificates automatically.
 
 Open these three ports for inbound traffic:
 
@@ -85,7 +91,7 @@ For the full list of settings (including `public_pubky_tls_port` and `public_ica
 
 > **Important:** Ensure your server has a **static (reserved) public IP**. If your IP changes then the PKARR record (which embeds `public_ip`), your Caddy configuration, and any DNS records will silently point at a dead address.
 
-Restart the homeserver after editing `config.toml` for the changes to take effect. If you have set it up as a background service, see [systemd Service](./INSTALL.md#systemd-service) in the install guide.
+Restart the homeserver after editing `config.toml` for the changes to take effect. See [Run](./INSTALL.md#run) in the install guide.
 
 ## Set Up HTTPS
 

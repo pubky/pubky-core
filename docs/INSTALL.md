@@ -13,10 +13,10 @@ Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), 
     - [Release Binary](#release-binary) | [Build From Source](#build-from-source) ([Cargo](#build-a-binary-with-cargo) | [Docker](#build-a-docker-image))
   - [Initialise the Data Directory](#initialise-the-data-directory)
   - [Set Up PostgreSQL](#set-up-postgresql)
-    - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
+    - [Docker](#docker) | [Native](#native) | [Existing](#existing-instance)
   - [Configure the Homeserver with PostgreSQL](#configure-the-homeserver-with-postgresql)
   - [Run](#run)
-    - [systemd Service](#systemd-service)
+    - [Docker](#docker-1) | [Native](#native-1) | [systemd Service](#systemd-service)
 - [Next Steps](#next-steps)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -215,13 +215,7 @@ sed -i 's|^# \[general\]|[general]|; s|^# database_url = .*|database_url = "post
 
 ## Run
 
-Start the homeserver:
-
-```bash
-pubky-homeserver
-```
-
-With Docker:
+### Docker
 
 ```bash
 docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
@@ -229,9 +223,21 @@ docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserv
 
 Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
 
-### systemd Service
+To run in the background and restart automatically, add `--restart unless-stopped` and replace `-it` with `-d`:
 
-> **Note:** This section applies to native (non-Docker) installs. If you run the homeserver via Docker, use Docker's own restart policy (`--restart unless-stopped`) or Docker Compose instead of systemd.
+```bash
+docker run -d --restart unless-stopped --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
+```
+
+### Native
+
+Start the homeserver:
+
+```bash
+pubky-homeserver
+```
+
+### systemd Service
 
 Below is an example setup using systemd, which is available on most Linux distributions. This will run the homeserver in the background, start it on boot, and restart it automatically on failure.
 
