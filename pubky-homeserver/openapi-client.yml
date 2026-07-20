@@ -30,8 +30,8 @@ info:
 
     ## Write Path Restriction
 
-    All PUT/DELETE operations require paths under `/pub/`. Attempts to write elsewhere
-    return `403 Forbidden`.
+    All PUT/DELETE operations require paths under `/pub/` or `/priv/`. Attempts to
+    write elsewhere return `403 Forbidden`.
   version: 0.9.0
   license:
     name: MIT
@@ -347,8 +347,8 @@ paths:
       in: path
       required: true
       description: |
-        WebDAV path relative to the tenant. Must start with `pub/` for all operations
-        (reads and writes). May contain slashes (multi-segment).
+        WebDAV path relative to the tenant. Must start with `pub/` or `priv/` for
+        reads and writes. May contain slashes (multi-segment).
       schema:
         type: string
       examples:
@@ -369,6 +369,10 @@ paths:
 
         Supports conditional requests via `If-None-Match` and `If-Modified-Since`.
       operationId: getEntry
+      security:
+      - {}
+      - bearerAuth: []
+      - cookieAuth: []
       parameters:
       - name: limit
         in: query
@@ -478,6 +482,12 @@ paths:
                 type: string
         '400':
           description: Invalid cursor
+        '401':
+          description: Authentication is required to read a `/priv/` path
+        '403':
+          description: |
+            Session user does not match the target tenant, session lacks read
+            capability for a `/priv/` path, or path is outside `/pub/` and `/priv/`.
         '404':
           description: File or directory not found, or tenant (user) does not exist
           headers:
@@ -497,6 +507,10 @@ paths:
       summary: Get file metadata
       description: Returns the same headers as GET but without the response body.
       operationId: headEntry
+      security:
+      - {}
+      - bearerAuth: []
+      - cookieAuth: []
       responses:
         '200':
           description: File metadata in headers
@@ -520,6 +534,12 @@ paths:
             Vary:
               schema:
                 type: string
+        '401':
+          description: Authentication is required to read a `/priv/` path
+        '403':
+          description: |
+            Session user does not match the target tenant, session lacks read
+            capability for a `/priv/` path, or path is outside `/pub/` and `/priv/`.
         '404':
           description: File not found, or tenant (user) does not exist
     put:
@@ -527,7 +547,7 @@ paths:
       - Data
       summary: Create or update file
       description: |
-        Writes a file at the given path. Path must be under `/pub/`.
+        Writes a file at the given path. Path must be under `/pub/` or `/priv/`.
         The authenticated user must match the target tenant and have write capability
         covering the path.
 
@@ -550,8 +570,8 @@ paths:
           description: No valid session
         '403':
           description: |
-            Session user does not match target tenant, path outside `/pub/`,
-            session lacks write capability for path, or user account is disabled.
+            Session user does not match target tenant, path is outside `/pub/` and
+            `/priv/`, session lacks write capability for path, or user account is disabled.
         '507':
           description: Storage quota exceeded
     delete:
@@ -559,7 +579,7 @@ paths:
       - Data
       summary: Delete file
       description: |
-        Deletes a file at the given path. Path must be under `/pub/`.
+        Deletes a file at the given path. Path must be under `/pub/` or `/priv/`.
         The authenticated user must match the target tenant and have write capability.
       operationId: deleteEntry
       security:
@@ -571,7 +591,7 @@ paths:
         '401':
           description: No valid session
         '403':
-          description: Insufficient permissions or path outside `/pub/`
+          description: Insufficient permissions or path outside `/pub/` and `/priv/`
         '404':
           description: File not found
   "/events/":
