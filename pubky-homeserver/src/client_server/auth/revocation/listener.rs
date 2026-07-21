@@ -1,8 +1,8 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use sqlx::{postgres::PgListener, PgPool};
 use tokio::{
-    sync::{broadcast, mpsc, oneshot},
+    sync::{broadcast, oneshot, Mutex},
     time::Instant,
 };
 
@@ -11,8 +11,6 @@ use super::{AuthRevocation, PG_AUTH_REVOCATION_CHANNEL};
 /// Sized to absorb short revocation bursts without forcing unrelated streams
 /// through a database revalidation round-trip.
 const AUTH_REVOCATION_CHANNEL_CAPACITY: usize = 1024;
-/// Bounds pre-auth subscription work while the supervisor attempts recovery.
-const SUPERVISOR_MAILBOX_CAPACITY: usize = 64;
 /// This keeps a Postgres outage from turning request rate into connection-attempt rate:
 /// one attempt per window, and everyone else is told the listener is unavailable.
 const REPLACEMENT_COOLDOWN: Duration = Duration::from_secs(1);
@@ -28,7 +26,7 @@ type SubscriptionResult = Result<RevocationReceiver, AuthRevocationUnavailable>;
 /// Local fan-out service for committed authentication revocations.
 #[derive(Clone, Debug)]
 pub(crate) struct AuthRevocationService {
-    requests: mpsc::Sender<SupervisorRequest>,
+    supervisor: Arc<Mutex<Supervisor>>,
 }
 
 impl AuthRevocationService {
@@ -40,38 +38,25 @@ impl AuthRevocationService {
             actor: Some(ListenerActor::spawn(pool).await?),
             replacement_cooldown: ReplacementCooldown::default(),
         };
-        let (requests, mailbox) = mpsc::channel(SUPERVISOR_MAILBOX_CAPACITY);
-        // The supervisor deliberately holds no clone of this service: its
-        // mailbox closing is what shuts the whole chain down.
-        drop(tokio::spawn(supervisor.run(mailbox)));
-        Ok(Self { requests })
+        Ok(Self {
+            supervisor: Arc::new(Mutex::new(supervisor)),
+        })
     }
 
     pub(crate) async fn subscribe(&self) -> SubscriptionResult {
-        let (reply, response) = oneshot::channel();
-        self.requests
-            .try_send(SupervisorRequest { reply })
-            .map_err(|_| AuthRevocationUnavailable)?;
-        response.await.map_err(|_| AuthRevocationUnavailable)?
+        self.supervisor.lock().await.subscribe().await
     }
 }
 
-struct SupervisorRequest {
-    reply: oneshot::Sender<SubscriptionResult>,
-}
-
-struct ActorRequest {
-    reply: oneshot::Sender<RevocationReceiver>,
-}
-
 /// Serves subscriptions from one listener actor at a time.
+#[derive(Debug)]
 struct Supervisor {
     pool: PgPool,
     actor: Option<ListenerActorHandle>,
     replacement_cooldown: ReplacementCooldown,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct ReplacementCooldown {
     last_attempt: Option<Instant>,
 }
@@ -93,25 +78,18 @@ impl ReplacementCooldown {
 }
 
 impl Supervisor {
-    async fn run(mut self, mut mailbox: mpsc::Receiver<SupervisorRequest>) {
-        while let Some(request) = mailbox.recv().await {
-            // Retaining the reply covers an actor that exits after accepting
-            // the subscription but before answering it.
-            let _ = request.reply.send(self.subscribe().await);
-        }
-    }
-
     async fn subscribe(&mut self) -> SubscriptionResult {
-        if let Some(handle) = self.actor.as_ref() {
-            if let Some(receiver) = handle.subscribe().await {
+        loop {
+            if let Some(receiver) = self.actor.as_ref().and_then(ListenerActorHandle::subscribe) {
                 return Ok(receiver);
             }
+
             self.actor = None;
+            self.replace().await?;
         }
-        self.replace().await
     }
 
-    async fn replace(&mut self) -> SubscriptionResult {
+    async fn replace(&mut self) -> Result<(), AuthRevocationUnavailable> {
         if !self.replacement_cooldown.try_start(Instant::now()) {
             return Err(AuthRevocationUnavailable);
         }
@@ -120,20 +98,16 @@ impl Supervisor {
             tracing::error!(%error, "failed to start the auth revocation listener");
             AuthRevocationUnavailable
         })?;
-        let receiver = replacement
-            .subscribe()
-            .await
-            .ok_or(AuthRevocationUnavailable)?;
         tracing::info!("started a replacement auth revocation listener");
         self.actor = Some(replacement);
-        Ok(receiver)
+        Ok(())
     }
 }
 
 struct ListenerActor {
     listener: PgListener,
     notifications: broadcast::Sender<AuthRevocation>,
-    mailbox: mpsc::Receiver<ActorRequest>,
+    lifetime: oneshot::Receiver<()>,
 }
 
 impl ListenerActor {
@@ -148,16 +122,19 @@ impl ListenerActor {
         listener.listen(PG_AUTH_REVOCATION_CHANNEL).await?;
 
         let (notifications, _) = broadcast::channel(AUTH_REVOCATION_CHANNEL_CAPACITY);
-        // The supervisor permits only one in-flight actor request.
-        let (requests, mailbox) = mpsc::channel(1);
+        let (lifetime, actor_lifetime) = oneshot::channel();
+        let handle = ListenerActorHandle {
+            notifications: notifications.downgrade(),
+            _lifetime: lifetime,
+        };
         let actor = Self {
             listener,
             notifications,
-            mailbox,
+            lifetime: actor_lifetime,
         };
         drop(tokio::spawn(actor.run()));
 
-        Ok(ListenerActorHandle { requests })
+        Ok(handle)
     }
 
     /// Forward notifications to this actor's subscribers until any gap makes
@@ -165,12 +142,7 @@ impl ListenerActor {
     async fn run(mut self) {
         loop {
             tokio::select! {
-                request = self.mailbox.recv() => match request {
-                    Some(ActorRequest { reply }) => {
-                        let _ = reply.send(self.notifications.subscribe());
-                    }
-                    None => return,
-                },
+                _ = &mut self.lifetime => return,
                 notification = self.listener.try_recv() => match notification {
                     Ok(Some(notification)) => {
                         match serde_json::from_str::<AuthRevocation>(notification.payload()) {
@@ -200,15 +172,17 @@ impl ListenerActor {
     }
 }
 
+#[derive(Debug)]
 struct ListenerActorHandle {
-    requests: mpsc::Sender<ActorRequest>,
+    notifications: broadcast::WeakSender<AuthRevocation>,
+    _lifetime: oneshot::Sender<()>,
 }
 
 impl ListenerActorHandle {
-    async fn subscribe(&self) -> Option<RevocationReceiver> {
-        let (reply, response) = oneshot::channel();
-        self.requests.send(ActorRequest { reply }).await.ok()?;
-        response.await.ok()
+    fn subscribe(&self) -> Option<RevocationReceiver> {
+        self.notifications
+            .upgrade()
+            .map(|notifications| notifications.subscribe())
     }
 }
 
@@ -360,12 +334,13 @@ mod tests {
         let pid = listener_backend_pid(db.pool()).await;
 
         drop(service);
-        assert!(
-            spare.subscribe().await.is_ok(),
-            "a remaining clone keeps the listener alive"
-        );
+        let mut receiver = spare
+            .subscribe()
+            .await
+            .expect("a remaining clone keeps the listener alive");
 
         drop(spare);
+        expect_closed(&mut receiver).await;
 
         timeout(Duration::from_secs(5), async {
             while listener_backend_pids(db.pool()).await.contains(&pid) {
