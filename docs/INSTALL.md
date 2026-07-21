@@ -149,6 +149,7 @@ Start a PostgreSQL container with the `pubky_homeserver` database:
 
 ```bash
 docker run --name pubky-postgres \
+  --restart unless-stopped \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
@@ -218,16 +219,11 @@ sed -i 's|^# \[general\]|[general]|; s|^# database_url = .*|database_url = "post
 ### Docker
 
 ```bash
-docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
-```
-
-Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
-
-To run in the background and restart automatically, add `--restart unless-stopped` and replace `-it` with `-d`:
-
-```bash
 docker run -d --restart unless-stopped --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
 ```
+
+`--network=host` lets the container reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container. `--restart unless-stopped` ensures the homeserver starts automatically after a reboot.
+
 
 ### Native
 
@@ -252,7 +248,9 @@ Paste the following:
 ```ini
 [Unit]
 Description=Pubky Homeserver
-After=network-online.target
+# Use postgresql.service if you installed Postgres natively,
+# or docker.service if you run Postgres in Docker.
+After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
@@ -269,9 +267,6 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 ```
-
-> **Tip:** If PostgreSQL runs on the same machine, add it to the `After=` line so the homeserver waits for it:
-> `After=network-online.target postgresql.service` (or `docker.service` if using Docker for Postgres).
 
 Enable and start the service:
 

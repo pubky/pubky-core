@@ -36,11 +36,11 @@ This guide covers both options.
 
 The homeserver speaks two protocols. Both endpoints serve the same data, the difference is how clients find and connect to your server:
 
-**Pubky TLS** is the native protocol: clients resolve your homeserver's public key on the DHT and connect directly on port 6287, bypassing centralized DNS.
+**Pubky TLS** is the native protocol: clients resolve your homeserver's public key on the DHT and connect directly on port 6287, bypassing any certificate authority.
 
-**HTTPS** is the standard web protocol: browsers and the browser-based SDK use this on port 443, which requires a TLS certificate for your domain or IP address. 
+**CA-authenticated TLS** is the HTTPS you already know from the regular internet: browsers and the browser-based SDK use this on port 443, which requires a TLS certificate from a certificate authority for your domain or IP address.
 
-The HTTPS endpoint does not handle TLS itself, so we'll place [Caddy](https://caddyserver.com/) in front of it to serve HTTPS on port 443; Caddy manages the TLS certificates automatically.
+The homeserver serves plain HTTP on an internal port; we place [Caddy](https://caddyserver.com/) in front of it to add the CA-authenticated TLS layer and serve HTTPS on port 443. Caddy manages the certificates automatically.
 
 Open these three ports for inbound traffic:
 
@@ -87,11 +87,12 @@ Replace `YOUR_IP` with the public IP of the machine running the homeserver. You 
 
 Replace `YOUR_DOMAIN_OR_IP` with your domain name or public IP, depending on [which setup you chose](#choose-your-setup).
 
-For the full list of settings (including `public_pubky_tls_port` and `public_icann_http_port` for non-standard port setups), see [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
 
 > **Important:** Ensure your server has a **static (reserved) public IP**. If your IP changes then the PKARR record (which embeds `public_ip`), your Caddy configuration, and any DNS records will silently point at a dead address.
 
 Restart the homeserver after editing `config.toml` for the changes to take effect. See [Run](./INSTALL.md#run) in the install guide.
+
+> ℹ️ For the full list of settings (including `public_pubky_tls_port` and `public_icann_http_port` for non-standard port setups), see [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
 
 ## Set Up HTTPS
 
