@@ -4,16 +4,18 @@ use url::Url;
 use super::AdminCmd;
 use crate::config::ConfigToml;
 
-pub struct AdminSettings {
-    pub password: String,
-    pub endpoint: Url,
+use crate::helpers::http_client::{Auth, HttpClient};
+
+pub struct AdminContext {
+    pub client: HttpClient,
 }
 
-impl AdminSettings {
+impl AdminContext {
     pub fn resolve(cmd: &AdminCmd, config: Option<&ConfigToml>) -> Result<Self> {
+        let password = resolve_password(cmd, config)?;
+        let endpoint = resolve_endpoint(cmd, config)?;
         Ok(Self {
-            password: resolve_password(cmd, config)?,
-            endpoint: resolve_endpoint(cmd, config)?,
+            client: HttpClient::new(endpoint, Auth::AdminPassword(password))?,
         })
     }
 }
