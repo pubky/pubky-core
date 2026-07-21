@@ -106,8 +106,8 @@ impl Supervisor {
 
 struct ListenerActor {
     listener: PgListener,
-    notifications: broadcast::Sender<AuthRevocation>,
-    lifetime: oneshot::Receiver<()>,
+    notifications_tx: broadcast::Sender<AuthRevocation>,
+    lifetime_rx: oneshot::Receiver<()>,
 }
 
 impl ListenerActor {
@@ -121,16 +121,16 @@ impl ListenerActor {
         listener.eager_reconnect(false);
         listener.listen(PG_AUTH_REVOCATION_CHANNEL).await?;
 
-        let (notifications, _) = broadcast::channel(AUTH_REVOCATION_CHANNEL_CAPACITY);
-        let (lifetime, actor_lifetime) = oneshot::channel();
+        let (notifications_tx, _) = broadcast::channel(AUTH_REVOCATION_CHANNEL_CAPACITY);
+        let (lifetime_tx, lifetime_rx) = oneshot::channel();
         let handle = ListenerActorHandle {
-            notifications: notifications.downgrade(),
-            _lifetime: lifetime,
+            notifications_tx: notifications_tx.downgrade(),
+            _lifetime_tx: lifetime_tx,
         };
         let actor = Self {
             listener,
-            notifications,
-            lifetime: actor_lifetime,
+            notifications_tx,
+            lifetime_rx,
         };
         drop(tokio::spawn(actor.run()));
 
@@ -142,13 +142,13 @@ impl ListenerActor {
     async fn run(mut self) {
         loop {
             tokio::select! {
-                _ = &mut self.lifetime => return,
+                _ = &mut self.lifetime_rx => return,
                 notification = self.listener.try_recv() => match notification {
                     Ok(Some(notification)) => {
                         match serde_json::from_str::<AuthRevocation>(notification.payload()) {
                             Ok(revocation) => {
                                 // No receivers is normal when no private streams are connected.
-                                let _ = self.notifications.send(revocation);
+                                let _ = self.notifications_tx.send(revocation);
                             }
                             // The payload could be a revocation this instance would
                             // otherwise ignore, so it is not safe to skip.
@@ -174,15 +174,15 @@ impl ListenerActor {
 
 #[derive(Debug)]
 struct ListenerActorHandle {
-    notifications: broadcast::WeakSender<AuthRevocation>,
-    _lifetime: oneshot::Sender<()>,
+    notifications_tx: broadcast::WeakSender<AuthRevocation>,
+    _lifetime_tx: oneshot::Sender<()>,
 }
 
 impl ListenerActorHandle {
     fn subscribe(&self) -> Option<RevocationReceiver> {
-        self.notifications
+        self.notifications_tx
             .upgrade()
-            .map(|notifications| notifications.subscribe())
+            .map(|notifications_tx| notifications_tx.subscribe())
     }
 }
 
