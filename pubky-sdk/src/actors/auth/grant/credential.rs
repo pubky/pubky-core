@@ -561,6 +561,9 @@ pub(crate) async fn sign_pop_for_grant(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
+    use pkarr::{Cache, InMemoryCache};
     use pubky_common::{
         auth::jws::{ClientId, GRANT_JWS_TYP, GrantId},
         capabilities::Capability,
@@ -746,14 +749,13 @@ mod tests {
         let client_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
         let credential = test_credential(stored, claims.clone(), client_signer);
 
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
         let mut builder = PubkyHttpClient::builder();
-        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        builder
+            .isolated_pkarr_test()
+            .pkarr(|b| b.cache(cache.clone()));
         let client = builder.build().unwrap();
-        client
-            .pkarr
-            .cache()
-            .unwrap()
-            .put(&homeserver_keypair.public_key().into(), &homeserver_packet);
+        cache.put(&homeserver_keypair.public_key().into(), &homeserver_packet);
 
         let request = credential
             .grant_session_request(&client, Method::POST)

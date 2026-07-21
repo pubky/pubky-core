@@ -1,7 +1,7 @@
 //!
 //! Republishes a single public key.
 //!
-use pkarr::{PublicKey, SignedPacket};
+use pkarr::{PublicKey, ResolvePolicy, SignedPacket};
 use std::{num::NonZeroU8, sync::Arc};
 
 use super::publisher::{PublishError, Publisher, PublisherSettings};
@@ -64,8 +64,16 @@ impl Republisher {
         &self,
         public_key: &PublicKey,
     ) -> Result<RepublishOutcome, PublishError> {
-        let Some(packet) = self.client.resolve_most_recent(public_key).await else {
-            return Ok(RepublishOutcome::Missing);
+        let packet = match self
+            .client
+            .resolve(public_key, ResolvePolicy::NetworkOnly)
+            .await
+        {
+            Ok(packet) => packet,
+            Err(pkarr::errors::ResolveError::InvalidSignedPacket { .. }) => {
+                return Ok(RepublishOutcome::InvalidSignedPacket);
+            }
+            Err(_) => return Ok(RepublishOutcome::Missing),
         };
         if packet.public_key() != *public_key {
             return Ok(RepublishOutcome::InvalidSignedPacket);
@@ -93,6 +101,7 @@ impl Republisher {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_client_builder;
     use super::*;
     use pkarr::{dns::Name, Keypair};
 
@@ -104,7 +113,7 @@ mod tests {
             .build(&key)
             .unwrap();
         client
-            .publish(&packet, None)
+            .publish(&packet)
             .await
             .expect("sample packet should publish");
 
@@ -114,11 +123,7 @@ mod tests {
     #[tokio::test]
     async fn republish_returns_published_for_resolved_packet() {
         let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder
-            .no_default_network()
-            .bootstrap(&dht.bootstrap)
-            .no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.build().unwrap();
         let public_key = publish_sample_packet(&pkarr_client).await;
 
@@ -135,8 +140,7 @@ mod tests {
     #[tokio::test]
     async fn republish_returns_missing_for_unknown_key() {
         let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.build().unwrap();
         let public_key = Keypair::random().public_key();
 
@@ -153,8 +157,7 @@ mod tests {
     #[tokio::test]
     async fn republish_returns_skipped_when_condition_rejects_packet() {
         let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.build().unwrap();
         let public_key = publish_sample_packet(&pkarr_client).await;
 
@@ -172,8 +175,7 @@ mod tests {
     #[tokio::test]
     async fn republish_returns_published_when_condition_accepts_packet() {
         let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.build().unwrap();
         let public_key = publish_sample_packet(&pkarr_client).await;
 
@@ -191,11 +193,7 @@ mod tests {
     #[tokio::test]
     async fn republish_returns_publish_error_when_insufficiently_published() {
         let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder
-            .no_default_network()
-            .bootstrap(&dht.bootstrap)
-            .no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.build().unwrap();
         let public_key = publish_sample_packet(&pkarr_client).await;
 

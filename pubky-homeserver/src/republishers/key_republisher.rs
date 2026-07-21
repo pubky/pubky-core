@@ -50,13 +50,13 @@ impl HomeserverKeyRepublisher {
         client: &pkarr::Client,
         signed_packet: &SignedPacket,
     ) -> Result<(), PublishError> {
-        let res = client.publish(signed_packet, None).await;
+        let res = client.publish(signed_packet).await;
         if let Err(e) = &res {
             tracing::warn!("Failed to publish the homeserver's pkarr packet to the DHT: {e}",);
         } else {
             tracing::info!("Published the homeserver's pkarr packet to the DHT.");
         }
-        res
+        res.map(|_| ())
     }
 
     /// Start the periodic republish task which will republish the server packet to the DHT every hour.
@@ -167,7 +167,7 @@ pub fn create_signed_packet(
 #[cfg(test)]
 mod tests {
     use futures_lite::StreamExt;
-    use pkarr::extra::endpoints::Endpoint;
+    use pkarr::{extra::endpoints::Endpoint, ResolvePolicy};
     use std::net::{Ipv4Addr, SocketAddr};
 
     use super::*;
@@ -182,7 +182,10 @@ mod tests {
         let pkarr_client = context.pkarr_client.clone();
         let hs_pubky = context.keypair.public_key();
         // Make sure the pkarr packet of the hs is resolvable.
-        let _packet = pkarr_client.resolve(&hs_pubky).await.unwrap();
+        let _packet = pkarr_client
+            .resolve(&hs_pubky, ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         // Make sure the pkarr client can resolve the endpoint of the hs.
         let qname = hs_pubky.z32();
         let endpoint = pkarr_client
@@ -205,8 +208,14 @@ mod tests {
             .unwrap();
         let pubkey = context.keypair.public_key();
 
-        let client = pkarr::Client::builder().build().unwrap();
-        let packet = client.resolve(&pubkey).await.unwrap();
+        let client = pkarr::Client::builder()
+            .dht_report_policy(pkarr::dht::ReportPolicy::testnet())
+            .build()
+            .unwrap();
+        let packet = client
+            .resolve(&pubkey, ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         let rr: Vec<&pkarr::dns::ResourceRecord> = packet.all_resource_records().collect();
         assert_eq!(rr.len(), 3);
 

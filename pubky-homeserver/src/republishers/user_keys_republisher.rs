@@ -145,7 +145,8 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
-        let pkarr_builder = pkarr::ClientBuilder::default();
+        let mut pkarr_builder = pkarr::ClientBuilder::default();
+        pkarr_builder.dht_report_policy(pkarr::dht::ReportPolicy::testnet());
         let worker = UserKeysRepublisher { db, pkarr_builder };
         let summary = worker.republish_impl().await.unwrap();
         assert_eq!(summary.len(), 10);

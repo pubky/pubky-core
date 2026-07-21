@@ -52,8 +52,8 @@ http-relay = "0.7"
 httpdate = "1"
 js-sys = "0.3"
 log = "0.4"
-pkarr = { version = "6", default-features = false }
-pkarr-relay = { version = "0.12" }
+pkarr = { version = "7", default-features = false }
+pkarr-relay = { version = "1" }
 pubky = { path = "pubky-sdk", version = "0.9", default-features = false }
 pubky-common = { path = "pubky-common", version = "0.9" }
 pubky-homeserver = { path = "pubky-homeserver", version = "0.9", default-features = false }

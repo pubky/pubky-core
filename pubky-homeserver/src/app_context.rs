@@ -155,6 +155,10 @@ impl AppContext {
     /// Build the pkarr client builder based on the config.
     fn build_pkarr_builder_from_config(config_toml: &ConfigToml) -> pkarr::ClientBuilder {
         let mut builder = pkarr::ClientBuilder::default();
+        #[cfg(any(test, feature = "testing"))]
+        if config_toml.general.database_url.is_test_db() {
+            builder.dht_report_policy(pkarr::dht::ReportPolicy::testnet());
+        }
         if let Some(bootstrap_nodes) = &config_toml.pkdns.dht_bootstrap_nodes {
             let nodes = bootstrap_nodes
                 .iter()
