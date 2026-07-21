@@ -6,7 +6,7 @@ use tokio::{
     time::Instant,
 };
 
-use super::{AuthRevocation, WireAuthRevocation, PG_AUTH_REVOCATION_CHANNEL};
+use super::{AuthRevocation, PG_AUTH_REVOCATION_CHANNEL};
 
 /// Sized to absorb short revocation bursts without forcing unrelated streams
 /// through a database revalidation round-trip.
@@ -173,10 +173,10 @@ impl ListenerActor {
                 },
                 notification = self.listener.try_recv() => match notification {
                     Ok(Some(notification)) => {
-                        match serde_json::from_str::<WireAuthRevocation>(notification.payload()) {
+                        match serde_json::from_str::<AuthRevocation>(notification.payload()) {
                             Ok(revocation) => {
                                 // No receivers is normal when no private streams are connected.
-                                let _ = self.notifications.send(revocation.into());
+                                let _ = self.notifications.send(revocation);
                             }
                             // The payload could be a revocation this instance would
                             // otherwise ignore, so it is not safe to skip.
@@ -245,7 +245,7 @@ mod tests {
     }
 
     async fn notify_cookie_revocation(pool: &PgPool, id: i32) {
-        let payload = serde_json::to_string(&WireAuthRevocation::CookieSession(id))
+        let payload = serde_json::to_string(&AuthRevocation::CookieSession(id))
             .expect("serialize revocation");
         notify(pool, &payload).await;
     }

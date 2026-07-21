@@ -30,8 +30,12 @@ pub(crate) use listener::{AuthRevocationService, AuthRevocationUnavailable};
 /// Postgres channel used for committed authentication revocations.
 const PG_AUTH_REVOCATION_CHANNEL: &str = "auth_revocations";
 
-/// A local revocation signal for an active private stream.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A committed authentication revocation forwarded to active private streams.
+///
+/// Cookie secrets and bearer tokens are deliberately not present in this
+/// payload. Postgres channel consumers only need stable database identifiers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub(crate) enum AuthRevocation {
     /// A deprecated cookie session row was deleted.
     CookieSession(i32),
@@ -54,7 +58,7 @@ impl AuthRevocation {
         id: i32,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
-        WireAuthRevocation::CookieSession(id)
+        Self::CookieSession(id)
             .notify_in_transaction(executor)
             .await
     }
@@ -64,24 +68,11 @@ impl AuthRevocation {
         id: &GrantId,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<(), sqlx::Error> {
-        WireAuthRevocation::Grant(id.clone())
+        Self::Grant(id.clone())
             .notify_in_transaction(executor)
             .await
     }
-}
 
-/// Serializable form of an authentication revocation.
-///
-/// Cookie secrets and bearer tokens are deliberately not present in this
-/// payload. Postgres channel consumers only need stable database identifiers.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
-enum WireAuthRevocation {
-    CookieSession(i32),
-    Grant(GrantId),
-}
-
-impl WireAuthRevocation {
     /// Queue this notification in the caller's transaction.
     ///
     /// Postgres only delivers a `NOTIFY` at commit. Keeping this alongside the
@@ -100,15 +91,6 @@ impl WireAuthRevocation {
             .execute(con)
             .await?;
         Ok(())
-    }
-}
-
-impl From<WireAuthRevocation> for AuthRevocation {
-    fn from(value: WireAuthRevocation) -> Self {
-        match value {
-            WireAuthRevocation::CookieSession(id) => Self::CookieSession(id),
-            WireAuthRevocation::Grant(id) => Self::Grant(id),
-        }
     }
 }
 
@@ -148,5 +130,28 @@ mod tests {
         assert!(!AuthRevocation::CookieSession(8).matches(&cookie_session(7)));
         assert!(AuthRevocation::Grant(grant_id.clone()).matches(&grant_session(grant_id)));
         assert!(!AuthRevocation::CookieSession(7).matches(&grant_session(GrantId::generate())));
+    }
+
+    #[test]
+    fn revocations_have_a_stable_wire_format() {
+        let cases = [
+            (
+                AuthRevocation::CookieSession(7),
+                serde_json::json!({"kind": "cookie_session", "id": 7}),
+            ),
+            (
+                AuthRevocation::Grant(GrantId::parse("grant-id").unwrap()),
+                serde_json::json!({"kind": "grant", "id": "grant-id"}),
+            ),
+        ];
+
+        for (revocation, expected) in cases {
+            let serialized = serde_json::to_value(&revocation).unwrap();
+            assert_eq!(serialized, expected);
+            assert_eq!(
+                serde_json::from_value::<AuthRevocation>(serialized).unwrap(),
+                revocation
+            );
+        }
     }
 }
