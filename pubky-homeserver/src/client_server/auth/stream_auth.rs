@@ -1,6 +1,6 @@
 //! Authentication state and revocation handling for private event streams.
 
-use std::future;
+use std::future::{self, Future};
 
 use tokio::sync::broadcast;
 
@@ -71,7 +71,7 @@ pub(crate) enum StreamAuth {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum RevocationSignal {
+enum RevocationSignal {
     Continue,
     Close,
     Revalidate,
@@ -118,16 +118,19 @@ impl StreamAuth {
         }
     }
 
-    /// Wait only for the next auth-revocation signal. Any database revalidation
-    /// happens after this future wins `select!`, so it cannot be cancelled by a
-    /// concurrently ready file event.
-    pub(crate) async fn next_revocation_signal(&mut self) -> RevocationSignal {
+    /// Wait for the next auth-revocation signal, then return the check that must
+    /// complete after this future wins `select!`. Keeping database revalidation
+    /// in the returned future prevents a ready file event from cancelling it.
+    pub(crate) async fn next_check<'a>(
+        &'a mut self,
+        auth_state: &'a AuthState,
+    ) -> impl Future<Output = bool> + 'a {
         let received = match self {
             Self::Private { revocation_rx, .. } => revocation_rx.recv().await,
             Self::Public => future::pending().await,
         };
 
-        match received {
+        let signal = match received {
             Ok(revocation) if self.matches(&revocation) => {
                 tracing::debug!("closing private event stream after auth revocation");
                 RevocationSignal::Close
@@ -137,6 +140,14 @@ impl StreamAuth {
             Err(broadcast::error::RecvError::Closed) => {
                 tracing::warn!("auth revocation receiver closed; closing private event stream");
                 RevocationSignal::Close
+            }
+        };
+
+        async move {
+            match signal {
+                RevocationSignal::Continue => true,
+                RevocationSignal::Close => false,
+                RevocationSignal::Revalidate => self.revalidate_session(auth_state).await,
             }
         }
     }
@@ -148,7 +159,7 @@ impl StreamAuth {
         }
     }
 
-    pub(crate) async fn revalidate_session(&self, auth_state: &AuthState) -> bool {
+    async fn revalidate_session(&self, auth_state: &AuthState) -> bool {
         let Self::Private { session, .. } = self else {
             return true;
         };
@@ -233,14 +244,13 @@ mod tests {
             .await
             .unwrap();
 
-        let signal = tokio::select! {
+        let check = tokio::select! {
             biased;
-            signal = stream_auth.next_revocation_signal() => signal,
+            check = stream_auth.next_check(&auth_state) => check,
             _ = future::ready(()) => panic!("ready event bypassed the lag signal"),
         };
 
-        assert_eq!(signal, RevocationSignal::Revalidate);
         lock.rollback().await.unwrap();
-        assert!(!stream_auth.revalidate_session(&auth_state).await);
+        assert!(!check.await);
     }
 }

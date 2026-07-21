@@ -26,7 +26,7 @@ use crate::{
     client_server::{
         auth::{
             grant::bearer::extract_bearer_token, has_read_permission, AuthSession,
-            PendingStreamAuth, RevocationSignal,
+            PendingStreamAuth,
         },
         query_params::ListQueryParams,
         AppState,
@@ -473,15 +473,9 @@ pub async fn feed_stream(
             loop {
                 tokio::select! {
                     biased;
-                    signal = stream_auth.next_revocation_signal() => {
-                        match signal {
-                            RevocationSignal::Continue => {}
-                            RevocationSignal::Close => return,
-                            RevocationSignal::Revalidate => {
-                                if !stream_auth.revalidate_session(&state.auth_state).await {
-                                    return;
-                                }
-                            }
+                    check = stream_auth.next_check(&state.auth_state) => {
+                        if !check.await {
+                            return;
                         }
                     }
                     event = rx.recv() => match event {
