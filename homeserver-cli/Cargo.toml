@@ -18,3 +18,4 @@ serde = { version = "1", features = ["derive"] }
 url = { version = "2.5", features = ["serde"] }
 toml = "0.8"
 dirs = "6.0"
+rpassword = "7.5.4"

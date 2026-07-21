@@ -2,33 +2,37 @@ use clap::{Args, Subcommand};
 use crate::config::ConfigToml;
 use url::Url;
 pub mod get_info;
+use anyhow::{Context, Result};
 
 pub trait ResolveAdminFlags {
-    fn resolve_admin_password(&self, config: Option<&ConfigToml>) -> Result<String, String>;
-    fn resolve_admin_endpoint(&self, config: Option<&ConfigToml>) -> Result<Url, String>;
+    fn resolve_admin_password(&self, config: Option<&ConfigToml>) -> Result<String>;
+    fn resolve_admin_endpoint(&self, config: Option<&ConfigToml>) -> Result<Url>;
 }
 
-//admin_passowrd and admin_endpoint could be provided via config or command flags, the flags. The flags have higher priority.
 impl ResolveAdminFlags for AdminCmd {
-    fn resolve_admin_password(&self, config: Option<&ConfigToml>) -> Result<String, String> {
-        self.admin_password.clone().or_else(|| {
-            config.and_then(|c| c.admin.admin_password.clone())
-        })
-        .ok_or_else(|| "Error: Missing admin password. Provide it via '--admin-password' or in the config file.".to_string())
+    fn resolve_admin_password(&self, config: Option<&ConfigToml>) -> Result<String> {
+        match &self.admin_password {
+            Some(Some(password)) => Ok(password.clone()),
+            Some(None) => rpassword::prompt_password("Provide Homeserver Admin Password: ")
+                .context("Failed to read admin password from terminal"),
+            None => config
+                .and_then(|c| c.admin.admin_password.clone())
+                .context("Missing admin password. Provide it via '--admin-password' or in the config file."),
+        }
     }
 
-    fn resolve_admin_endpoint(&self, config: Option<&ConfigToml>) -> Result<Url, String> {
-        self.admin_endpoint.clone().or_else(|| {
-            config.and_then(|c| c.admin.admin_endpoint.clone())
-        })
-        .ok_or_else(|| "Error: Missing admin endpoint. Provide it via '--admin-endpoint' or in the config file.".to_string())
+    fn resolve_admin_endpoint(&self, config: Option<&ConfigToml>) -> Result<Url> {
+        self.admin_endpoint
+            .clone()
+            .or_else(|| config.and_then(|c| c.admin.admin_endpoint.clone()))
+            .context("Error: Missing admin endpoint. Provide it via '--admin-endpoint' or in the config file.")
     }
 }
 
 #[derive(Args, Debug)]
 pub struct AdminCmd {
-    #[arg(long)]
-    pub admin_password: Option<String>,
+    #[arg(long, num_args = 0..=1)]
+    pub admin_password: Option<Option<String>>,
 
     #[arg(long)]
     pub admin_endpoint: Option<Url>,
@@ -43,26 +47,15 @@ pub enum AdminSubcommands {
 }
 
 impl AdminCmd {
-    pub fn run(&self, config: Option<ConfigToml>) {
-        let resolved_admin_password = match self.resolve_admin_password(config.as_ref()) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        };
-        let resolved_admin_endpoint = match self.resolve_admin_endpoint(config.as_ref()) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        };
+    pub fn run(&self, config: Option<ConfigToml>) -> anyhow::Result<()> {
+        let resolved_admin_password = self.resolve_admin_password(config.as_ref())?;
+        let resolved_admin_endpoint = self.resolve_admin_endpoint(config.as_ref())?;
 
         match &self.subcommand {
             AdminSubcommands::GetInfo(sbu_args) => {
-                get_info::run(resolved_admin_endpoint, resolved_admin_password, sbu_args);
+                get_info::run(resolved_admin_endpoint, resolved_admin_password, sbu_args)?;
             }
         }
+        Ok(())
     }
 }
