@@ -23,9 +23,9 @@ fn resolve_password(cmd: &AdminCmd, config: Option<&ConfigToml>) -> Result<Strin
         Some(Some(password)) => Ok(password.clone()),
         Some(None) => rpassword::prompt_password("Provide Homeserver Admin Password: ")
             .context("Failed to read admin password from terminal"),
-        None => config
-            .and_then(|c| c.admin.admin_password.clone())
-            .context("Missing admin password. Provide it via '--admin-password' or in the config file."),
+        None => config.and_then(|c| c.admin.admin_password.clone()).context(
+            "Missing admin password. Provide it via '--admin-password' or in the config file.",
+        ),
     }
 }
 

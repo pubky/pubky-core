@@ -2,8 +2,8 @@ mod admin;
 
 use crate::cli::Cli;
 use crate::config::ConfigToml;
-use clap::Subcommand;
 use anyhow::Result;
+use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {

@@ -1,5 +1,5 @@
-use clap::{Args, Subcommand};
 use crate::config::ConfigToml;
+use clap::{Args, Subcommand};
 use url::Url;
 pub mod get_info;
 mod settings;
