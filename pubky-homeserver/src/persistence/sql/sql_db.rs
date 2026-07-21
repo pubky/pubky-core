@@ -82,7 +82,8 @@ impl Drop for TestDbDropper {
 }
 
 #[cfg(any(test, feature = "testing"))]
-pub(crate) const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
+pub(crate) const DEFAULT_TEST_CONNECTION_STRING: &str =
+    "postgres://localhost:5432/postgres?pubky-test=true";
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
@@ -124,38 +125,26 @@ impl SqlDb {
         Ok(con)
     }
 
-    /// Derives the admin connection string to use for the test database creation.
+    /// Derives the connection string for test database creation.
     ///
     /// Priority:
-    /// 1. Explicitly provided URL (if different from [`ConnectionString::default_test_db`])
+    /// 1. Explicitly provided URL (e.g. Docker Postgres) — used as-is
     /// 2. `TEST_PUBKY_CONNECTION_STRING` environment variable
     /// 3. [`DEFAULT_TEST_CONNECTION_STRING`] fallback
-    ///
-    /// An explicitly provided URL that equals the default is treated as "no
-    /// explicit config" so the env var can still override it. This lets Docker
-    /// Postgres (non-default URL) pass through while the default config defers
-    /// to the user's env var.
-    pub fn derive_connection_string(
-        admin_con_string: Option<ConnectionString>,
-    ) -> ConnectionString {
-        // If an explicitly non-default connection string was provided, use it.
-        if let Some(ref con_string) = admin_con_string {
-            if *con_string != ConnectionString::default_test_db() {
-                return con_string.clone();
-            }
+    pub fn derive_connection_string(explicit: Option<ConnectionString>) -> ConnectionString {
+        if let Some(url) = explicit {
+            return url;
         }
 
-        // Check the environment variable.
-        if let Ok(raw_con_string) = std::env::var("TEST_PUBKY_CONNECTION_STRING") {
-            match ConnectionString::new(&raw_con_string) {
+        if let Ok(raw) = std::env::var("TEST_PUBKY_CONNECTION_STRING") {
+            match ConnectionString::new(&raw) {
                 Ok(con_string) => return con_string,
                 Err(e) => {
-                    tracing::warn!("Invalid database connection string in TEST_PUBKY_CONNECTION_STRING environment variable: {}. Fallback to default test connection string. Error: {e}", raw_con_string);
+                    tracing::warn!("Invalid TEST_PUBKY_CONNECTION_STRING: {raw}. Falling back to default. Error: {e}");
                 }
             }
         }
 
-        // Final fallback.
         ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING)
             .expect("Default test connection string is valid")
     }

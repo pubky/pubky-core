@@ -42,18 +42,6 @@ impl ConnectionString {
 
 #[cfg(any(test, feature = "testing"))]
 impl ConnectionString {
-    /// Default connection string for ephemeral test databases.
-    ///
-    /// This is the same as [`super::sql_db::DEFAULT_TEST_CONNECTION_STRING`] with
-    /// `?pubky-test=true` appended to signal ephemeral database creation.
-    pub fn default_test_db() -> Self {
-        Self::new(&format!(
-            "{}?pubky-test=true",
-            super::sql_db::DEFAULT_TEST_CONNECTION_STRING
-        ))
-        .unwrap()
-    }
-
     /// Returns true if the connection string is for a test database.
     pub fn is_test_db(&self) -> bool {
         self.0
