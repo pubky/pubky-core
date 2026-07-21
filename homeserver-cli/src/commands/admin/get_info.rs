@@ -1,13 +1,13 @@
 use clap::Args;
 use anyhow::Result;
-use url::Url;
+use super::settings::AdminSettings;
 
 #[derive(Args, Debug)]
 pub struct GetInfoArgs {
 }
 
-pub fn run(admin_endpoint: Url, admin_password: String, _args: &GetInfoArgs) -> Result<()> {
-    println!("{} {}",admin_endpoint , admin_password);
+pub fn run(settings: AdminSettings, _args: &GetInfoArgs) -> Result<()> {
+    println!("{} {}",settings.endpoint , settings.password);
     println!("get_info_mock");
     Ok(())
 }
