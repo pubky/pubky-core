@@ -8,8 +8,8 @@ use context::AdminContext;
 
 #[derive(Args, Debug)]
 pub struct AdminCmd {
-    #[arg(long, num_args = 0..=1)]
-    pub admin_password: Option<Option<String>>,
+    #[arg(long)]
+    pub admin_password: bool,
 
     #[arg(long)]
     pub admin_endpoint: Option<Url>,
