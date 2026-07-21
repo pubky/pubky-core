@@ -95,7 +95,8 @@ impl StreamAuth {
                 // Revalidate this stream's own credential instead of
                 // disconnecting every private stream after an unrelated burst.
                 Err(broadcast::error::TryRecvError::Lagged(_)) => {
-                    return RevocationSignal::Revalidate
+                    *revocation_rx = revocation_rx.resubscribe();
+                    return RevocationSignal::Revalidate;
                 }
                 Err(broadcast::error::TryRecvError::Closed) => return RevocationSignal::Close,
             }
@@ -136,7 +137,13 @@ impl StreamAuth {
                 RevocationSignal::Close
             }
             Ok(_) => RevocationSignal::Continue,
-            Err(broadcast::error::RecvError::Lagged(_)) => RevocationSignal::Revalidate,
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                let Self::Private { revocation_rx, .. } = self else {
+                    unreachable!("public streams never receive revocation signals")
+                };
+                *revocation_rx = revocation_rx.resubscribe();
+                RevocationSignal::Revalidate
+            }
             Err(broadcast::error::RecvError::Closed) => {
                 tracing::warn!("auth revocation receiver closed; closing private event stream");
                 RevocationSignal::Close
@@ -210,10 +217,10 @@ mod tests {
     }
 
     #[test]
-    fn lagged_revocation_receiver_requests_revalidation() {
+    fn lagged_revocation_receiver_resubscribes_before_revalidation() {
         let (sender, receiver) = broadcast::channel(1);
         sender.send(AuthRevocation::CookieSession(2)).unwrap();
-        sender.send(AuthRevocation::CookieSession(3)).unwrap();
+        sender.send(AuthRevocation::CookieSession(1)).unwrap();
         let mut stream_auth = StreamAuth::Private {
             session: Box::new(cookie_session()),
             revocation_rx: receiver,
@@ -222,6 +229,17 @@ mod tests {
         assert!(matches!(
             stream_auth.pending_revocation(),
             RevocationSignal::Revalidate
+        ));
+
+        let StreamAuth::Private { revocation_rx, .. } = &stream_auth else {
+            unreachable!()
+        };
+        assert!(revocation_rx.is_empty());
+
+        sender.send(AuthRevocation::CookieSession(1)).unwrap();
+        assert!(matches!(
+            stream_auth.pending_revocation(),
+            RevocationSignal::Close
         ));
     }
 
@@ -252,5 +270,10 @@ mod tests {
 
         lock.rollback().await.unwrap();
         assert!(!check.await);
+
+        let StreamAuth::Private { revocation_rx, .. } = &stream_auth else {
+            unreachable!()
+        };
+        assert!(revocation_rx.is_empty());
     }
 }
