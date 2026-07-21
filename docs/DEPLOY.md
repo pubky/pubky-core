@@ -52,7 +52,7 @@ Open these three ports for inbound traffic:
 
 How you open these depends on your setup: a cloud provider's security group, a router's port-forwarding rules, or a host firewall.
 
-Do **not** expose these ports:
+Do **not** expose these ports directly to the internet:
 
 | Port | Purpose |
 | --- | --- |
@@ -253,19 +253,6 @@ cargo run --features=reqwest-builder --example http-get https://<homeserver-publ
 
 A successful response prints `Pubky Homeserver`.
 
-### Check Internal Ports Are Not Exposed
-
-From your local machine (not the server), verify that internal ports are **not** reachable. Replace `YOUR_HOST` with your domain or IP address:
-
-```bash
-# These should all time out or refuse the connection
-curl --connect-timeout 5 http://YOUR_HOST:6286
-curl --connect-timeout 5 http://YOUR_HOST:6288/info
-curl --connect-timeout 5 http://YOUR_HOST:6289
-```
-
-If any of these respond, your firewall is misconfigured — go back to [Open Ports](#open-ports).
-
 
 ## Production Notes
 
@@ -274,7 +261,7 @@ If any of these respond, your firewall is misconfigured — go back to [Open Por
   - User data — by default stored in `~/.pubky/data/files` (depends on `storage.type`).
   - The PostgreSQL database.
 - Change the default admin password in `[admin].admin_password`.
-- **IP Address Only users:** Shortlived certificates expire in ~6 days. Caddy renews them automatically, but if renewal fails for more than a few days your HTTPS endpoint will go down. Monitor your Caddy logs and ensure port 80 stays reachable.
+- **IP Address Only users:** Shortlived certificates expire in ~6 days. Caddy renews them automatically, but if renewal fails for more than a few days your HTTPS endpoint will go down. Ensure port 80 stays reachable.
 
 ## Troubleshooting
 

@@ -277,7 +277,8 @@ Enable and start the service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now pubky-homeserver
+sudo systemctl enable pubky-homeserver
+sudo systemctl start pubky-homeserver
 ```
 
 Check that it is running:
@@ -291,7 +292,7 @@ View logs:
 ```bash
 journalctl -u pubky-homeserver -f
 ```
-
+ 
 ## Next Steps
 
 Once the homeserver is running, the default endpoints are:
