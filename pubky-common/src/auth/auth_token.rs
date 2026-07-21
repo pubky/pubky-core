@@ -68,7 +68,7 @@ mod signature_serde {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-/// Implementation of the [Pubky Auth spec](https://pubky.github.io/pubky-core/spec/auth.html).
+/// Authentication token used by the Pubky Auth protocol.
 pub struct AuthToken {
     /// Signature over the token.
     #[serde(with = "signature_serde")]
