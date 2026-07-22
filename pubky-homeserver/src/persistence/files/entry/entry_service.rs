@@ -3,26 +3,18 @@ use crate::{
         files::{FileIoError, FileMetadata},
         sql::{
             entry::{EntryEntity, EntryRepository},
-            user::UserRepository,
-            SqlDb, UnifiedExecutor,
+            UnifiedExecutor,
         },
     },
     shared::webdav::EntryPath,
 };
 
-#[derive(Debug, Clone)]
-pub struct EntryService {
-    db: SqlDb,
-    // user_disk_space_quota_bytes: u64,
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EntryService;
 
 impl EntryService {
-    pub fn new(db: SqlDb) -> Self {
-        Self { db }
-    }
-
-    pub fn db(&self) -> &SqlDb {
-        &self.db
+    pub fn new() -> Self {
+        Self
     }
 
     /// Write an entry to the database.
@@ -30,22 +22,18 @@ impl EntryService {
     /// Returns the entry.
     pub async fn write_entry<'a>(
         &self,
+        user_id: i32,
+        existing_entry: Option<EntryEntity>,
         path: &EntryPath,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EntryEntity, FileIoError> {
-        let existing_entry = match EntryRepository::get_by_path(path, executor).await {
-            Ok(entry) => Some(entry),
-            Err(sqlx::Error::RowNotFound) => None,
-            Err(e) => return Err(e.into()),
-        };
-
         // Create/Update entry
         let entry = if let Some(existing_entry) = existing_entry {
             self.update_entry(existing_entry, metadata, executor)
                 .await?
         } else {
-            self.create_entry(path, metadata, executor).await?
+            self.create_entry(user_id, path, metadata, executor).await?
         };
 
         Ok(entry)
@@ -70,11 +58,11 @@ impl EntryService {
     /// Create a new entry in the database.
     async fn create_entry<'a>(
         &self,
+        user_id: i32,
         path: &EntryPath,
         metadata: &FileMetadata,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<EntryEntity, FileIoError> {
-        let user_id = UserRepository::get_id(path.pubkey(), executor).await?;
         let entry_id = EntryRepository::create(
             user_id,
             path.path(),
@@ -88,12 +76,12 @@ impl EntryService {
         Ok(entry)
     }
 
-    /// Delete an entry from the database.
+    /// Delete an entry and return its metadata for transactional accounting.
     pub async fn delete_entry<'a>(
         &self,
         path: &EntryPath,
         executor: &mut UnifiedExecutor<'a>,
-    ) -> Result<(), FileIoError> {
+    ) -> Result<EntryEntity, FileIoError> {
         let entry = match EntryRepository::get_by_path(path, executor).await {
             Ok(entry) => entry,
             Err(sqlx::Error::RowNotFound) => return Err(FileIoError::NotFound),
@@ -102,6 +90,6 @@ impl EntryService {
 
         EntryRepository::delete(entry.id, executor).await?;
 
-        Ok(())
+        Ok(entry)
     }
 }

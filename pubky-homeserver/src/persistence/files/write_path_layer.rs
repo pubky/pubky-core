@@ -180,7 +180,9 @@ mod tests {
     use crate::persistence::files::opendal::opendal_test_operators::{
         get_fs_operator, get_memory_operator,
     };
-    use crate::persistence::files::user_quota_layer::UserQuotaLayer;
+    use crate::persistence::files::{
+        events::EventsService, write_finalization_layer::WriteFinalizationLayer,
+    };
     use crate::persistence::sql::user::UserRepository;
     use crate::persistence::sql::SqlDb;
     use crate::services::user_service::UserService;
@@ -212,7 +214,7 @@ mod tests {
         pubkey
     }
 
-    /// Build an operator with both WritePathLayer (outermost) and UserQuotaLayer,
+    /// Build an operator with both WritePathLayer (outermost) and WriteFinalizationLayer,
     /// matching the production stack order.
     fn build_test_operator(db: &SqlDb) -> opendal::Operator {
         build_test_operator_with(db, get_memory_operator())
@@ -226,9 +228,10 @@ mod tests {
 
     fn build_test_operator_with(db: &SqlDb, base: opendal::Operator) -> opendal::Operator {
         let user_service = UserService::new(db.clone());
-        let user_quota_layer = UserQuotaLayer::new(user_service.clone(), None);
+        let write_finalization_layer =
+            WriteFinalizationLayer::new(user_service.clone(), EventsService::new(100), None, true);
         let write_path_layer = WritePathLayer::new(user_service);
-        base.layer(user_quota_layer).layer(write_path_layer)
+        base.layer(write_finalization_layer).layer(write_path_layer)
     }
 
     #[tokio::test]

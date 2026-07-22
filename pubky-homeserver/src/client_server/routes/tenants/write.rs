@@ -15,7 +15,7 @@ use crate::{
     },
     persistence::{
         files::{
-            user_quota_layer::{resolve_storage_max_bytes, would_exceed_limit},
+            write_finalization_layer::{resolve_storage_max_bytes, would_exceed_limit},
             WriteStreamError,
         },
         sql::{entry::EntryRepository, user::UserEntity, UnifiedExecutor},
