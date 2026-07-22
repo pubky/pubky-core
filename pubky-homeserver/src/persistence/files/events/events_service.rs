@@ -132,6 +132,8 @@ impl EventsService {
     /// This is a best-effort wake-up signal. The PgEventListener will poll the
     /// database for actual events, so a missed NOTIFY only adds latency (up to
     /// the fallback poll interval) — it never causes missed events.
+    /// Immediate visibility relies on those polls reading from the same Postgres
+    /// primary; a lagging replica can defer discovery until a later poll.
     pub async fn notify_event(pool: &PgPool) {
         if let Err(e) = sqlx::query("SELECT pg_notify($1, '')")
             .bind(PG_NOTIFY_CHANNEL)

@@ -523,12 +523,27 @@ impl<R: oio::Delete> oio::Delete for WriteFinalizationDeleter<R> {
             .drain(0..deleted_count)
             .collect::<Vec<_>>();
         let mut should_notify = false;
+        let mut first_error = None;
         for entry_path in &deleted_paths {
-            should_notify |= self.finalizer.finalize_delete(entry_path).await?;
+            match self.finalizer.finalize_delete(entry_path).await {
+                Ok(path_should_notify) => should_notify |= path_should_notify,
+                Err(error) => {
+                    tracing::error!(
+                        path = %entry_path,
+                        error = %error,
+                        "Failed to finalize deleted path"
+                    );
+                    first_error.get_or_insert(error);
+                }
+            }
         }
 
         if should_notify {
             self.finalizer.notify_event();
+        }
+
+        if let Some(error) = first_error {
+            return Err(error);
         }
 
         Ok(deleted_count)
@@ -540,6 +555,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use opendal::raw::oio::Delete;
     use pubky_common::crypto::Keypair;
     use tokio::sync::Barrier;
 
@@ -552,6 +568,22 @@ mod tests {
     use crate::shared::webdav::{EntryPath, WebDavPath};
 
     use super::*;
+
+    #[derive(Default)]
+    struct BatchDelete {
+        queued: usize,
+    }
+
+    impl oio::Delete for BatchDelete {
+        fn delete(&mut self, _path: &str, _args: OpDelete) -> Result<()> {
+            self.queued += 1;
+            Ok(())
+        }
+
+        async fn flush(&mut self) -> Result<usize> {
+            Ok(std::mem::take(&mut self.queued))
+        }
+    }
 
     fn test_finalizer(db: &SqlDb) -> Finalizer {
         Finalizer::new(
@@ -749,6 +781,81 @@ mod tests {
             .expect_err("entry insert should roll back");
         assert_eq!(user_usage(&db, &pubkey).await, 0);
         assert!(all_events(&db).await.is_empty());
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn batched_delete_continues_finalization_after_error() {
+        let db = SqlDb::test().await;
+        let operator = test_operator(&db);
+        let pubkey = create_user(&db).await;
+        let failing_path = EntryPath::new(pubkey.clone(), WebDavPath::new("/failing.txt").unwrap());
+        let succeeding_path =
+            EntryPath::new(pubkey.clone(), WebDavPath::new("/succeeding.txt").unwrap());
+
+        operator
+            .write(failing_path.as_str(), vec![1; 10])
+            .await
+            .unwrap();
+        operator
+            .write(succeeding_path.as_str(), vec![2; 20])
+            .await
+            .unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE FUNCTION fail_selected_delete_event() RETURNS trigger AS $$
+            BEGIN
+                IF NEW.type = 'DEL' AND NEW.path = '/failing.txt' THEN
+                    RAISE EXCEPTION 'forced selected delete event failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            "#,
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TRIGGER fail_selected_delete_event_trigger
+            BEFORE INSERT ON events
+            FOR EACH ROW EXECUTE FUNCTION fail_selected_delete_event()
+            "#,
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        let mut deleter = WriteFinalizationDeleter {
+            inner: BatchDelete::default(),
+            finalizer: Arc::new(test_finalizer(&db)),
+            delete_queue: Vec::new(),
+        };
+        deleter
+            .delete(failing_path.as_str(), OpDelete::default())
+            .unwrap();
+        deleter
+            .delete(succeeding_path.as_str(), OpDelete::default())
+            .unwrap();
+
+        deleter
+            .flush()
+            .await
+            .expect_err("the batch should report the first finalization error");
+
+        EntryRepository::get_by_path(&failing_path, &mut db.pool().into())
+            .await
+            .expect("the failed finalization should roll back");
+        EntryRepository::get_by_path(&succeeding_path, &mut db.pool().into())
+            .await
+            .expect_err("later paths should still be finalized");
+        assert_eq!(user_usage(&db, &pubkey).await, 10 + FILE_METADATA_SIZE);
+        let events = all_events(&db).await;
+        assert_eq!(events.len(), 3);
+        assert_eq!(events.last().unwrap().event_type, EventType::Delete);
+        assert_eq!(events.last().unwrap().path, succeeding_path);
     }
 
     #[tokio::test]

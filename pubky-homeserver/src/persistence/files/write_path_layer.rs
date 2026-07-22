@@ -8,8 +8,8 @@ use opendal::Result;
 
 /// OpenDAL layer that enforces per-user `allowed_write_paths` restrictions.
 ///
-/// Stacked as the outermost layer so rejected writes never reach
-/// quota/entry/event layers.
+/// Stacked as the outermost layer so rejected mutations never reach write
+/// finalization or the storage backend.
 ///
 /// - Reads, stats, and lists pass through unmodified.
 /// - Writes, deletes, copies, renames, and create_dir check the user's

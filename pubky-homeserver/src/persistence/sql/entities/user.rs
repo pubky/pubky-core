@@ -9,7 +9,7 @@ use crate::shared::user_quota::UserQuota;
 pub const USER_TABLE: &str = "users";
 
 /// All columns needed to construct a `UserEntity` from a row.
-/// Single source of truth — used by `get`, `get_for_update`, and `get_all`.
+/// Single source of truth for queries that construct a `UserEntity`.
 const ALL_USER_COLUMNS: [UserIden; 11] = [
     UserIden::Id,
     UserIden::PublicKey,
