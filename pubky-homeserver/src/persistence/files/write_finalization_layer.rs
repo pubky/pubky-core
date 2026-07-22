@@ -20,10 +20,35 @@ use opendal::Result;
 /// cannot be rolled back if a later database operation fails after `close()`.
 #[derive(Clone)]
 pub struct WriteFinalizationLayer {
+    finalizer: Arc<Finalizer>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CollisionPolicy {
+    Enforce,
+    AllowLegacyAdminRepair,
+}
+
+impl CollisionPolicy {
+    fn from_enforcement(enforce: bool) -> Self {
+        if enforce {
+            Self::Enforce
+        } else {
+            Self::AllowLegacyAdminRepair
+        }
+    }
+
+    fn enforces_collisions(self) -> bool {
+        matches!(self, Self::Enforce)
+    }
+}
+
+#[derive(Debug)]
+struct Finalizer {
     user_service: UserService,
     events_service: EventsService,
     default_storage_mb: Option<u64>,
-    enforce_path_collisions: bool,
+    collision_policy: CollisionPolicy,
 }
 
 impl WriteFinalizationLayer {
@@ -34,10 +59,12 @@ impl WriteFinalizationLayer {
         enforce_path_collisions: bool,
     ) -> Self {
         Self {
-            user_service,
-            events_service,
-            default_storage_mb,
-            enforce_path_collisions,
+            finalizer: Arc::new(Finalizer::new(
+                user_service,
+                events_service,
+                default_storage_mb,
+                CollisionPolicy::from_enforcement(enforce_path_collisions),
+            )),
         }
     }
 }
@@ -108,10 +135,7 @@ impl<A: Access> Layer<A> for WriteFinalizationLayer {
     fn layer(&self, inner: A) -> Self::LayeredAccess {
         WriteFinalizationAccessor {
             inner: Arc::new(inner),
-            user_service: self.user_service.clone(),
-            events_service: self.events_service.clone(),
-            default_storage_mb: self.default_storage_mb,
-            enforce_path_collisions: self.enforce_path_collisions,
+            finalizer: self.finalizer.clone(),
         }
     }
 }
@@ -119,20 +143,7 @@ impl<A: Access> Layer<A> for WriteFinalizationLayer {
 #[derive(Debug, Clone)]
 pub struct WriteFinalizationAccessor<A: Access> {
     inner: Arc<A>,
-    user_service: UserService,
-    events_service: EventsService,
-    default_storage_mb: Option<u64>,
-    enforce_path_collisions: bool,
-}
-
-impl<A: Access> WriteFinalizationAccessor<A> {
-    async fn collision_preflight(&self, entry_path: &EntryPath) -> Result<()> {
-        if !self.enforce_path_collisions {
-            return Ok(());
-        }
-
-        check_no_path_collision(entry_path, &mut self.user_service.pool().into()).await
-    }
+    finalizer: Arc<Finalizer>,
 }
 
 impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
@@ -148,7 +159,7 @@ impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
         let entry_path = EntryPath::parse_opendal(path)?;
-        self.collision_preflight(&entry_path).await?;
+        self.finalizer.collision_preflight(&entry_path).await?;
         self.inner.create_dir(entry_path.as_str(), args).await
     }
 
@@ -158,16 +169,13 @@ impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
         let entry_path = EntryPath::parse_opendal(path)?;
-        self.collision_preflight(&entry_path).await?;
+        self.finalizer.collision_preflight(&entry_path).await?;
         let (rp, writer) = self.inner.write(entry_path.as_str(), args).await?;
         Ok((
             rp,
             WriteFinalizationWriter {
                 inner: writer,
-                user_service: self.user_service.clone(),
-                events_service: self.events_service.clone(),
-                default_storage_mb: self.default_storage_mb,
-                enforce_path_collisions: self.enforce_path_collisions,
+                finalizer: self.finalizer.clone(),
                 entry_path,
                 metadata_builder: FileMetadataBuilder::default(),
             },
@@ -177,14 +185,14 @@ impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
     async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
         let from = EntryPath::parse_opendal(from)?;
         let to = EntryPath::parse_opendal(to)?;
-        self.collision_preflight(&to).await?;
+        self.finalizer.collision_preflight(&to).await?;
         self.inner.copy(from.as_str(), to.as_str(), args).await
     }
 
     async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
         let from = EntryPath::parse_opendal(from)?;
         let to = EntryPath::parse_opendal(to)?;
-        self.collision_preflight(&to).await?;
+        self.finalizer.collision_preflight(&to).await?;
         self.inner.rename(from.as_str(), to.as_str(), args).await
     }
 
@@ -198,8 +206,7 @@ impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
             rp,
             WriteFinalizationDeleter {
                 inner: deleter,
-                user_service: self.user_service.clone(),
-                events_service: self.events_service.clone(),
+                finalizer: self.finalizer.clone(),
                 delete_queue: Vec::new(),
             },
         ))
@@ -218,10 +225,7 @@ impl<A: Access> LayeredAccess for WriteFinalizationAccessor<A> {
 /// Writer that commits entry metadata, its event, and quota accounting together.
 pub struct WriteFinalizationWriter<R> {
     inner: R,
-    user_service: UserService,
-    events_service: EventsService,
-    default_storage_mb: Option<u64>,
-    enforce_path_collisions: bool,
+    finalizer: Arc<Finalizer>,
     entry_path: EntryPath,
     metadata_builder: FileMetadataBuilder,
 }
@@ -241,14 +245,17 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
             .guess_mime_type_from_path(self.entry_path.path().as_str());
         let file_metadata = self.metadata_builder.clone().finalize();
         let entry_service = EntryService::new();
-        let mut tx =
-            self.user_service.pool().begin().await.map_err(|error| {
-                unexpected("Failed to begin write finalization transaction", error)
-            })?;
+        let mut tx = self
+            .finalizer
+            .user_service
+            .pool()
+            .begin()
+            .await
+            .map_err(|error| unexpected("Failed to begin write finalization transaction", error))?;
 
         let result = async {
             let mut executor = UnifiedExecutor::from_tx(&mut tx);
-            let mut user = self.user_service.get_for_no_key_update(
+            let mut user = self.finalizer.user_service.get_for_no_key_update(
                 self.entry_path.pubkey(),
                 &mut executor,
             )
@@ -260,7 +267,7 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
                 )
             })?;
 
-            if self.enforce_path_collisions {
+            if self.finalizer.collision_policy.enforces_collisions() {
                 check_no_path_collision(&self.entry_path, &mut executor).await?;
             }
 
@@ -285,7 +292,8 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
                 0
             };
             let bytes_delta = file_metadata.length as i64 - existing_bytes as i64 + metadata_bytes;
-            let max_bytes = resolve_storage_max_bytes(&user, self.default_storage_mb);
+            let max_bytes =
+                resolve_storage_max_bytes(&user, self.finalizer.default_storage_mb);
             if would_exceed_limit(user.used_bytes, bytes_delta, max_bytes) {
                 return Err(opendal::Error::new(
                     opendal::ErrorKind::RateLimited,
@@ -313,7 +321,8 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
                         error,
                     )
                 })?;
-            self.events_service
+            self.finalizer
+                .events_service
                 .create_event(
                     user.id,
                     EventType::Put {
@@ -333,7 +342,8 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
                     )
                 })?;
             user.used_bytes = user.used_bytes.saturating_add_signed(bytes_delta);
-            self.user_service
+            self.finalizer
+                .user_service
                 .update(&user, &mut executor)
                 .await
                 .map_err(|error| {
@@ -366,113 +376,135 @@ impl<R: oio::Write> oio::Write for WriteFinalizationWriter<R> {
             }
         };
 
-        let pool = self.user_service.pool().clone();
-        drop(tokio::spawn(async move {
-            EventsService::notify_event(&pool).await;
-        }));
+        self.finalizer.notify_event();
         Ok(metadata)
     }
 }
 
-/// Finalize database effects for a backend deletion.
-/// Returns `false` when no entry existed, so duplicate deletes remain a no-op.
-async fn finalize_delete(
-    user_service: &UserService,
-    events_service: &EventsService,
-    entry_path: &EntryPath,
-) -> Result<bool> {
-    let entry_service = EntryService::new();
-    let mut tx =
-        user_service.pool().begin().await.map_err(|error| {
+impl Finalizer {
+    fn new(
+        user_service: UserService,
+        events_service: EventsService,
+        default_storage_mb: Option<u64>,
+        collision_policy: CollisionPolicy,
+    ) -> Self {
+        Self {
+            user_service,
+            events_service,
+            default_storage_mb,
+            collision_policy,
+        }
+    }
+
+    async fn collision_preflight(&self, entry_path: &EntryPath) -> Result<()> {
+        if !self.collision_policy.enforces_collisions() {
+            return Ok(());
+        }
+
+        check_no_path_collision(entry_path, &mut self.user_service.pool().into()).await
+    }
+
+    /// Returns `false` when no entry existed, so duplicate deletes remain a no-op.
+    async fn finalize_delete(&self, entry_path: &EntryPath) -> Result<bool> {
+        let entry_service = EntryService::new();
+        let mut tx = self.user_service.pool().begin().await.map_err(|error| {
             unexpected("Failed to begin delete finalization transaction", error)
         })?;
 
-    let result = async {
-        let mut executor = UnifiedExecutor::from_tx(&mut tx);
-        let mut user = match user_service
-            .get_for_no_key_update(entry_path.pubkey(), &mut executor)
-            .await
-        {
-            Ok(user) => user,
-            Err(sqlx::Error::RowNotFound) => return Ok(false),
-            Err(error) => {
-                return Err(unexpected(
-                    format!("Failed to lock user {}", entry_path.pubkey()),
-                    error,
-                ));
-            }
-        };
-
-        let deleted_entry = match entry_service.delete_entry(entry_path, &mut executor).await {
-            Ok(entry) => entry,
-            Err(crate::persistence::files::FileIoError::NotFound) => return Ok(false),
-            Err(error) => {
-                return Err(unexpected(
-                    format!("Failed to delete entry {entry_path}"),
-                    error,
-                ));
-            }
-        };
-
-        events_service
-            .create_event(user.id, EventType::Delete, entry_path, &mut executor)
-            .await
-            .map_err(|error| {
-                unexpected(
-                    format!("Failed to create delete event for {entry_path}"),
-                    error,
-                )
-            })?;
-
-        let bytes_delta = deleted_entry
-            .content_length
-            .saturating_add(FILE_METADATA_SIZE);
-        user.used_bytes = user.used_bytes.saturating_sub(bytes_delta);
-        user_service
-            .update(&user, &mut executor)
-            .await
-            .map_err(|error| {
-                unexpected(
-                    format!("Failed to update quota for {}", entry_path.pubkey()),
-                    error,
-                )
-            })?;
-
-        Ok(true)
-    }
-    .await;
-
-    match result {
-        Ok(true) => {
-            tx.commit()
+        let result = async {
+            let mut executor = UnifiedExecutor::from_tx(&mut tx);
+            let mut user = match self
+                .user_service
+                .get_for_no_key_update(entry_path.pubkey(), &mut executor)
                 .await
-                .map_err(|error| unexpected("Failed to commit delete finalization", error))?;
+            {
+                Ok(user) => user,
+                Err(sqlx::Error::RowNotFound) => return Ok(false),
+                Err(error) => {
+                    return Err(unexpected(
+                        format!("Failed to lock user {}", entry_path.pubkey()),
+                        error,
+                    ));
+                }
+            };
+
+            let deleted_entry = match entry_service.delete_entry(entry_path, &mut executor).await {
+                Ok(entry) => entry,
+                Err(crate::persistence::files::FileIoError::NotFound) => return Ok(false),
+                Err(error) => {
+                    return Err(unexpected(
+                        format!("Failed to delete entry {entry_path}"),
+                        error,
+                    ));
+                }
+            };
+
+            self.events_service
+                .create_event(user.id, EventType::Delete, entry_path, &mut executor)
+                .await
+                .map_err(|error| {
+                    unexpected(
+                        format!("Failed to create delete event for {entry_path}"),
+                        error,
+                    )
+                })?;
+
+            let bytes_delta = deleted_entry
+                .content_length
+                .saturating_add(FILE_METADATA_SIZE);
+            user.used_bytes = user.used_bytes.saturating_sub(bytes_delta);
+            self.user_service
+                .update(&user, &mut executor)
+                .await
+                .map_err(|error| {
+                    unexpected(
+                        format!("Failed to update quota for {}", entry_path.pubkey()),
+                        error,
+                    )
+                })?;
+
             Ok(true)
         }
-        Ok(false) => {
-            tx.rollback()
-                .await
-                .map_err(|error| unexpected("Failed to roll back empty delete", error))?;
-            Ok(false)
-        }
-        Err(error) => {
-            if let Err(rollback_error) = tx.rollback().await {
-                tracing::error!(
-                    path = %entry_path,
-                    error = %rollback_error,
-                    "Failed to roll back delete finalization transaction"
-                );
+        .await;
+
+        match result {
+            Ok(true) => {
+                tx.commit()
+                    .await
+                    .map_err(|error| unexpected("Failed to commit delete finalization", error))?;
+                Ok(true)
             }
-            Err(error)
+            Ok(false) => {
+                tx.rollback()
+                    .await
+                    .map_err(|error| unexpected("Failed to roll back empty delete", error))?;
+                Ok(false)
+            }
+            Err(error) => {
+                if let Err(rollback_error) = tx.rollback().await {
+                    tracing::error!(
+                        path = %entry_path,
+                        error = %rollback_error,
+                        "Failed to roll back delete finalization transaction"
+                    );
+                }
+                Err(error)
+            }
         }
+    }
+
+    fn notify_event(&self) {
+        let pool = self.user_service.pool().clone();
+        drop(tokio::spawn(async move {
+            EventsService::notify_event(&pool).await;
+        }));
     }
 }
 
 /// Deleter that commits entry deletion, its event, and quota accounting together.
 pub struct WriteFinalizationDeleter<R> {
     inner: R,
-    user_service: UserService,
-    events_service: EventsService,
+    finalizer: Arc<Finalizer>,
     delete_queue: Vec<EntryPath>,
 }
 
@@ -492,15 +524,11 @@ impl<R: oio::Delete> oio::Delete for WriteFinalizationDeleter<R> {
             .collect::<Vec<_>>();
         let mut should_notify = false;
         for entry_path in &deleted_paths {
-            should_notify |=
-                finalize_delete(&self.user_service, &self.events_service, entry_path).await?;
+            should_notify |= self.finalizer.finalize_delete(entry_path).await?;
         }
 
         if should_notify {
-            let pool = self.user_service.pool().clone();
-            drop(tokio::spawn(async move {
-                EventsService::notify_event(&pool).await;
-            }));
+            self.finalizer.notify_event();
         }
 
         Ok(deleted_count)
@@ -524,6 +552,15 @@ mod tests {
     use crate::shared::webdav::{EntryPath, WebDavPath};
 
     use super::*;
+
+    fn test_finalizer(db: &SqlDb) -> Finalizer {
+        Finalizer::new(
+            UserService::new(db.clone()),
+            EventsService::new(100),
+            None,
+            CollisionPolicy::Enforce,
+        )
+    }
 
     fn test_operator(db: &SqlDb) -> opendal::Operator {
         get_memory_operator().layer(WriteFinalizationLayer::new(
@@ -637,20 +674,18 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let first_barrier = barrier.clone();
         let second_barrier = barrier.clone();
-        let first_user_service = UserService::new(db.clone());
-        let second_user_service = UserService::new(db.clone());
-        let first_events_service = EventsService::new(100);
-        let second_events_service = EventsService::new(100);
+        let first_finalizer = test_finalizer(&db);
+        let second_finalizer = test_finalizer(&db);
         let first_path = deleted_path.clone();
         let second_path = deleted_path.clone();
 
         let first = async move {
             first_barrier.wait().await;
-            finalize_delete(&first_user_service, &first_events_service, &first_path).await
+            first_finalizer.finalize_delete(&first_path).await
         };
         let second = async move {
             second_barrier.wait().await;
-            finalize_delete(&second_user_service, &second_events_service, &second_path).await
+            second_finalizer.finalize_delete(&second_path).await
         };
         let (first_result, second_result) = tokio::join!(first, second);
 
