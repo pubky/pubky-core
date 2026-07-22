@@ -1,4 +1,4 @@
-use crate::commands::admin::context::AdminContext;
+use super::context::AdminContext;
 use anyhow::{Context, Result};
 use clap::Args;
 use reqwest::blocking::Response;

@@ -4,8 +4,6 @@ use url::Url;
 mod context;
 pub mod generate_signup_token;
 pub mod get_info;
-pub mod quota;
-pub mod user;
 use context::AdminContext;
 
 #[derive(Args, Debug)]
@@ -24,26 +22,18 @@ pub struct AdminCmd {
 pub enum AdminSubcommands {
     GetInfo(get_info::GetInfoArgs),
     GenerateSignupToken(generate_signup_token::GenerateSignupTokenArgs),
-    User(user::UserCmd),
-    Quota(quota::QuotaCmd),
 }
 
 impl AdminCmd {
     pub fn run(&self, config: Option<ConfigToml>) -> anyhow::Result<()> {
-        let context = AdminContext::resolve(self, config.as_ref())?;
+        let settings = AdminContext::resolve(self, config.as_ref())?;
 
         match &self.subcommand {
             AdminSubcommands::GetInfo(sbu_args) => {
-                get_info::run(context, sbu_args)?;
+                get_info::run(settings, sbu_args)?;
             }
             AdminSubcommands::GenerateSignupToken(sbu_args) => {
-                generate_signup_token::run(context, sbu_args)?;
-            }
-            AdminSubcommands::User(sbu_args) => {
-                sbu_args.run(context)?;
-            }
-            AdminSubcommands::Quota(sbu_args) => {
-                sbu_args.run(context)?;
+                generate_signup_token::run(settings, sbu_args)?;
             }
         }
         Ok(())

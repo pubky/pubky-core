@@ -50,6 +50,11 @@ impl HttpClient {
         self.send(self.http.post(url.clone()), &url)
     }
 
+    pub fn patch_json<B: Serialize>(&self, path: &str, body: &B) -> Result<Response> {
+        let url = self.url(path)?;
+        self.send(self.http.patch(url.clone()).json(body), &url)
+    }
+
     fn url(&self, path: &str) -> Result<Url> {
         self.base_url
             .join(path)

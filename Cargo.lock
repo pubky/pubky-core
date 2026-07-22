@@ -2372,6 +2372,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "pubky",
  "reqwest 0.13.2",
  "rpassword",
  "serde",
