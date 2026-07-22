@@ -2,20 +2,11 @@ use super::republish_summary::{RepublishResult, RepublishSummary};
 use super::republisher::{RepublishOutcome, Republisher, RepublisherSettings};
 use super::retrying_republisher::{RetrySettings, RetryingRepublisher};
 use futures_util::{stream::FuturesUnordered, TryStreamExt};
-use pkarr::{ClientBuilder, PublicKey};
+use pkarr::{errors::BuildError, ClientBuilder, PublicKey};
 use std::{num::NonZeroUsize, sync::Mutex};
 use tokio::time::Instant;
 
 type PublicKeyQueue = Mutex<Vec<PublicKey>>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum BatchRepublisherError {
-    #[allow(dead_code)]
-    #[error("pkarr client was built without DHT and is only using relays. This is not supported.")]
-    DhtNotEnabled,
-    #[error(transparent)]
-    BuildError(#[from] pkarr::errors::BuildError),
-}
 
 /// Settings for republishing a batch of keys.
 #[derive(Debug, Clone)]
@@ -56,10 +47,7 @@ impl BatchRepublisher {
     /// # Errors
     ///
     /// Returns an error if a worker cannot build a pkarr client.
-    pub async fn run(
-        &self,
-        public_keys: Vec<PublicKey>,
-    ) -> Result<RepublishSummary, BatchRepublisherError> {
+    pub async fn run(&self, public_keys: Vec<PublicKey>) -> Result<RepublishSummary, BuildError> {
         let worker_count = self
             .settings
             .max_concurrent_workers
@@ -77,7 +65,7 @@ impl BatchRepublisher {
     async fn run_worker(
         &self,
         public_keys: &PublicKeyQueue,
-    ) -> Result<RepublishSummary, BatchRepublisherError> {
+    ) -> Result<RepublishSummary, BuildError> {
         let client = self.client_builder.build()?;
         let republisher = Republisher::new(client, self.settings.republisher.clone());
         let republisher = RetryingRepublisher::new(republisher, &self.settings.retry);
@@ -100,7 +88,7 @@ async fn republish_key(
 
     match &result {
         Ok(info) => match info.outcome {
-            RepublishOutcome::Published(_) => {
+            RepublishOutcome::Published => {
                 tracing::info!(%public_key, ?info, %elapsed, "Republished successfully")
             }
             _ => tracing::debug!(%public_key, ?info, %elapsed, "Did not republish"),
@@ -113,7 +101,7 @@ async fn republish_key(
 async fn merge_summaries(
     summary: RepublishSummary,
     worker_summary: RepublishSummary,
-) -> Result<RepublishSummary, BatchRepublisherError> {
+) -> Result<RepublishSummary, BuildError> {
     Ok(summary.merge(worker_summary))
 }
 

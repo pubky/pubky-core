@@ -1,14 +1,13 @@
 use std::time::Duration;
 
-use super::pkarr_republisher::{
-    BatchRepublisher, BatchRepublisherError, BatchRepublisherSettings, RepublishSummary,
-};
+use pkarr::errors::BuildError;
 use pubky_common::crypto::PublicKey;
 use tokio::{
     task::JoinHandle,
     time::{interval, Instant},
 };
 
+use super::pkarr_republisher::{BatchRepublisher, BatchRepublisherSettings, RepublishSummary};
 use crate::persistence::sql::{user::UserRepository, SqlDb};
 
 const MIN_REPUBLISH_INTERVAL: Duration = Duration::from_secs(30 * 60);
@@ -18,7 +17,7 @@ pub(crate) enum UserKeysRepublisherError {
     #[error(transparent)]
     DB(#[from] sqlx::Error),
     #[error(transparent)]
-    Pkarr(#[from] BatchRepublisherError),
+    Pkarr(#[from] BuildError),
 }
 
 /// Publishes the pkarr keys of all users to the Mainline DHT.
@@ -126,6 +125,7 @@ impl UserKeysRepublisher {
 mod tests {
     use crate::persistence::sql::user::UserRepository;
     use crate::persistence::sql::SqlDb;
+    use crate::republishers::pkarr_republisher::test_client_builder;
     use crate::republishers::user_keys_republisher::UserKeysRepublisher;
     use pubky_common::crypto::Keypair;
 
@@ -145,8 +145,8 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_republish_keys_once() {
         let db = init_db_with_users(10).await;
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.dht_report_policy(pkarr::dht::ReportPolicy::testnet());
+        let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
+        let pkarr_builder = test_client_builder(&dht);
         let worker = UserKeysRepublisher { db, pkarr_builder };
         let summary = worker.republish_impl().await.unwrap();
         assert_eq!(summary.len(), 10);

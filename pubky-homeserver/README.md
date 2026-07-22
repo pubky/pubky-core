@@ -19,6 +19,10 @@ See [config.sample.toml](config.sample.toml) for all configuration options.
 - [Client API](openapi-client.yml) — user authentication, tenant storage, and event feeds.
 - [Admin API](openapi-admin.yml) — homeserver administration and WebDAV operations.
 
+## Architecture
+
+- [PKARR republishing](../docs/REPUBLISHING.md) — cache-first resolution, network fallback, and retry behavior.
+
 ## Library Usage
 
 Use the homeserver as a library in other crates or for testing.
