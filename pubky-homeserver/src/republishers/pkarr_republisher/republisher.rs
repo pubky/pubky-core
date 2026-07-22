@@ -122,11 +122,14 @@ impl Republisher {
         // queried nodes, this publish can succeed and propagate a stale cached
         // packet. Until partial conflicts are exposed, this fast path cannot
         // detect that case. See https://github.com/pubky/mainline/issues/113.
-        match self.publish(packet).await {
-            Ok(()) => Ok(true),
-            Err(RepublishError::Publish(PublishError::NotMostRecent)) => Ok(false),
-            Err(error) => Err(error),
-        }
+
+        // While the mainline issue is not resolve we do not try to publish.
+        // match self.publish(packet).await {
+        //     Ok(()) => Ok(true),
+        //     Err(RepublishError::Publish(PublishError::NotMostRecent)) => Ok(false),
+        //     Err(error) => Err(error),
+        // }
+        Ok(false)
     }
 
     async fn republish_latest(
