@@ -1,8 +1,9 @@
 use super::{
-    publisher::PublishError, republisher::RepublishOutcome, retrying_republisher::RepublishInfo,
+    republisher::{RepublishError, RepublishOutcome},
+    retrying_republisher::RepublishInfo,
 };
 
-pub(super) type RepublishResult = Result<RepublishInfo, PublishError>;
+pub(super) type RepublishResult = Result<RepublishInfo, RepublishError>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepublishSummary {
@@ -20,7 +21,7 @@ impl RepublishSummary {
 
         match result {
             Ok(RepublishInfo {
-                outcome: RepublishOutcome::Published(_),
+                outcome: RepublishOutcome::Published,
                 ..
             }) => self.success_count += 1,
             Ok(RepublishInfo {
@@ -94,12 +95,12 @@ impl RepublishSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{PublishError, RepublishInfo, RepublishOutcome, RepublishSummary};
+    use super::{RepublishError, RepublishInfo, RepublishOutcome, RepublishSummary};
 
     #[test]
     fn records_and_merges_republish_outcomes() {
         let mut summary = RepublishSummary::default();
-        summary.record(Ok(RepublishInfo::new(RepublishOutcome::Published(3), 1)));
+        summary.record(Ok(RepublishInfo::new(RepublishOutcome::Published, 1)));
         summary.record(Ok(RepublishInfo::new(RepublishOutcome::Skipped, 1)));
         assert!(!summary.has_issues());
 
@@ -109,7 +110,7 @@ mod tests {
             RepublishOutcome::InvalidSignedPacket,
             1,
         )));
-        other.record(Err(PublishError::InsufficientlyPublished {
+        other.record(Err(RepublishError::InsufficientlyPublished {
             published_nodes_count: 1,
         }));
 

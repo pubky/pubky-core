@@ -171,11 +171,21 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
     use super::*;
+    use crate::republishers::pkarr_republisher::test_client_builder;
+
+    async fn test_context() -> (AppContext, pkarr::mainline::Testnet) {
+        let dht = pkarr::mainline::Testnet::builder(1).build().unwrap();
+        let pkarr_builder = test_client_builder(&dht);
+        let mut context = AppContext::test().await;
+        context.pkarr_client = pkarr_builder.clone().build().unwrap();
+        context.pkarr_builder = pkarr_builder;
+        (context, dht)
+    }
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_resolve_https_endpoint_with_pkarr_client() {
-        let context = AppContext::test().await;
+        let (context, _dht) = test_context().await;
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();
@@ -201,17 +211,14 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_endpoints() {
-        let mut context = AppContext::test().await;
+        let (mut context, _dht) = test_context().await;
         context.keypair = pubky_common::crypto::Keypair::random();
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();
         let pubkey = context.keypair.public_key();
 
-        let client = pkarr::Client::builder()
-            .dht_report_policy(pkarr::dht::ReportPolicy::testnet())
-            .build()
-            .unwrap();
+        let client = context.pkarr_builder.clone().build().unwrap();
         let packet = client
             .resolve(&pubkey, ResolvePolicy::CacheFirst)
             .await
