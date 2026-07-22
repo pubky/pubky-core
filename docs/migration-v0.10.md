@@ -1,14 +1,26 @@
 # Migrating to v0.10
 
-This guide is for applications upgrading from `v0.9.x` that already use cookie-based SDK authentication and want that behavior to keep working.
+This guide covers applications upgrading from `v0.9.x`. It has a minimal cookie-auth compatibility path and a recommended grant-auth path for applications that can update their authentication model.
 
 Cookie auth still exists in v0.10, but the SDK now names the cookie-compatible APIs explicitly. The main migration is to replace the old generic signer methods with the new `*Cookie` methods where your app expects a cookie-backed session.
 
 Some cookie-specific APIs are documented or marked as deprecated because cookie auth is now the compatibility path. That is expected for this migration.
 
+## Recommended: Grant Authentication
+
+For new applications, and existing applications able to make an intentional authentication-model change, use grant authentication. It provides capability-scoped, self-refreshing sessions and is the recommended replacement for cookie auth in v0.10.
+
+Grant auth is not a mechanical rename of the cookie APIs. A third-party app starts a grant flow, displays its authorization URL as a QR code or deep link, and receives a grant-backed session after the user's authenticator approves the request.
+
+- JavaScript: use `pubky.startGrantAuthFlow(...)` and persist browser sessions with `pubky.browserSessionStore`.
+- Rust: use `pubky.start_grant_auth_flow(...)` or `PubkyGrantAuthFlow::builder(...)`.
+- See the [JavaScript grant auth example](../examples/javascript/2-auth-flow/README.md) and [Rust grant auth example](../examples/rust/2-auth_flow/README.md).
+
+If you need the smallest possible upgrade from `v0.9.x`, follow the cookie-auth compatibility migration below.
+
 ## Summary
 
-For cookie-auth applications:
+For the cookie-auth compatibility path:
 
 - JS: replace `signer.signup(...)` with `signer.signupCookie(...)` when you need the returned `Session`.
 - JS: replace `signer.signin()` with `signer.signinCookie()`.
@@ -390,15 +402,8 @@ let caps = Capabilities::builder()
 const caps = "/pub/my-cool-app/:rw";
 ```
 
-## What Changed But Is Not Required For Cookie Auth
+## Cookie-Auth Compatibility Scope
 
-v0.10 introduces additional auth APIs and session views, but cookie-auth applications do not need to adopt them to keep working.
+The cookie-auth migration above keeps existing cookie-backed applications working. It does not require adopting grant auth immediately.
 
-For a cookie-auth migration, avoid changing working code to:
-
-- JS `startGrantAuthFlow(...)`.
-- Rust `start_grant_auth_flow(...)`.
-- Grant session management APIs.
-- Grant secret export/import APIs.
-
-Use those only when you intentionally migrate away from cookie auth.
+Adopt those APIs when you intentionally migrate to grant auth. See [Recommended: Grant Authentication](#recommended-grant-authentication) for the starting points and examples.
