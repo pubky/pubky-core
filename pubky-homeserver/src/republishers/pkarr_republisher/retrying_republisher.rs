@@ -3,16 +3,13 @@ use std::{future::Future, num::NonZeroU8, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use pkarr::PublicKey;
 
-use super::{
-    publisher::PublishError,
-    republisher::{RepublishOutcome, Republisher},
-};
+use super::republisher::{RepublishError, RepublishOutcome, Republisher};
 
 #[derive(Debug, Clone)]
 pub(super) struct RepublishInfo {
     /// Result of the republish attempt.
     pub(super) outcome: RepublishOutcome,
-    /// Number of publishing attempts needed to successfully republish.
+    /// Number of republish attempts needed to finish processing the key.
     #[allow(dead_code)]
     pub(super) attempts_needed: usize,
 }
@@ -80,7 +77,7 @@ impl RetryingRepublisher {
     pub(super) async fn republish(
         &self,
         public_key: &PublicKey,
-    ) -> Result<RepublishInfo, PublishError> {
+    ) -> Result<RepublishInfo, RepublishError> {
         republish_with_retry(public_key, self.backoff, self.max_retry_delay, || {
             self.republisher.republish(public_key)
         })
@@ -93,10 +90,10 @@ async fn republish_with_retry<F, Fut>(
     backoff: ExponentialBuilder,
     max_retry_delay: Duration,
     republish: F,
-) -> Result<RepublishInfo, PublishError>
+) -> Result<RepublishInfo, RepublishError>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = Result<RepublishOutcome, PublishError>>,
+    Fut: Future<Output = Result<RepublishOutcome, RepublishError>>,
 {
     let mut attempts_count = 1;
 
@@ -125,7 +122,7 @@ mod tests {
     use backon::BackoffBuilder;
     use pkarr::Keypair;
 
-    use super::{republish_with_retry, PublishError, RepublishOutcome, RetrySettings};
+    use super::{republish_with_retry, RepublishError, RepublishOutcome, RetrySettings};
 
     fn retry_settings(max_attempts: u8) -> RetrySettings {
         RetrySettings {
@@ -135,10 +132,14 @@ mod tests {
         }
     }
 
-    fn publish_error() -> PublishError {
-        PublishError::InsufficientlyPublished {
+    fn publish_error() -> RepublishError {
+        RepublishError::InsufficientlyPublished {
             published_nodes_count: 0,
         }
+    }
+
+    fn resolve_error() -> RepublishError {
+        RepublishError::Resolve(pkarr::errors::ResolveError::NoResponses)
     }
 
     #[test]
@@ -189,7 +190,7 @@ mod tests {
                 ready(if attempt < 3 {
                     Err(publish_error())
                 } else {
-                    Ok(RepublishOutcome::Published(7))
+                    Ok(RepublishOutcome::Published)
                 })
             },
         )
@@ -198,7 +199,35 @@ mod tests {
 
         assert_eq!(attempts.get(), 3);
         assert_eq!(info.attempts_needed, 3);
-        assert_eq!(info.outcome, RepublishOutcome::Published(7));
+        assert_eq!(info.outcome, RepublishOutcome::Published);
+    }
+
+    #[tokio::test]
+    async fn retries_resolve_errors_until_success() {
+        let public_key = Keypair::random().public_key();
+        let settings = retry_settings(2);
+        let attempts = Cell::new(0);
+
+        let info = republish_with_retry(
+            &public_key,
+            settings.backoff(),
+            settings.max_retry_delay,
+            || {
+                let attempt = attempts.get() + 1;
+                attempts.set(attempt);
+                ready(if attempt == 1 {
+                    Err(resolve_error())
+                } else {
+                    Ok(RepublishOutcome::Published)
+                })
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(attempts.get(), 2);
+        assert_eq!(info.attempts_needed, 2);
+        assert_eq!(info.outcome, RepublishOutcome::Published);
     }
 
     #[tokio::test]
@@ -243,7 +272,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(PublishError::InsufficientlyPublished { .. })
+            Err(RepublishError::InsufficientlyPublished { .. })
         ));
         assert_eq!(attempts.get(), 3);
     }

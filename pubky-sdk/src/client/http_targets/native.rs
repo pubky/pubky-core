@@ -322,9 +322,11 @@ impl PubkyHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::*;
     use pkarr::dns::rdata::SVCB;
-    use pkarr::{Keypair, SignedPacket};
+    use pkarr::{Cache, InMemoryCache, Keypair, SignedPacket};
 
     #[test]
     fn classify_hosts() {
@@ -345,18 +347,21 @@ mod tests {
 
     /// Helper: build a pkarr client with a pre-cached signed packet (no real network).
     fn pkarr_with_packet(keypair: &Keypair, packet: &SignedPacket) -> pkarr::Client {
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
         let mut builder = PubkyHttpClient::builder();
-        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        builder
+            .isolated_pkarr_test()
+            .pkarr(|b| b.cache(cache.clone()));
         let client = builder.build().unwrap();
         let cache_key: pkarr::CacheKey = keypair.public_key().into();
-        client.pkarr.cache().unwrap().put(&cache_key, packet);
+        cache.put(&cache_key, packet);
         client.pkarr
     }
 
     #[test]
     fn build_pubky_request_icann_rewrites_url_and_sets_header() {
         let client = PubkyHttpClient::builder()
-            .pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]))
+            .isolated_pkarr_test()
             .build()
             .unwrap();
         let z32 = "o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy";
@@ -439,10 +444,12 @@ mod tests {
             .sign(&user)
             .unwrap();
 
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::new(2).unwrap()));
         let mut builder = PubkyHttpClient::builder();
-        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        builder
+            .isolated_pkarr_test()
+            .pkarr(|b| b.cache(cache.clone()));
         let client = builder.build().unwrap();
-        let cache = client.pkarr.cache().unwrap();
         cache.put(&homeserver.public_key().into(), &homeserver_packet);
         cache.put(&user.public_key().into(), &user_packet);
 
@@ -474,14 +481,13 @@ mod tests {
             .sign(&homeserver)
             .unwrap();
 
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
         let mut builder = PubkyHttpClient::builder();
-        builder.pkarr(|b| b.no_default_network().bootstrap(&["127.0.0.1:1"]));
+        builder
+            .isolated_pkarr_test()
+            .pkarr(|b| b.cache(cache.clone()));
         let client = builder.build().unwrap();
-        client
-            .pkarr
-            .cache()
-            .unwrap()
-            .put(&homeserver.public_key().into(), &homeserver_packet);
+        cache.put(&homeserver.public_key().into(), &homeserver_packet);
         let homeserver_pk = PublicKey::try_from_z32(&homeserver.public_key().to_string()).unwrap();
         let user_pk = PublicKey::try_from_z32(&user.public_key().to_string()).unwrap();
 

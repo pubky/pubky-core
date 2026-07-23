@@ -140,9 +140,15 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
         match key.as_ref() {
             "user" => users.push(value.to_string()),
             "limit" => {
-                limit = Some(value.parse::<u16>().map_err(|_| {
+                let parsed = value.parse::<u16>().map_err(|_| {
                     EventStreamError::InvalidParameter(format!("Invalid limit: {}", value))
-                })?);
+                })?;
+                if parsed == 0 {
+                    return Err(EventStreamError::InvalidParameter(
+                        "limit must be at least 1".to_string(),
+                    ));
+                }
+                limit = Some(parsed);
             }
             "reverse" => {
                 reverse = value == "true" || value == "1";
@@ -697,6 +703,12 @@ mod tests {
             HttpError::from(err).into_response().status(),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[test]
+    fn parse_rejects_zero_limit() {
+        let err = parse_query_params(&format!("user={}&limit=0", pk().z32())).unwrap_err();
+        assert_eq!(err.to_string(), "limit must be at least 1");
     }
 
     #[test]

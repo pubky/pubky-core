@@ -1,6 +1,8 @@
 # Install and Run Pubky Homeserver
 
-How to set up and operate a Pubky homeserver on Linux. Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), adapt as needed for other distributions.
+How to install, configure, and run a Pubky homeserver on Linux. Once it's running, see the [Deployment Guide](./DEPLOY.md) to make it publicly reachable via Pubky TLS and HTTPS.
+
+Commands and package names assume a Debian-based system (Ubuntu, Debian, etc.), adapt as needed for other distributions.
 
 > **Looking for something else?**
 > See [Pubky Testnet](../pubky-testnet/README.md) for running a local development testnet and [Testing](./TESTING.md) for test databases and CI setup.
@@ -11,11 +13,12 @@ How to set up and operate a Pubky homeserver on Linux. Commands and package name
     - [Release Binary](#release-binary) | [Build From Source](#build-from-source) ([Cargo](#build-a-binary-with-cargo) | [Docker](#build-a-docker-image))
   - [Initialise the Data Directory](#initialise-the-data-directory)
   - [Set Up PostgreSQL](#set-up-postgresql)
-    - [Docker](#docker-1) | [Native](#native) | [Existing](#existing-instance)
+    - [Docker](#docker) | [Native](#native) | [Existing](#existing-instance)
   - [Configure the Homeserver with PostgreSQL](#configure-the-homeserver-with-postgresql)
   - [Run](#run)
+    - [Docker](#docker-1) | [Native](#native-1) | [systemd Service](#systemd-service)
+- [Next Steps](#next-steps)
 - [Configuration](#configuration)
-- [Production Notes](#production-notes)
 - [Troubleshooting](#troubleshooting)
 
 
@@ -146,6 +149,7 @@ Start a PostgreSQL container with the `pubky_homeserver` database:
 
 ```bash
 docker run --name pubky-postgres \
+  --restart unless-stopped \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=pubky_homeserver \
@@ -212,21 +216,81 @@ sed -i 's|^# \[general\]|[general]|; s|^# database_url = .*|database_url = "post
 
 ## Run
 
+### Docker
+
+```bash
+docker run -d --restart unless-stopped --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
+```
+
+`--network=host` lets the container reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container. `--restart unless-stopped` ensures the homeserver starts automatically after a reboot.
+
+
+### Native
+
 Start the homeserver:
 
 ```bash
 pubky-homeserver
 ```
 
-With Docker:
+### systemd Service
+
+Below is an example setup using systemd, which is available on most Linux distributions. This will run the homeserver in the background, start it on boot, and restart it automatically on failure.
+
+Create a service file:
 
 ```bash
-docker run -it --network=host -v ~/.pubky:/root/.pubky pubky-homeserver homeserver
+sudo nano /etc/systemd/system/pubky-homeserver.service
 ```
 
-Use `--network=host` so the container can reach PostgreSQL on the host and expose its endpoints. The volume mount shares the data directory (config and keypair) with the container.
+Paste the following:
 
-The default endpoints are:
+```ini
+[Unit]
+Description=Pubky Homeserver
+# Use postgresql.service if you installed Postgres natively,
+# or docker.service if you run Postgres in Docker.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+# Path to the pubky-homeserver binary. The --data-dir flag tells it where
+# to find config.toml and the keypair (defaults to ~/.pubky).
+ExecStart=/usr/local/bin/pubky-homeserver --data-dir /home/YOUR_USER/.pubky
+# The OS user that the homeserver process runs as
+User=YOUR_USER
+# The homeserver listens for SIGINT (Ctrl+C), not SIGTERM.
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable pubky-homeserver
+sudo systemctl start pubky-homeserver
+```
+
+Check that it is running:
+
+```bash
+systemctl status pubky-homeserver
+```
+
+View logs:
+
+```bash
+journalctl -u pubky-homeserver -f
+```
+ 
+## Next Steps
+
+Once the homeserver is running, the default endpoints are:
 
 | Endpoint | Default |
 | --- | --- |
@@ -234,40 +298,29 @@ The default endpoints are:
 | Pubky TLS API | `127.0.0.1:6287` |
 | Admin API | `http://127.0.0.1:6288` |
 
-Standalone homeservers require signup tokens by default. Generate one through the admin API:
+- **Generate a signup token** — standalone homeservers require signup tokens by default. Use the admin API to generate one:
 
-```bash
-curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
-  -H "X-Admin-Password: admin"
-```
+  ```bash
+  curl -X GET "http://127.0.0.1:6288/generate_signup_token" \
+    -H "X-Admin-Password: admin"
+  ```
+
+- **Try the examples** — the [`examples/`](../examples/) directory contains runnable examples for key generation, signup, storage, auth flows, and more. When running against your own homeserver (rather than a local testnet), omit the `--testnet` flag.
+- **Tweak the configuration** — see [Configuration](#configuration) below for settings you may want to adjust.
+- **Deploy publicly** — to make your homeserver reachable from the internet, see the [Deployment Guide](./DEPLOY.md).
 
 ## Configuration
 
-Important settings in `config.toml`:
+The generated `config.toml` works out of the box for local use. Here are a few settings you may want to adjust:
 
-| Setting | Purpose |
-| --- | --- |
-| `general.database_url` | PostgreSQL connection string. |
-| `drive.icann_listen_socket` | Regular HTTP API listen address. |
-| `drive.pubky_listen_socket` | Pubky TLS API listen address. |
-| `storage.type` | Storage backend: `file_system`, `google_bucket`, or `in_memory`. |
-| `admin.enabled` | Enables the admin API. |
-| `admin.listen_socket` | Admin API listen address. |
+| Setting | Purpose | Default |
+| --- | --- | --- |
+| `general.database_url` | PostgreSQL connection string. | `postgres://localhost:5432/pubky_homeserver` |
+| `general.signup_mode` | `"open"` or `"token_required"`. | `"token_required"` |
+| `storage.type` | Storage backend: `file_system`, `google_bucket`, or `in_memory`. | `file_system` |
+| `admin.admin_password` | Password for the admin API. | `"admin"` |
 
-Review the full documented sample at [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
-
-## Production Notes
-
-Before using a homeserver in production:
-
-- Back up the homeserver's state:
-  - The keypair `.pubky/secret`
-  - Any user data depending on the configured option. For example, by default files are saved in `.pubky/data/files`
-  - Postgres
-- Do not expose the admin or metrics APIs to the public internet.
-- Change the default admin password in `[admin].admin_password`.
-- Configure `pkdns.public_ip`, `pkdns.icann_domain`, and public ports for your deployment.
-- The homeserver exposes two sockets: a **Pubky TLS** socket (`pubky_listen_socket`, default port 6287) and a regular **HTTP** socket (`icann_listen_socket`, default port 6286). Pubky TLS uses PKARR-based TLS and does not need a certificate, so can be exposed directly. The HTTP socket serves browsers and should be put behind a reverse proxy if you need standard HTTPS with a domain certificate.
+The full list of options is documented in [`pubky-homeserver/config.sample.toml`](../pubky-homeserver/config.sample.toml).
 
 ## Troubleshooting
 

@@ -31,7 +31,7 @@ This repository contains the core infrastructure: a homeserver that stores and s
 
 ## Who Is This For?
 
-- **Operators**: [Install and run a homeserver](./docs/INSTALL.md) to host user data.
+- **Operators**: [Install and run a homeserver](./docs/INSTALL.md), then [deploy it publicly](./docs/DEPLOY.md).
 - **App developers**: Use the [SDK](https://pubky.org/explore/pubkycore/sdk/) to build apps that read and write user data on homeservers. Guides coming soon.
 
 ## What Is a Homeserver?

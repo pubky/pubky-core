@@ -2,19 +2,11 @@ use super::republish_summary::{RepublishResult, RepublishSummary};
 use super::republisher::{RepublishOutcome, Republisher, RepublisherSettings};
 use super::retrying_republisher::{RetrySettings, RetryingRepublisher};
 use futures_util::{stream::FuturesUnordered, TryStreamExt};
-use pkarr::{ClientBuilder, PublicKey};
+use pkarr::{errors::BuildError, ClientBuilder, PublicKey};
 use std::{num::NonZeroUsize, sync::Mutex};
 use tokio::time::Instant;
 
 type PublicKeyQueue = Mutex<Vec<PublicKey>>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum BatchRepublisherError {
-    #[error("pkarr client was built without DHT and is only using relays. This is not supported.")]
-    DhtNotEnabled,
-    #[error(transparent)]
-    BuildError(#[from] pkarr::errors::BuildError),
-}
 
 /// Settings for republishing a batch of keys.
 #[derive(Debug, Clone)]
@@ -54,11 +46,8 @@ impl BatchRepublisher {
     ///
     /// # Errors
     ///
-    /// Returns an error if a worker cannot build a DHT-enabled pkarr client.
-    pub async fn run(
-        &self,
-        public_keys: Vec<PublicKey>,
-    ) -> Result<RepublishSummary, BatchRepublisherError> {
+    /// Returns an error if a worker cannot build a pkarr client.
+    pub async fn run(&self, public_keys: Vec<PublicKey>) -> Result<RepublishSummary, BuildError> {
         let worker_count = self
             .settings
             .max_concurrent_workers
@@ -76,11 +65,8 @@ impl BatchRepublisher {
     async fn run_worker(
         &self,
         public_keys: &PublicKeyQueue,
-    ) -> Result<RepublishSummary, BatchRepublisherError> {
+    ) -> Result<RepublishSummary, BuildError> {
         let client = self.client_builder.build()?;
-        if client.dht().is_none() {
-            return Err(BatchRepublisherError::DhtNotEnabled);
-        }
         let republisher = Republisher::new(client, self.settings.republisher.clone());
         let republisher = RetryingRepublisher::new(republisher, &self.settings.retry);
 
@@ -102,7 +88,7 @@ async fn republish_key(
 
     match &result {
         Ok(info) => match info.outcome {
-            RepublishOutcome::Published(_) => {
+            RepublishOutcome::Published => {
                 tracing::info!(%public_key, ?info, %elapsed, "Republished successfully")
             }
             _ => tracing::debug!(%public_key, ?info, %elapsed, "Did not republish"),
@@ -115,7 +101,7 @@ async fn republish_key(
 async fn merge_summaries(
     summary: RepublishSummary,
     worker_summary: RepublishSummary,
-) -> Result<RepublishSummary, BatchRepublisherError> {
+) -> Result<RepublishSummary, BuildError> {
     Ok(summary.merge(worker_summary))
 }
 
@@ -132,6 +118,7 @@ mod tests {
 
     use pkarr::{dns::Name, Keypair, PublicKey};
 
+    use super::super::test_client_builder;
     use super::{
         BatchRepublisher, BatchRepublisherSettings, RepublishSummary, RepublisherSettings,
     };
@@ -144,7 +131,7 @@ mod tests {
                 .build(key)
                 .unwrap();
             client
-                .publish(&packet, None)
+                .publish(&packet)
                 .await
                 .expect("sample packet should publish");
         }
@@ -161,8 +148,7 @@ mod tests {
             .seeded(false)
             .build()
             .unwrap();
-        let mut pkarr_builder = pkarr::ClientBuilder::default();
-        pkarr_builder.bootstrap(&dht.bootstrap).no_relays();
+        let pkarr_builder = test_client_builder(&dht);
         let pkarr_client = pkarr_builder.clone().build().unwrap();
         let public_keys = publish_sample_packets(&pkarr_client, key_count).await;
 
