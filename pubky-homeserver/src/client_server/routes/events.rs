@@ -649,12 +649,12 @@ mod tests {
     }
 
     fn grant_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
-        AuthSession::Grant(GrantSession {
+        AuthSession::Grant(GrantSession::test(
             user_key,
             capabilities,
-            grant_id: GrantId::generate(),
-            token_expires_at: 9999999999,
-        })
+            GrantId::generate(),
+            9999999999,
+        ))
     }
 
     fn cookie_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {

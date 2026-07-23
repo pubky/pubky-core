@@ -151,12 +151,12 @@ mod tests {
     }
 
     fn session_with_key(pk: PublicKey, capabilities: Capabilities) -> AuthSession {
-        AuthSession::Grant(GrantSession {
-            user_key: pk,
+        AuthSession::Grant(GrantSession::test(
+            pk,
             capabilities,
-            grant_id: GrantId::generate(),
-            token_expires_at: 9999999999,
-        })
+            GrantId::generate(),
+            9999999999,
+        ))
     }
 
     fn session_with_caps(capabilities: Capabilities) -> (AuthSession, PublicKey) {

@@ -176,12 +176,12 @@ mod tests {
 
     fn bearer_auth(caps: Capabilities) -> AuthSession {
         let now = chrono::Utc::now().timestamp() as u64;
-        AuthSession::Grant(GrantSession {
-            user_key: Keypair::random().public_key(),
-            capabilities: caps,
-            grant_id: GrantId::generate(),
-            token_expires_at: now + 3600,
-        })
+        AuthSession::Grant(GrantSession::test(
+            Keypair::random().public_key(),
+            caps,
+            GrantId::generate(),
+            now + 3600,
+        ))
     }
 
     #[test]

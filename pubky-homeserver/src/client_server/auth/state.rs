@@ -54,7 +54,7 @@ impl AuthState {
             }
             AuthSession::Grant(grant) => self
                 .grant_auth_service
-                .validate_active_grant_session(grant.token_expires_at, &grant.grant_id)
+                .validate_active_grant_session(grant)
                 .await
                 .map(|_| ())
                 .map_err(Into::into),

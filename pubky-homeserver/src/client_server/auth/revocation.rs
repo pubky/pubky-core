@@ -115,12 +115,12 @@ mod tests {
     }
 
     fn grant_session(id: GrantId) -> AuthSession {
-        AuthSession::Grant(GrantSession {
-            user_key: Keypair::random().public_key(),
-            capabilities: Capabilities::default(),
-            grant_id: id,
-            token_expires_at: u64::MAX,
-        })
+        AuthSession::Grant(GrantSession::test(
+            Keypair::random().public_key(),
+            Capabilities::default(),
+            id,
+            u64::MAX,
+        ))
     }
 
     #[test]
