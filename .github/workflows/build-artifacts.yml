@@ -28,6 +28,10 @@ jobs:
           toolchain: stable
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          # Cache Cargo downloads and installed tools, but exclude target artifacts.
+          # Cross images tagged :latest may change and make restored artifacts incompatible.
+          cache-targets: false
       - name: Install cross # Tool to cross-compile the binaries
         run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
 
@@ -46,5 +50,3 @@ jobs:
           path: target/github-release.tar.gz
           if-no-files-found: error
           overwrite: true
-
-

@@ -64,7 +64,7 @@ build_target() {
     # (build.rs) in a shared directory. Reusing a build script compiled in a
     # newer-glibc image inside an older-glibc image fails with
     # "GLIBC_X.YY not found".
-    TARGET_DIR="target/cross-$TARGET"
+    TARGET_DIR="target/cross/$TARGET"
 
     for ARTIFACT in "${ARTIFACTS[@]}"; do
         echo "- Build $ARTIFACT with $TARGET"
