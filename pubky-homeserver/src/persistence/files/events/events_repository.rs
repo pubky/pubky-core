@@ -1,6 +1,6 @@
 use pubky_common::events::{EventCursor, EventType};
 use pubky_common::timestamp::Timestamp;
-use sea_query::{Expr, Iden, LikeExpr, Order, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Condition, Expr, Iden, Order, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     postgres::PgRow,
@@ -9,7 +9,7 @@ use sqlx::{
 };
 
 use crate::{
-    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT},
+    constants::{DEFAULT_LIST_LIMIT, DEFAULT_MAX_LIST_LIMIT, PUBLIC_ROOT},
     persistence::{
         files::events::EventEntity,
         sql::{
@@ -20,7 +20,18 @@ use crate::{
     shared::{timestamp_to_sqlx_datetime, webdav::EntryPath},
 };
 
+use super::PathFilter;
+
 pub const EVENT_TABLE: &str = "events";
+
+/// Selects which events a cursor query returns, by storage-root visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventVisibility {
+    /// Only public (`/pub/...`) events.
+    Public,
+    /// All events, includes `/priv/...` events.
+    All,
+}
 
 /// Repository that handles all the queries regarding the EventEntity.
 pub struct EventRepository;
@@ -157,7 +168,7 @@ impl EventRepository {
     pub async fn get_by_user_cursors<'a>(
         user_cursors: Vec<(i32, Option<EventCursor>)>,
         reverse: bool,
-        path_prefix: Option<&str>,
+        allowed_paths: &[PathFilter],
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         if user_cursors.is_empty() {
@@ -194,20 +205,17 @@ impl EventRepository {
                 .and_where(Expr::col((EVENT_TABLE, EventIden::User)).eq(user_id))
                 .to_owned();
 
-            // Note: paths in the database are stored without the user pubkey prefix (e.g., "/pub/files/doc.txt")
-            if let Some(prefix) = path_prefix {
-                // Escape special LIKE characters: %, _, and \
-                let escaped_prefix = prefix
-                    .replace('\\', "\\\\")
-                    .replace('_', "\\_")
-                    .replace('%', "\\%");
-                let like_pattern = format!("{}%", escaped_prefix);
-                statement = statement
-                    .and_where(
-                        Expr::col((EVENT_TABLE, EventIden::Path))
-                            .like(LikeExpr::new(like_pattern).escape('\\')),
-                    )
-                    .to_owned();
+            // Restrict results to events whose path matches at least one
+            // authorized path. The list is non-empty in practice (the route
+            // defaults to `/pub/`), an empty list applies no path restriction.
+            // Paths are stored without the user pubkey prefix
+            // (e.g. "/pub/files/doc.txt").
+            if !allowed_paths.is_empty() {
+                let mut path_condition = Condition::any();
+                for filter in allowed_paths {
+                    path_condition = path_condition.add(filter.to_condition());
+                }
+                statement = statement.cond_where(path_condition).to_owned();
             }
 
             if let Some(cursor) = cursor {
@@ -257,17 +265,19 @@ impl EventRepository {
 
     /// Get a list of events by the cursor.
     /// The limit is the maximum number of events to return.
+    /// `visibility` selects which storage roots are returned (see [`EventVisibility`]).
     /// The executor can either be db.pool() or a transaction.
     pub async fn get_by_cursor<'a>(
         cursor: Option<EventCursor>,
         limit: Option<u16>,
+        visibility: EventVisibility,
         executor: &mut UnifiedExecutor<'a>,
     ) -> Result<Vec<EventEntity>, sqlx::Error> {
         let cursor = cursor.unwrap_or(EventCursor::new(0));
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let limit = limit.min(DEFAULT_MAX_LIST_LIMIT);
 
-        let statement = Query::select()
+        let mut statement = Query::select()
             .columns([
                 (EVENT_TABLE, EventIden::Id),
                 (EVENT_TABLE, EventIden::User),
@@ -286,6 +296,89 @@ impl EventRepository {
             .order_by((EVENT_TABLE, EventIden::Id), Order::Asc)
             .limit(limit as u64)
             .to_owned();
+
+        // `All` adds no predicate; `Public` restricts to the public root.
+        if let EventVisibility::Public = visibility {
+            statement = statement
+                .and_where(
+                    Expr::col((EVENT_TABLE, EventIden::Path)).like(format!("{PUBLIC_ROOT}%")),
+                )
+                .to_owned();
+        }
+
+        let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
+        let con = executor.get_con().await?;
+        let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
+        Ok(events)
+    }
+
+    /// Get **all** events (public and private) by a single global cursor, with optional reverse,
+    /// path, and user-id filters. `path_filters` is a union — an event is returned if it matches
+    /// **any** of them (empty = no path restriction); each uses [`PathFilter`] file-vs-directory
+    /// matching. Backs the admin events stream.
+    pub async fn get_all_filtered_by_cursor<'a>(
+        cursor: Option<EventCursor>,
+        limit: Option<u16>,
+        reverse: bool,
+        path_filters: &[PathFilter],
+        user_ids: Option<&[i32]>,
+        executor: &mut UnifiedExecutor<'a>,
+    ) -> Result<Vec<EventEntity>, sqlx::Error> {
+        // An explicit empty user filter matches nothing; short-circuit before querying.
+        if matches!(user_ids, Some(ids) if ids.is_empty()) {
+            return Ok(Vec::new());
+        }
+
+        let limit = limit
+            .unwrap_or(DEFAULT_LIST_LIMIT)
+            .min(DEFAULT_MAX_LIST_LIMIT);
+        let order = if reverse { Order::Desc } else { Order::Asc };
+
+        let mut statement = Query::select()
+            .columns([
+                (EVENT_TABLE, EventIden::Id),
+                (EVENT_TABLE, EventIden::User),
+                (EVENT_TABLE, EventIden::Type),
+                (EVENT_TABLE, EventIden::Path),
+                (EVENT_TABLE, EventIden::CreatedAt),
+                (EVENT_TABLE, EventIden::ContentHash),
+            ])
+            .column((USER_TABLE, UserIden::PublicKey))
+            .from(EVENT_TABLE)
+            .left_join(
+                USER_TABLE,
+                Expr::col((EVENT_TABLE, EventIden::User)).eq(Expr::col((USER_TABLE, UserIden::Id))),
+            )
+            .order_by((EVENT_TABLE, EventIden::Id), order)
+            .limit(limit as u64)
+            .to_owned();
+
+        if let Some(cursor) = cursor {
+            let id_col = Expr::col((EVENT_TABLE, EventIden::Id));
+            statement = statement
+                .and_where(if reverse {
+                    id_col.lt(cursor.id())
+                } else {
+                    id_col.gt(cursor.id())
+                })
+                .to_owned();
+        }
+
+        // Union of path filters: an event matches if it satisfies ANY of them.
+        if !path_filters.is_empty() {
+            let mut path_condition = Condition::any();
+            for filter in path_filters {
+                path_condition = path_condition.add(filter.to_condition());
+            }
+            statement = statement.cond_where(path_condition).to_owned();
+        }
+
+        if let Some(ids) = user_ids {
+            statement = statement
+                .and_where(Expr::col((EVENT_TABLE, EventIden::User)).is_in(ids.iter().copied()))
+                .to_owned();
+        }
+
         let (query, values) = statement.build_sqlx(PostgresQueryBuilder);
         let con = executor.get_con().await?;
         let events: Vec<EventEntity> = sqlx::query_as_with(&query, values).fetch_all(con).await?;
@@ -314,6 +407,10 @@ mod tests {
 
     use super::*;
     use std::ops::Add;
+
+    fn pf(s: &str) -> PathFilter {
+        WebDavPath::new(s).unwrap().into()
+    }
 
     #[tokio::test]
     #[pubky_test_utils::test]
@@ -345,6 +442,7 @@ mod tests {
         let events = EventRepository::get_by_cursor(
             Some(EventCursor::new(5)),
             Some(4),
+            EventVisibility::All,
             &mut db.pool().into(),
         )
         .await
@@ -357,6 +455,83 @@ mod tests {
             EntryPath::new(user_pubkey, WebDavPath::new("/test").unwrap())
         );
         assert!(matches!(events[0].event_type, EventType::Put { .. }));
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_cursor_public_visibility_excludes_private() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // Interleave public, private, and look-alike roots that must NOT match
+        // the `/pub/` prefix (`/public/...` and `/pub` without a trailing slash).
+        let paths = [
+            "/pub/a",       // 1: public
+            "/priv/x",      // 2: private  -> excluded
+            "/pub/b",       // 3: public
+            "/public/evil", // 4: not the public root -> excluded
+            "/priv/y",      // 5: private  -> excluded
+            "/pub/c",       // 6: public
+            "/pub",         // 7: bare root, not under `/pub/` -> excluded
+        ];
+        for p in paths {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
+            EventRepository::create(
+                user.id,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
+                &path,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Public-only view: only the three `/pub/<scope>/...` events.
+        let public = EventRepository::get_by_cursor(
+            None,
+            None,
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let public_paths: Vec<&str> = public.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(public_paths, vec!["/pub/a", "/pub/b", "/pub/c"]);
+
+        // The internal all-events view is unchanged (regression guard for the
+        // broadcaster / quota / admin callers).
+        let all =
+            EventRepository::get_by_cursor(None, None, EventVisibility::All, &mut db.pool().into())
+                .await
+                .unwrap();
+        assert_eq!(all.len(), 7);
+
+        // Pagination stays correct across filtered-out private events: a limit of
+        // 2 returns a full page (ids 1 and 3) and the next cursor resumes after it.
+        let page = EventRepository::get_by_cursor(
+            None,
+            Some(2),
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.iter().map(|e| e.id).collect::<Vec<_>>(), vec![1, 3]);
+        let next = page.last().unwrap().cursor();
+        let page = EventRepository::get_by_cursor(
+            Some(next),
+            Some(2),
+            EventVisibility::Public,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.iter().map(|e| e.id).collect::<Vec<_>>(), vec![6]);
     }
 
     #[tokio::test]
@@ -458,10 +633,14 @@ mod tests {
                 .await
                 .unwrap();
 
-            let events_after =
-                EventRepository::get_by_cursor(Some(cursor_id), None, &mut db.pool().into())
-                    .await
-                    .unwrap();
+            let events_after = EventRepository::get_by_cursor(
+                Some(cursor_id),
+                None,
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
 
             // Should get events after the cursor (events[3] and events[4])
             assert_eq!(
@@ -481,5 +660,176 @@ mod tests {
                 test_name
             );
         }
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_user_cursors_multi_path_union_and_boundaries() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        // ids 1..=6
+        let paths = [
+            "/pub/a",           // 1 public
+            "/priv/app/x",      // 2 under /priv/app/
+            "/priv/app",        // 3 the file /priv/app itself
+            "/priv/app-evil/y", // 4 sibling-prefix (must NOT match /priv/app/)
+            "/priv/other/z",    // 5 other private scope
+            "/pub/b",           // 6 public
+        ];
+        for p in paths {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
+            EventRepository::create(
+                user.id,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
+                &path,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Union of `/pub/` (dir) and `/priv/app/` (dir): pub/a, priv/app/x,
+        // pub/b. The dir filter must NOT match the parent file `/priv/app` nor
+        // the sibling `/priv/app-evil/y`, and `/priv/other/z` is out of scope.
+        let filters = vec![pf("/pub/"), pf("/priv/app/")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(user.id, None)],
+            false,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/pub/a", "/priv/app/x", "/pub/b"]);
+
+        // A file filter matches only the exact file, not its would-be children.
+        let filters = vec![pf("/priv/app")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(user.id, None)],
+            false,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/priv/app"]);
+
+        // Reverse ordering over the `/pub/` filter.
+        let filters = vec![pf("/pub/")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(user.id, None)],
+            true,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/pub/b", "/pub/a"]);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_user_cursors_escapes_like_metacharacters() {
+        let db = SqlDb::test().await;
+        let user_pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&user_pubkey, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        for p in ["/priv/a_b/x", "/priv/axb/y", "/priv/a%/m", "/priv/apct/n"] {
+            let path = EntryPath::new(user_pubkey.clone(), WebDavPath::new(p).unwrap());
+            EventRepository::create(
+                user.id,
+                EventType::Put {
+                    content_hash: Hash::from_bytes([0; 32]),
+                },
+                &path,
+                &mut db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // `_` must be matched literally: `/priv/a_b/` matches `a_b` but not `axb`.
+        let filters = vec![pf("/priv/a_b/")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(user.id, None)],
+            false,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/priv/a_b/x"]);
+
+        // `%` must be matched literally: `/priv/a%/` matches `a%` but not `apct`.
+        let filters = vec![pf("/priv/a%/")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(user.id, None)],
+            false,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/priv/a%/m"]);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_get_by_user_cursors_multi_user_public_filter_excludes_private() {
+        let db = SqlDb::test().await;
+        let ka = Keypair::random().public_key();
+        let kb = Keypair::random().public_key();
+        let ua = UserRepository::create(&ka, &mut db.pool().into())
+            .await
+            .unwrap();
+        let ub = UserRepository::create(&kb, &mut db.pool().into())
+            .await
+            .unwrap();
+
+        for (k, uid) in [(&ka, ua.id), (&kb, ub.id)] {
+            for p in ["/pub/x", "/priv/secret"] {
+                let path = EntryPath::new(k.clone(), WebDavPath::new(p).unwrap());
+                EventRepository::create(
+                    uid,
+                    EventType::Put {
+                        content_hash: Hash::from_bytes([0; 32]),
+                    },
+                    &path,
+                    &mut db.pool().into(),
+                )
+                .await
+                .unwrap();
+            }
+        }
+
+        // Public filter across two users returns both users' `/pub/x` and
+        // never their `/priv/secret`.
+        let filters = vec![pf("/pub/")];
+        let events = EventRepository::get_by_user_cursors(
+            vec![(ua.id, None), (ub.id, None)],
+            false,
+            &filters,
+            &mut db.pool().into(),
+        )
+        .await
+        .unwrap();
+        let got: Vec<&str> = events.iter().map(|e| e.path.path().as_str()).collect();
+        assert_eq!(got, vec!["/pub/x", "/pub/x"]);
+        assert!(events
+            .iter()
+            .all(|e| !e.path.path().as_str().starts_with("/priv/")));
     }
 }

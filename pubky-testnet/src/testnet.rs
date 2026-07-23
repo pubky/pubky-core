@@ -100,7 +100,7 @@ impl Testnet {
         if let Some(connection_string) = self.postgres_connection_string.as_ref() {
             config.general.database_url = connection_string.clone();
         }
-        let mock_dir = MockDataDir::new(config, Some(Keypair::from_secret(&[0; 32])))?;
+        let mock_dir = MockDataDir::new(config, Some(crate::common::testnet_keypair()))?;
         self.create_homeserver_app_with_mock(mock_dir).await
     }
 
@@ -153,7 +153,7 @@ impl Testnet {
 
     /// Run a new Pkarr relay.
     ///
-    /// You can access the list of relays at [Self::pkarr_relays].
+    /// You can access the list of relays at `Self::pkarr_relays`.
     pub async fn create_pkarr_relay(&mut self) -> Result<Url> {
         let dir = tempfile::tempdir()?;
         let mut builder = pkarr_relay::Relay::builder();

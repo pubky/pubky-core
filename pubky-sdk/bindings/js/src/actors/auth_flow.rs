@@ -12,18 +12,20 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::session::Session;
+use super::{in_flight::InFlightGuard, session::Session};
 use crate::{
     js_error::{JsResult, PubkyError, PubkyErrorName},
-    wrappers::{auth_token::AuthToken, capabilities::validate_caps_for_start, keys::PublicKey},
+    wrappers::{auth_token::AuthToken, capabilities::validate_capabilities, keys::PublicKey},
 };
 
 /// Start and control a pubkyauth authorization flow.
 ///
 /// Typical flow:
-/// 1) `AuthFlow.start(...)` or `pubky.startAuthFlow(...)`
+/// 1) `AuthFlow.start(...)` or `pubky.startCookieAuthFlow(...)`
 /// 2) Show `authorizationUrl()` as QR/deeplink to the user’s signing device
 /// 3) `awaitApproval()` to receive a ready `Session`
+///
+/// @deprecated Use `GrantAuthFlow` instead.
 #[wasm_bindgen]
 pub struct AuthFlow {
     inner: RefCell<Option<Rc<PubkyCookieAuthFlow>>>,
@@ -34,7 +36,7 @@ pub struct AuthFlow {
 #[wasm_bindgen]
 impl AuthFlow {
     /// Start a flow (standalone).
-    /// Prefer `pubky.startAuthFlow()` to reuse a facade client.
+    /// Prefer `pubky.startCookieAuthFlow()` to reuse a facade client.
     ///
     /// @param {string} capabilities
     /// Comma-separated capabilities, e.g. `"/pub/app/:rw,/priv/foo.txt:r"`.
@@ -64,6 +66,8 @@ impl AuthFlow {
     /// const flow = AuthFlow.start("/pub/my-cool-app/:rw,/pub/pubky.app/:w");
     /// renderQRCode(flow.authorizationUrl());
     /// const session = await flow.awaitApproval();
+    ///
+    /// @deprecated Use `GrantAuthFlow.start(...)` instead.
     #[wasm_bindgen(js_name = "start")]
     pub fn start(
         #[wasm_bindgen(unchecked_param_type = "Capabilities")] capabilities: String,
@@ -81,7 +85,7 @@ impl AuthFlow {
         client: Option<pubky::PubkyHttpClient>,
     ) -> JsResult<AuthFlow> {
         // 1) Validate & normalize capability string
-        let normalized = validate_caps_for_start(capabilities.as_str())?;
+        let normalized = validate_capabilities(capabilities.as_str())?;
         // 2) Build native Capabilities
         let caps = Capabilities::try_from(normalized.as_str())?;
 
@@ -100,10 +104,10 @@ impl AuthFlow {
     }
 
     /// Resume a previously started auth flow from its saved `authorizationUrl` (standalone).
-    /// Prefer `pubky.resumeAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
+    /// Prefer `pubky.resumeCookieAuthFlow()` to reuse a facade client; this creates a default (mainnet) client.
     ///
     /// Relay messages expire after ~5 minutes; resume is only viable in that window.
-    /// See `Pubky.resumeAuthFlow()` / `Pubky.startAuthFlow()` for full guidance.
+    /// See `Pubky.resumeCookieAuthFlow()` / `Pubky.startCookieAuthFlow()` for full guidance.
     ///
     /// **Security:** `authorizationUrl` contains the `client_secret`.
     /// Delete it from storage as soon as resume completes or is abandoned.
@@ -126,7 +130,7 @@ impl AuthFlow {
             Some(c) => pubky::Pubky::with_client(c),
             None => pubky::Pubky::new()?,
         };
-        let flow = pubky.resume_auth_flow(&authorization_url)?;
+        let flow = pubky.resume_cookie_auth_flow(&authorization_url)?;
         Ok(flow.into())
     }
 
@@ -134,7 +138,7 @@ impl AuthFlow {
     ///
     /// **Security:** This URL contains the `client_secret` in plaintext.
     /// Treat it as a short-lived secret and delete it after the flow completes.
-    /// See `Pubky.startAuthFlow()` docs for storage guidance.
+    /// See `Pubky.startCookieAuthFlow()` docs for storage guidance.
     ///
     /// @returns {string} A `pubkyauth://…` or `https://…` URL with channel info.
     ///
@@ -220,15 +224,7 @@ impl From<PubkyCookieAuthFlow> for AuthFlow {
 
 impl AuthFlow {
     fn begin_call(&self, caller: &str) -> JsResult<InFlightGuard<'_>> {
-        let mut flag = self.in_flight.borrow_mut();
-        if *flag {
-            Err(self.in_use_error(caller))
-        } else {
-            *flag = true;
-            Ok(InFlightGuard {
-                in_flight: &self.in_flight,
-            })
-        }
+        InFlightGuard::begin(&self.in_flight, || self.in_use_error(caller))
     }
 
     fn borrow_inner(&self) -> JsResult<Rc<PubkyCookieAuthFlow>> {
@@ -273,21 +269,11 @@ impl AuthFlow {
     }
 }
 
-struct InFlightGuard<'a> {
-    in_flight: &'a RefCell<bool>,
-}
-
-impl Drop for InFlightGuard<'_> {
-    fn drop(&mut self) {
-        let mut flag = self.in_flight.borrow_mut();
-        *flag = false;
-    }
-}
-
 /// The kind of authentication flow to perform.
 /// This can either be a sign in or a sign up flow.
 #[wasm_bindgen]
-pub struct AuthFlowKind(pubky::AuthFlowKind);
+#[derive(Clone)]
+pub struct AuthFlowKind(pub(crate) pubky::AuthFlowKind);
 
 #[wasm_bindgen]
 impl AuthFlowKind {

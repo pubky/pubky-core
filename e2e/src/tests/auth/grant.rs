@@ -119,7 +119,12 @@ async fn grant_secret_restore_mints_fresh_bearer() {
         .unwrap();
 
     let original_bearer = session.as_grant().unwrap().current_bearer().await;
-    let secret_token = session.as_grant().unwrap().export_secret().await;
+    let secret_token = session
+        .as_grant()
+        .unwrap()
+        .export_local_secret()
+        .await
+        .unwrap();
 
     let restored = pubky.restore_session(&secret_token).await.unwrap();
     let restored_bearer = restored.as_grant().unwrap().current_bearer().await;
@@ -153,14 +158,13 @@ async fn grant_secret_restore_rejects_revoked_grant() {
         .await
         .unwrap();
 
-    let secret_token = session.as_grant().unwrap().export_secret().await;
-    let grant_id = session.as_grant().unwrap().grant_id().await;
-    session
+    let secret_token = session
         .as_grant()
         .unwrap()
-        .revoke_grant(&grant_id)
+        .export_local_secret()
         .await
         .unwrap();
+    session.signout().await.unwrap();
 
     let err = pubky.restore_session(&secret_token).await.unwrap_err();
 
@@ -343,7 +347,7 @@ async fn signout_revokes_current_grant_only() {
         .unwrap();
 
     // Both sessions should appear in the root session's grant list.
-    let grants_before = session_a.as_grant().unwrap().list_grants().await.unwrap();
+    let grants_before = GrantManager::new(&session_a).list().await.unwrap();
     assert!(
         grants_before.len() >= 2,
         "expected at least 2 grants, got {}",
@@ -361,10 +365,10 @@ async fn signout_revokes_current_grant_only() {
         .unwrap();
 
     // The revoked grant no longer shows up in the active list.
-    let grants_after = session_a.as_grant().unwrap().list_grants().await.unwrap();
+    let grants_after = GrantManager::new(&session_a).list().await.unwrap();
     assert!(
         grants_after.len() < grants_before.len(),
-        "signout should drop the revoked grant from list_grants()"
+        "signout should drop the revoked grant from GrantManager::list()"
     );
 }
 
@@ -485,7 +489,7 @@ async fn disabled_user() {
 
 #[tokio::test]
 #[pubky_testnet::test]
-async fn non_root_session_can_list_revoke_grants() {
+async fn non_root_session_cannot_list_revoke_grants() {
     let testnet = build_full_testnet().await;
     let server = testnet.homeserver_app();
     let pubky = testnet.sdk().unwrap();
@@ -533,24 +537,17 @@ async fn non_root_session_can_list_revoke_grants() {
         .unwrap_err();
 
     // Non-root sessions cannot enumerate grants — homeserver returns 403.
-    let err = scoped_session
-        .as_grant()
-        .unwrap()
-        .list_grants()
-        .await
-        .unwrap_err();
+    let err = GrantManager::new(&scoped_session).list().await.unwrap_err();
     assert!(
         matches!(err, Error::Request(RequestError::Server { status, .. }) if status == StatusCode::FORBIDDEN),
-        "non-root list_grants must be forbidden, got {err:?}"
+        "non-root GrantManager::list must be forbidden, got {err:?}"
     );
 
     let root_grant_id = root_session.as_grant().unwrap().grant_id().await;
 
     // Scoped session cannot revoke root grant — homeserver returns 403.
-    scoped_session
-        .as_grant()
-        .unwrap()
-        .revoke_grant(&root_grant_id)
+    GrantManager::new(&scoped_session)
+        .revoke(&root_grant_id)
         .await
         .unwrap_err();
 }
@@ -591,12 +588,7 @@ async fn root_session_can_list_and_revoke_scoped_grant() {
     let scoped_session = auth.await_approval().await.unwrap();
 
     // Root can list grants — both sessions appear.
-    let grants = root_session
-        .as_grant()
-        .unwrap()
-        .list_grants()
-        .await
-        .unwrap();
+    let grants = GrantManager::new(&root_session).list().await.unwrap();
     assert!(
         grants.len() >= 2,
         "expected ≥2 grants, got {}",
@@ -610,10 +602,8 @@ async fn root_session_can_list_and_revoke_scoped_grant() {
     );
 
     // Root revokes the scoped grant.
-    root_session
-        .as_grant()
-        .unwrap()
-        .revoke_grant(&scoped_gid)
+    GrantManager::new(&root_session)
+        .revoke(&scoped_gid)
         .await
         .unwrap();
 
@@ -648,12 +638,7 @@ async fn root_session_can_list_and_revoke_scoped_grant() {
         .unwrap();
 
     // List shows only one grant now.
-    let grants_after = root_session
-        .as_grant()
-        .unwrap()
-        .list_grants()
-        .await
-        .unwrap();
+    let grants_after = GrantManager::new(&root_session).list().await.unwrap();
     assert!(
         grants_after.len() < grants.len(),
         "expected fewer grants after revocation, got {}",

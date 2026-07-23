@@ -9,11 +9,20 @@ set -e # fail the script if any command fails
 set -u # fail the script if any variable is not set
 set -o pipefail # fail the script if any pipe command fails
 
-# Check if cargo-set-version is installed
-if ! cargo --list | grep -q "set-version"; then
-  echo "Error: cargo-set-version is not installed but required."
-  echo "Please install it first by running:"
-  echo "  cargo install cargo-set-version"
+# Check if cargo set-version is installed from cargo-edit.
+if ! SET_VERSION_OUTPUT=$(cargo set-version --version 2>/dev/null); then
+  echo "Error: cargo set-version is not installed but required."
+  echo "Please install it from cargo-edit first by running:"
+  echo "  cargo install cargo-edit --no-default-features --features set-version"
+  exit 1
+fi
+
+if [[ ! "$SET_VERSION_OUTPUT" =~ ^cargo-edit-set-version[[:space:]][0-9] ]]; then
+  echo "Error: cargo set-version must be provided by cargo-edit."
+  echo "Expected 'cargo set-version --version' to return 'cargo-edit-set-version <version>'."
+  echo "Found: $SET_VERSION_OUTPUT"
+  echo "Please install it from cargo-edit by running:"
+  echo "  cargo install cargo-edit --no-default-features --features set-version"
   exit 1
 fi
 

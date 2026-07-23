@@ -15,7 +15,7 @@
 //! let pubky = Pubky::new()?; // or Pubky::testnet() / Pubky::with_client(...)
 //!
 //! let caps = Capabilities::builder().write("/pub/demoapp/").finish();
-//! let flow = pubky.start_auth_flow(&caps, AuthFlowKind::signin())?;
+//! let flow = pubky.start_cookie_auth_flow(&caps, AuthFlowKind::signin())?;
 //! println!("Scan to sign in: {}", flow.authorization_url());
 //!
 //! let session = flow.await_approval().await?;
@@ -57,9 +57,9 @@ use crate::PublicKey;
 #[allow(deprecated, reason = "Internal use of deprecated public API")]
 use crate::PubkyCookieAuthFlow;
 use crate::{
-    Capabilities, ClientId, EventCursor, EventStreamBuilder, GrantCredential, Pkdns,
-    PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner, PublicStorage, Result,
-    actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
+    Capabilities, ClientId, DelegatedGrantCredentialState, EventCursor, EventStreamBuilder,
+    GrantCredential, Pkdns, PubkyGrantAuthFlow, PubkyHttpClient, PubkySession, PubkySigner,
+    PublicStorage, Result, actors::AuthFlowKind, deep_links::DeepLink, errors::AuthError,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -123,7 +123,7 @@ impl Pubky {
         deprecated,
         reason = "Cookie flow is intentionally exposed via this facade while deprecated"
     )]
-    pub fn start_auth_flow(
+    pub fn start_cookie_auth_flow(
         &self,
         caps: &Capabilities,
         auth_kind: AuthFlowKind,
@@ -162,10 +162,11 @@ impl Pubky {
     ///
     /// The relay inbox persists messages for **~5 minutes**; resume is only
     /// viable within that window. After the TTL expires the channel is gone
-    /// and you must start a fresh flow with [`start_auth_flow`](Self::start_auth_flow).
+    /// and you must start a fresh flow with
+    /// [`start_cookie_auth_flow`](Self::start_cookie_auth_flow).
     ///
     /// The `authorization_url` contains the `client_secret`; follow
-    /// [`start_auth_flow`](Self::start_auth_flow) storage guidance and delete it
+    /// [`start_cookie_auth_flow`](Self::start_cookie_auth_flow) storage guidance and delete it
     /// once resume completes or is abandoned.
     ///
     /// # Errors
@@ -175,7 +176,7 @@ impl Pubky {
         deprecated,
         reason = "Cookie flow is intentionally exposed via this facade while deprecated"
     )]
-    pub fn resume_auth_flow(&self, authorization_url: &str) -> Result<PubkyCookieAuthFlow> {
+    pub fn resume_cookie_auth_flow(&self, authorization_url: &str) -> Result<PubkyCookieAuthFlow> {
         let (caps, relay, secret, auth_kind) = parse_auth_deep_link(authorization_url)?;
 
         PubkyCookieAuthFlow::builder(&caps, auth_kind)
@@ -309,7 +310,7 @@ impl Pubky {
     /// Accepts both legacy cookie session tokens from
     /// [`CookieSessionView::export_secret`](crate::CookieSessionView::export_secret)
     /// and grant session tokens from
-    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret).
+    /// [`GrantSessionView::export_local_secret`](crate::GrantSessionView::export_local_secret).
     /// Grant restore mints a fresh short-lived bearer; cookie restore revalidates
     /// the stored cookie secret.
     ///
@@ -326,6 +327,28 @@ impl Pubky {
         }
 
         PubkySession::import_secret(token, Some(self.client.clone())).await
+    }
+
+    /// Restore an origin-bound delegated browser grant session.
+    ///
+    /// This uses non-secret metadata plus a browser-held non-extractable key.
+    /// It is not a portable restore mechanism.
+    ///
+    /// # Errors
+    /// - Returns [`crate::errors::Error::Authentication`] when the metadata is
+    ///   malformed, expired, or does not match the delegated signer.
+    /// - Propagates transport/server errors while restoring the grant session.
+    #[doc(hidden)]
+    pub async fn restore_delegated_grant_session(
+        &self,
+        state: DelegatedGrantCredentialState,
+        sign: crate::DelegatedSignFn,
+    ) -> Result<PubkySession> {
+        let credential = GrantCredential::import_delegated_state(state, &self.client, sign).await?;
+        Ok(PubkySession::from_grant_credential(
+            self.client.clone(),
+            credential,
+        ))
     }
 
     /// Recover a keypair from an encrypted `.pkarr` secret file and return a [`PubkySigner`].

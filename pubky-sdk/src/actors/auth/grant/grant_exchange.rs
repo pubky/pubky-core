@@ -6,19 +6,19 @@
 //! - [`signup_account_from_grant`] creates a user via grant + `PoP` without
 //!   minting a session.
 //!
-//! All grant-management operations (`list_grants`, `revoke_grant`,
-//! `current_bearer`, `force_refresh`, `grant_id`) live on
-//! [`super::view::GrantSessionView`] — they are reachable via
-//! [`PubkySession::as_grant`](crate::actors::session::core::PubkySession::as_grant)
-//! and only compile when the credential is grant-based.
+//! Current grant-session operations (`current_bearer`, `force_refresh`,
+//! `grant_id`) live on [`super::view::GrantSessionView`].
 
 use pubky_common::{
     auth::{grant::GrantClaims, grant_session_responses::GrantSessionResponse},
-    crypto::{Keypair, PublicKey},
+    crypto::PublicKey,
 };
 use reqwest::Method;
 
-use super::credential::{GrantCredential, sign_pop_for_grant};
+use super::{
+    credential::{GrantCredential, sign_pop_for_grant},
+    pop_signer::GrantPopSigner,
+};
 use crate::actors::storage::resource::resolve_pubky;
 use crate::errors::{RequestError, Result};
 use crate::util::check_http_status;
@@ -38,7 +38,7 @@ pub(crate) async fn credential_from_grant_exchange(
     client: &PubkyHttpClient,
     grant_jws: String,
     grant_claims: GrantClaims,
-    client_keypair: Keypair,
+    client_signer: GrantPopSigner,
     homeserver_pubkey: PublicKey,
 ) -> Result<GrantCredential> {
     cross_log!(
@@ -51,7 +51,7 @@ pub(crate) async fn credential_from_grant_exchange(
         client,
         &grant_jws,
         &grant_claims,
-        &client_keypair,
+        &client_signer,
         &homeserver_pubkey,
     )
     .await?;
@@ -59,7 +59,7 @@ pub(crate) async fn credential_from_grant_exchange(
         response,
         grant_jws,
         grant_claims,
-        client_keypair,
+        client_signer,
         homeserver_pubkey,
     ))
 }
@@ -69,11 +69,11 @@ pub(crate) async fn signup_account_from_grant(
     client: &PubkyHttpClient,
     grant_jws: &str,
     grant_claims: &GrantClaims,
-    client_keypair: &Keypair,
+    client_signer: &GrantPopSigner,
     homeserver_pk: &PublicKey,
     signup_token: Option<&str>,
 ) -> Result<()> {
-    let pop_jws = sign_pop_for_grant(client_keypair, homeserver_pk, &grant_claims.jti);
+    let pop_jws = sign_pop_for_grant(client_signer, homeserver_pk, &grant_claims.jti).await?;
     let body = serde_json::json!({ "grant": grant_jws, "pop": pop_jws });
     let mut url = url::Url::parse(&format!(
         "https://{}/auth/grant/signup",
@@ -100,10 +100,10 @@ async fn post_grant_session(
     client: &PubkyHttpClient,
     grant_jws: &str,
     grant_claims: &GrantClaims,
-    client_keypair: &Keypair,
+    client_signer: &GrantPopSigner,
     homeserver_pk: &PublicKey,
 ) -> Result<GrantSessionResponse> {
-    let pop_jws = sign_pop_for_grant(client_keypair, homeserver_pk, &grant_claims.jti);
+    let pop_jws = sign_pop_for_grant(client_signer, homeserver_pk, &grant_claims.jti).await?;
     let body = serde_json::json!({ "grant": grant_jws, "pop": pop_jws });
 
     let url = format!("pubky://{}/auth/grant/session", grant_claims.iss.z32());

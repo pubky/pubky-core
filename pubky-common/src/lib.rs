@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 //!
 
+#![warn(unused_crate_dependencies)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(any(), deny(clippy::unwrap_used))]

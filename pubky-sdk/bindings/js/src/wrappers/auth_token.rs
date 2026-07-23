@@ -8,7 +8,7 @@
 //
 //    import { AuthFlow } from "@synonymdev/pubky";
 //
-//    const flow = pubky.startAuthFlow("", relay); // no capabilities => auth-only
+//    const flow = pubky.startCookieAuthFlow("", relay); // no capabilities => auth-only
 //    const token = await flow.awaitToken();       // <- AuthToken
 //
 //    // Who just authenticated?
@@ -33,7 +33,7 @@ use crate::wrappers::keys::PublicKey;
 /// ### Typical usage
 /// ```js
 /// // Start an auth-only flow (no capabilities)
-/// const flow = pubky.startAuthFlow("", relay);
+/// const flow = pubky.startCookieAuthFlow("", relay);
 ///
 /// // Wait for the signer to approve; returns an AuthToken
 /// const token = await flow.awaitToken();
@@ -112,7 +112,7 @@ impl AuthToken {
 
     /// Returns the **capabilities** requested by the flow at the time this token was signed.
     ///
-    /// Most auth-only flows pass an empty string to `startAuthFlow("", relay)`, so this will
+    /// Most auth-only flows pass an empty string to `startCookieAuthFlow("", relay)`, so this will
     /// commonly be an empty array.
     ///
     /// Returns: `string[]`, where each item is the canonical entry `"<scope>:<actions>"`.

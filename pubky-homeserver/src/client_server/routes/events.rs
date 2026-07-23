@@ -22,10 +22,17 @@ use std::{collections::HashMap, convert::Infallible, time::Instant};
 use url::form_urlencoded;
 
 use crate::{
-    client_server::{query_params::ListQueryParams, AppState},
-    metrics_server::routes::metrics::Metrics,
+    client_server::{
+        auth::{has_read_permission, AuthSession},
+        query_params::ListQueryParams,
+        AppState,
+    },
+    constants::PUBLIC_ROOT,
+    observability::ConnectionGuard,
     persistence::{
-        files::events::{EventCursor, EventEntity, EventsService, MAX_EVENT_STREAM_USERS},
+        files::events::{
+            EventCursor, EventEntity, EventsService, PathFilter, MAX_EVENT_STREAM_USERS,
+        },
         sql::SqlDb,
     },
     shared::{webdav::WebDavPath, HttpError, HttpResult},
@@ -70,9 +77,9 @@ pub struct EventStreamQueryParams {
     /// - Single user with cursor: `?user=pubkey1:cursor`
     /// - Multiple users: `?user=pubkey1&user=pubkey2:cursor2`
     pub user_cursors: Vec<(PublicKey, Option<String>)>,
-    /// Path prefix to filter events.
-    /// Format: Path WITHOUT `pubky://` scheme or user pubkey. Eg: `/pub/files/`, `pub/files/`, `/pub/`
-    pub path: Option<WebDavPath>,
+    /// Repeatable path filters. Each value is a path WITHOUT the `pubky://`
+    /// scheme or user pubkey, e.g. `/pub/files/`, `pub/files/`, `/priv/app/`..
+    pub paths: Vec<WebDavPath>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,7 +91,8 @@ struct RawEventStreamQueryParams {
     reverse: bool,
     #[serde(default)]
     live: bool,
-    path: Option<String>,
+    #[serde(default)]
+    paths: Vec<String>,
 }
 
 /// Parse query string manually to handle repeated `user` parameters.
@@ -94,7 +102,7 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
     let mut limit = None;
     let mut reverse = false;
     let mut live = false;
-    let mut path = None;
+    let mut paths = Vec::new();
 
     // Parse using form_urlencoded which handles URL decoding
     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
@@ -111,9 +119,10 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
             "live" => {
                 live = value == "true" || value == "1";
             }
+            // `path` is repeatable; empty values are ignored.
             "path" => {
                 if !value.is_empty() {
-                    path = Some(value.to_string());
+                    paths.push(value.to_string());
                 }
             }
             _ => {} // Ignore unknown parameters
@@ -125,7 +134,7 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
         limit,
         reverse,
         live,
-        path,
+        paths,
     };
 
     raw.try_into()
@@ -177,66 +186,55 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
             )));
         }
 
-        let path = if let Some(p) = raw.path {
-            if p.is_empty() {
-                None
+        // Parse each repeated `path` value. Empty values were already dropped
+        // during query parsing.
+        let mut paths = Vec::with_capacity(raw.paths.len());
+        for p in raw.paths {
+            let normalized_path = if p.starts_with('/') {
+                p
             } else {
-                // Automatically prepend "/" if not present for user convenience
-                let normalized_path = if p.starts_with('/') {
-                    p
-                } else {
-                    format!("/{}", p)
-                };
+                format!("/{}", p)
+            };
 
-                Some(WebDavPath::new(&normalized_path).map_err(|_| {
-                    EventStreamError::InvalidParameter(format!("Invalid path: {}", normalized_path))
-                })?)
-            }
-        } else {
-            None
-        };
+            let path = WebDavPath::new(&normalized_path).map_err(|_| {
+                EventStreamError::InvalidParameter(format!("Invalid path: {}", normalized_path))
+            })?;
+            paths.push(path);
+        }
 
         Ok(EventStreamQueryParams {
             limit: raw.limit,
             reverse: raw.reverse,
             live: raw.live,
             user_cursors,
-            path,
+            paths,
         })
     }
 }
 
-/// Format an event entity as SSE event data.
-/// Returns the multiline data field content.
-/// Each line will be prefixed with "data: " by the SSE library.
+/// Render a batch of events as the plain-text feed body used by `GET /events/`.
 ///
-/// ## Format
-/// ```text
-/// data: pubky://user_pubkey/pub/example.txt
-/// data: cursor: 42
-/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
-/// ```
-fn formatted_event_path(entity: &EventEntity) -> String {
-    // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
-    // once the homeserver crate depends on it directly, so we avoid ad-hoc string
-    // reconstruction here.
-    format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
-}
+/// One line per event (`<TYPE> pubky://<user>/<path>`), followed by a trailing
+/// `cursor: <id>` line pointing at the last event so the caller can resume.
+/// Returns an empty string when there are no events (and therefore no cursor line).
+fn format_events_feed(events: &[EventEntity]) -> String {
+    let mut result = events
+        .iter()
+        .map(|event| format!("{} {}", event.event_type, event.pubky_uri()))
+        .collect::<Vec<String>>();
 
-fn event_to_sse_data(entity: &EventEntity) -> String {
-    let path = formatted_event_path(entity);
-    let cursor_line = format!("cursor: {}", entity.cursor());
-
-    let mut lines = vec![path, cursor_line];
-    if let Some(hash) = entity.event_type.content_hash() {
-        let hash_base64 =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
-        lines.push(format!("content_hash: {}", hash_base64));
+    if let Some(next_cursor) = events.last().map(|event| event.id.to_string()) {
+        result.push(format!("cursor: {}", next_cursor));
     }
-    lines.join("\n")
+
+    result.join("\n")
 }
 
 /// Legacy text-based endpoint for fetching historical events.
+///
+/// This feed is public and unauthenticated: it returns events under
+/// `/pub/...` exclusively and never exposes private (`/priv/...`) paths, even to
+/// an authenticated caller.
 ///
 /// ## Query Parameters
 /// - `cursor` (optional): Starting cursor position. Default: "0" (beginning)
@@ -271,26 +269,16 @@ pub async fn feed(
     let query_start = Instant::now();
     let events = state
         .events_service
-        .get_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
+        .get_public_by_cursor(Some(cursor), params.limit, &mut state.sql_db.pool().into())
         .await?;
     state
         .metrics
         .record_events_db_query(query_start.elapsed().as_millis());
 
-    let mut result = events
-        .iter()
-        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
-        .collect::<Vec<String>>();
-    let next_cursor = events.last().map(|event| event.id.to_string());
-
-    if let Some(next_cursor) = next_cursor {
-        result.push(format!("cursor: {}", next_cursor));
-    }
-
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(result.join("\n")))
+        .body(Body::from(format_events_feed(&events)))
         .unwrap())
 }
 
@@ -314,10 +302,17 @@ pub async fn feed(
 /// ```
 pub async fn feed_stream(
     State(state): State<AppState>,
+    session: Option<AuthSession>,
     raw_query: RawQuery,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let params =
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
+
+    // Authorize the requested path filters before doing any work. Public paths
+    // need no session; any `/priv/` path requires a session whose single user
+    // matches and that holds a covering read capability.
+    let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
+
     let mut user_cursor_map =
         resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
             .await
@@ -346,7 +341,7 @@ pub async fn feed_stream(
                 .get_by_user_cursors(
                     current_user_cursors,
                     params.reverse,
-                    params.path.as_ref().map(|p| p.as_str()),
+                    &allowed_paths,
                     &mut state.sql_db.pool().into(),
                 )
                 .await
@@ -368,7 +363,7 @@ pub async fn feed_stream(
 
                 yield Ok(Event::default()
                     .event(event.event_type.to_string())
-                    .data(event_to_sse_data(&event)));
+                    .data(event.to_sse_data()));
 
                 total_sent += 1;
 
@@ -407,7 +402,7 @@ pub async fn feed_stream(
                             state.metrics.record_broadcast_half_full();
                         }
                         // Filter events based on user_ids, cursors, and path
-                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, params.path.as_ref()) {
+                        if !should_include_live_event(&event, &user_ids, &user_cursor_map, &allowed_paths) {
                             continue;
                         }
 
@@ -416,7 +411,7 @@ pub async fn feed_stream(
 
                         yield Ok(Event::default()
                             .event(event.event_type.to_string())
-                            .data(event_to_sse_data(&event)));
+                            .data(event.to_sse_data()));
 
                         total_sent += 1;
 
@@ -485,13 +480,51 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
-/// Filter events in live mode based on user IDs, cursors, and path prefix.
-/// Returns true if the event should be included in the stream.
+/// Authorize the requested `path`s and return the allow-list to apply to both
+/// the historical replay and the live phase.
+///
+/// - No requested path → implicit public-only (`/pub/`), no session needed.
+/// - Public (`/pub/...`) paths need no capability.
+/// - Any private (`/priv/...`) path requires a session (else 401), exactly one
+///   `user=` equal to the session user (else 403), and a read capability
+///   covering each private path (else 403).
+///
+/// If any requested private path is unauthorized the whole subscription is
+/// rejected.
+fn authorized_paths(
+    paths: &[WebDavPath],
+    user_cursors: &[(PublicKey, Option<String>)],
+    session: Option<&AuthSession>,
+) -> Result<Vec<PathFilter>, HttpError> {
+    // No path requested: default to public-only.
+    if paths.is_empty() {
+        return Ok(vec![
+            WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
+        ]);
+    }
+
+    // The tenant to authorize each path against. A private read is single-tenant,
+    // so a tenant only exists when the subscription names exactly one user.
+    let tenant = match user_cursors {
+        [(pubkey, _)] => Some(pubkey),
+        _ => None,
+    };
+
+    let mut allowed = Vec::with_capacity(paths.len());
+    for path in paths {
+        has_read_permission(session, tenant, path)?;
+        allowed.push(path.clone().into());
+    }
+    Ok(allowed)
+}
+
+/// Filter events in live mode based on user IDs, cursors, and the authorized
+/// paths.
 fn should_include_live_event(
     event: &EventEntity,
     user_ids: &[i32],
     user_cursor_map: &HashMap<i32, Option<EventCursor>>,
-    path_filter: Option<&WebDavPath>,
+    allowed_paths: &[PathFilter],
 ) -> bool {
     if !user_ids.contains(&event.user_id) {
         return false;
@@ -504,121 +537,143 @@ fn should_include_live_event(
         }
     }
 
-    if let Some(path) = path_filter {
-        let path_suffix = event.path.path().as_str();
-        if !path_suffix.starts_with(path.as_str()) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Guard to ensure connection cleanup on any exit path
-struct ConnectionGuard {
-    metrics: Metrics,
-    start: Instant,
-}
-
-impl ConnectionGuard {
-    fn new(metrics: Metrics) -> Self {
-        metrics.increment_active_connections();
-        Self {
-            metrics,
-            start: Instant::now(),
-        }
-    }
-}
-
-impl Drop for ConnectionGuard {
-    fn drop(&mut self) {
-        self.metrics.decrement_active_connections();
-        self.metrics
-            .record_connection_closed(self.start.elapsed().as_millis());
-    }
+    // Apply the authorized filter set.
+    let path = event.path.path().as_str();
+    allowed_paths.iter().any(|filter| filter.matches(path))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client_server::auth::grant::session::GrantSession;
+    use pubky_common::auth::jws::GrantId;
+    use pubky_common::capabilities::{Capabilities, Capability};
+    use pubky_common::crypto::Keypair;
+
+    fn pk() -> PublicKey {
+        Keypair::random().public_key()
+    }
+
+    fn wd(s: &str) -> WebDavPath {
+        WebDavPath::new(s).expect("valid test path")
+    }
+
+    fn pf(s: &str) -> PathFilter {
+        wd(s).into()
+    }
+
+    fn grant_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
+        AuthSession::Grant(GrantSession {
+            user_key,
+            capabilities,
+            grant_id: GrantId::generate(),
+            token_expires_at: 9999999999,
+        })
+    }
+
+    fn cursors(keys: &[&PublicKey]) -> Vec<(PublicKey, Option<String>)> {
+        keys.iter().map(|k| ((*k).clone(), None)).collect()
+    }
+
+    fn reject_status(result: Result<Vec<PathFilter>, HttpError>) -> StatusCode {
+        result
+            .expect_err("expected the subscription to be rejected")
+            .into_response()
+            .status()
+    }
 
     #[test]
-    fn connection_guard_drops_on_early_return() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
-
-        // Create guard and return early - guard should still decrement
-        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
-            let _guard = ConnectionGuard::new(metrics.clone());
-            // Simulate early return (e.g., error condition)
-            return Err("early exit");
-            #[allow(unreachable_code)]
-            {
-                Ok(())
-            }
-        }
-
-        let result = early_return_fn(metrics.clone());
-        assert!(result.is_err(), "Should have returned early");
-
-        // Verify guard cleaned up properly despite early return
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after early return: {}",
-            output
+    fn parse_repeated_paths_preserves_order_and_trailing_slash() {
+        let q = format!(
+            "user={}&path=/pub/&path=/priv/app/&path=/priv/file",
+            pk().z32()
         );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count"),
-            "Should have recorded connection duration: {}",
-            output
+        let params = parse_query_params(&q).unwrap();
+        let strs: Vec<&str> = params.paths.iter().map(|p| p.as_str()).collect();
+        assert_eq!(strs, vec!["/pub/", "/priv/app/", "/priv/file"]);
+    }
+
+    #[test]
+    fn parse_ignores_empty_path_values() {
+        let params =
+            parse_query_params(&format!("user={}&path=&path=/pub/&path=", pk().z32())).unwrap();
+        assert_eq!(
+            params.paths.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            vec!["/pub/"]
         );
     }
 
-    #[tokio::test]
-    async fn connection_guard_concurrent() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
-
-        // Create 5 concurrent guards using tokio::spawn
-        let handles: Vec<_> = (0..5)
-            .map(|i| {
-                let metrics_clone = metrics.clone();
-                tokio::spawn(async move {
-                    let _guard = ConnectionGuard::new(metrics_clone);
-                    // Simulate some work
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10 * i)).await;
-                    // Guard will be dropped here
-                })
-            })
-            .collect();
-
-        // While tasks are running, check active connections
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        let output = metrics.render().expect("Failed to render metrics");
-        // We should have some active connections (implementation dependent on timing)
-        assert!(
-            output.contains("event_stream_active_connections"),
-            "Should have active connections metric: {}",
-            output
+    #[test]
+    fn parse_requires_user() {
+        let err = parse_query_params("path=/pub/").unwrap_err();
+        assert_eq!(
+            HttpError::from(err).into_response().status(),
+            StatusCode::BAD_REQUEST
         );
+    }
 
-        // Wait for all tasks to complete
-        for handle in handles {
-            handle.await.unwrap();
-        }
+    #[test]
+    fn no_path_defaults_to_public_dir_filter() {
+        let u = pk();
+        let filters = authorized_paths(&[], &cursors(&[&u]), None).unwrap();
+        assert_eq!(filters, vec![pf("/pub/")]);
+    }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    #[test]
+    fn anonymous_private_path_is_unauthorized() {
+        let u = pk();
+        let status = reject_status(authorized_paths(&[wd("/priv/app/")], &cursors(&[&u]), None));
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
 
-        // All guards should be cleaned up
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after all concurrent guards dropped: {}",
-            output
+    #[test]
+    fn private_path_with_multiple_users_is_forbidden() {
+        let (a, b) = (pk(), pk());
+        let session = grant_session(a.clone(), Capabilities::from(vec![Capability::root()]));
+        let status = reject_status(authorized_paths(
+            &[wd("/priv/app/")],
+            &cursors(&[&a, &b]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn private_path_under_scoped_session_is_forbidden() {
+        let owner = pk();
+        let session = grant_session(
+            owner.clone(),
+            Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count") && output.contains("} 5"),
-            "Should have recorded 5 connection durations: {}",
-            output
+        // A sibling scope not covered by the read cap.
+        let status = reject_status(authorized_paths(
+            &[wd("/priv/other/")],
+            &cursors(&[&owner]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn mixed_public_and_private_authorized_union() {
+        let owner = pk();
+        let session = grant_session(
+            owner.clone(),
+            Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
+        let filters = authorized_paths(
+            &[wd("/pub/"), wd("/priv/app/")],
+            &cursors(&[&owner]),
+            Some(&session),
+        )
+        .unwrap();
+        assert_eq!(filters, vec![pf("/pub/"), pf("/priv/app/")]);
+    }
+
+    #[test]
+    fn public_paths_with_multiple_users_are_authorized() {
+        let (a, b) = (pk(), pk());
+        let filters = authorized_paths(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
+        assert_eq!(filters, vec![pf("/pub/")]);
     }
 }

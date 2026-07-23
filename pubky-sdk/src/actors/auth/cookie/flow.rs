@@ -288,7 +288,7 @@ mod tests {
             .await
             .unwrap();
 
-        let resumed = pubky.resume_auth_flow(&auth_url_str).unwrap();
+        let resumed = pubky.resume_cookie_auth_flow(&auth_url_str).unwrap();
 
         assert_eq!(
             resumed.authorization_url().as_str(),
@@ -320,7 +320,7 @@ mod tests {
         let client = PubkyHttpClient::new().unwrap();
         let pubky = Pubky::with_client(client);
 
-        let result = pubky.resume_auth_flow("https://not-a-pubkyauth-url.com");
+        let result = pubky.resume_cookie_auth_flow("https://not-a-pubkyauth-url.com");
         assert!(result.is_err(), "non-pubkyauth URL should fail to resume");
     }
 
@@ -330,7 +330,7 @@ mod tests {
         let pubky = Pubky::with_client(client);
 
         let url = "pubkyauth://secret_export?secret=kqnceEMgrNQM_xi06oQXjA3cJHX_RQmw1BY6JE1bse8";
-        let result = pubky.resume_auth_flow(url);
+        let result = pubky.resume_cookie_auth_flow(url);
         assert!(result.is_err(), "seed export URL should fail to resume");
     }
 }

@@ -1639,21 +1639,17 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "eventsource-stream",
  "futures",
- "pkarr",
- "pubky-common",
  "pubky-testnet",
  "rand 0.10.1",
  "serde",
  "serde_json",
  "tokio",
- "tracing-subscriber",
- "url",
 ]
 
 [[package]]
@@ -1885,7 +1881,6 @@ checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
 dependencies = [
  "futures-core",
  "futures-sink",
- "nanorand",
  "spin 0.9.8",
 ]
 
@@ -2445,7 +2440,7 @@ dependencies = [
  "env_logger",
  "log",
  "pubky",
- "reqwest 0.13.2",
+ "reqwest 0.13.4",
  "rpassword",
  "serde",
  "thiserror 2.0.18",
@@ -2916,16 +2911,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 
 [[package]]
-name = "iri-string"
-version = "0.7.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25e659a4bb38e810ebc252e53b5814ff908a8c58c2a9ce2fae1bbec24cbf4e20"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3217,9 +3202,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.29"
+version = "0.4.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
 dependencies = [
  "value-bag",
 ]
@@ -3260,12 +3245,11 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "mainline"
-version = "6.1.2"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "578beb3b6dcbe6f3f60a89547a13b34d36bda41dc056540bac5f4e4340ebf25c"
+checksum = "25fd96e1eb0cff23f7048801d1561336c2e3c9f2b468d0271f27ad3463f583bf"
 dependencies = [
  "crc",
- "digest 0.11.3",
  "document-features",
  "dyn-clone",
  "ed25519-dalek",
@@ -3353,15 +3337,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "nanorand"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
-dependencies = [
- "getrandom 0.2.17",
 ]
 
 [[package]]
@@ -3865,7 +3840,7 @@ dependencies = [
  "ntimestamp",
  "page_size",
  "pkcs8 0.11.0-rc.11",
- "reqwest 0.13.2",
+ "reqwest 0.13.4",
  "rustls",
  "rustls-webpki",
  "self_cell",
@@ -4181,7 +4156,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "pubky"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4197,7 +4172,8 @@ dependencies = [
  "pkarr",
  "pubky-common",
  "pubky-testnet",
- "reqwest 0.13.2",
+ "reqwest 0.13.4",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4206,21 +4182,18 @@ dependencies = [
  "url",
  "wasm-bindgen-futures",
  "web-time",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
 name = "pubky-common"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "argon2",
- "base32",
  "base64 0.22.1",
  "blake3",
  "crypto_secretbox",
  "ed25519-dalek",
- "getrandom 0.3.4",
- "js-sys",
- "once_cell",
  "pkarr",
  "postcard",
  "pubky-timestamp",
@@ -4233,7 +4206,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-core-examples"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4242,7 +4215,7 @@ dependencies = [
  "pubky",
  "pubky-common",
  "pubky-testnet",
- "reqwest 0.13.2",
+ "reqwest 0.13.4",
  "rpassword",
  "tokio",
  "tracing",
@@ -4252,7 +4225,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-homeserver"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-dropper",
@@ -4273,7 +4246,6 @@ dependencies = [
  "dirs",
  "dyn-clone",
  "fast-glob",
- "flume 0.11.1",
  "futures-lite",
  "futures-util",
  "governor",
@@ -4292,8 +4264,8 @@ dependencies = [
  "prometheus",
  "pubky-common",
  "pubky_test_utils",
- "rand 0.9.4",
- "reqwest 0.13.2",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
  "sea-query",
  "sea-query-binder",
  "serde",
@@ -4301,7 +4273,6 @@ dependencies = [
  "serde_valid",
  "sha2 0.10.9",
  "sqlx",
- "temp-env",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -4318,15 +4289,12 @@ dependencies = [
 
 [[package]]
 name = "pubky-testnet"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "clap",
- "dirs",
  "http-relay",
  "libc",
- "mainline",
- "once_cell",
  "pkarr",
  "pkarr-relay",
  "pubky",
@@ -4359,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "pubky-wasm"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "base64 0.22.1",
  "console_log",
@@ -4369,7 +4337,7 @@ dependencies = [
  "pkarr",
  "pubky",
  "pubky-common",
- "reqwest 0.13.2",
+ "reqwest 0.13.4",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -4777,9 +4745,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5248,9 +5216,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
  "itoa",
  "memchr",
@@ -5910,16 +5878,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "temp-env"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
-dependencies = [
- "futures",
- "parking_lot",
-]
-
-[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6101,9 +6059,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
  "bytes",
  "libc",
@@ -6339,21 +6297,21 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.8"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
+checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "bitflags 2.11.1",
  "bytes",
  "futures-util",
  "http 1.4.0",
  "http-body 1.0.1",
- "iri-string",
  "pin-project-lite",
  "tower",
  "tower-layer",
  "tower-service",
  "tracing",
+ "url",
 ]
 
 [[package]]

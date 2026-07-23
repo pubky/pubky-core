@@ -15,12 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify tag is on main
-        run: |
-          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
-            echo "::error::Tag must point to a commit on the main branch."
-            exit 1
-          fi
       - name: Validate semver format
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -137,6 +131,23 @@ jobs:
       - name: Build and publish npm package
         working-directory: pubky-sdk/bindings/js/pkg
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [[ "$VERSION" != *-* ]]; then
+            NPM_TAG="latest"
+          else
+            PRERELEASE="${VERSION#*-}"
+            case "$PRERELEASE" in
+              alpha*|beta*|rc*)
+                NPM_TAG="${PRERELEASE%%.*}"
+                ;;
+              *)
+                NPM_TAG="next"
+                ;;
+            esac
+          fi
+
+          echo "Publishing npm package with dist-tag: $NPM_TAG"
           npm ci
           npm run build
-          npm publish --provenance
+          npm publish --provenance --tag "$NPM_TAG"

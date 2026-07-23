@@ -17,6 +17,8 @@ pub enum FileIoError {
     DiskSpaceQuotaExceeded,
     #[error("Write to path is forbidden")]
     WritePathForbidden,
+    #[error("File/folder path collision")]
+    PathCollision,
 }
 
 impl From<opendal::Error> for FileIoError {
@@ -30,6 +32,7 @@ impl From<opendal::Error> for FileIoError {
             return match domain {
                 LayerDomainError::WritePathForbidden => FileIoError::WritePathForbidden,
                 LayerDomainError::DiskSpaceQuotaExceeded => FileIoError::DiskSpaceQuotaExceeded,
+                LayerDomainError::PathCollision => FileIoError::PathCollision,
             };
         }
         match e.kind() {

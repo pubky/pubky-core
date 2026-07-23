@@ -143,7 +143,7 @@ impl Publisher {
     }
 
     /// Publish a single public key.
-    pub async fn publish_once(&self) -> Result<PublishInfo, PublishError> {
+    pub async fn publish(&self) -> Result<PublishInfo, PublishError> {
         if let Err(e) = self.client.publish(&self.packet, None).await {
             return Err(e.into());
         }
@@ -196,7 +196,7 @@ mod tests {
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
         let publisher = Publisher::new_with_settings(packet, settings).unwrap();
-        let res = publisher.publish_once().await;
+        let res = publisher.publish().await;
         assert!(res.is_ok());
         let success = res.unwrap();
         assert_eq!(success.published_nodes_count, 3);
@@ -219,7 +219,7 @@ mod tests {
             .pkarr_client(pkarr_client)
             .min_sufficient_node_publish_count(NonZeroU8::new(required_nodes).unwrap());
         let publisher = Publisher::new_with_settings(packet, settings).unwrap();
-        let res = publisher.publish_once().await;
+        let res = publisher.publish().await;
 
         assert!(res.is_err());
         let err = res.unwrap_err();

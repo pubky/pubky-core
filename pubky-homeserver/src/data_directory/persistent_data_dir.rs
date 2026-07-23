@@ -1,6 +1,7 @@
 use super::{data_dir::DataDir, ConfigToml};
 
 use std::{
+    fs::{copy, create_dir_all},
     io::Write,
     path::{Path, PathBuf},
 };
@@ -60,6 +61,30 @@ impl PersistentDataDir {
     /// Returns the path to the secret file.
     pub fn get_secret_file_path(&self) -> PathBuf {
         self.expanded_path.join("secret")
+    }
+
+    /// Copy a config file into this data directory.
+    /// Errors if a `config.toml` already exists at the destination.
+    pub fn seed_config(&self, source: &Path) -> anyhow::Result<()> {
+        let config_path = self.get_config_file_path();
+        if config_path.exists() {
+            anyhow::bail!("config.toml already exists at {}", config_path.display());
+        }
+        create_dir_all(self.path())?;
+        copy(source, &config_path)?;
+        tracing::info!("Copied {} → {}", source.display(), config_path.display());
+        Ok(())
+    }
+
+    /// Initialize the data directory without starting the server.
+    ///
+    /// Creates the directory, writes a sample config file (if absent),
+    /// and generates a server keypair (if absent).
+    pub fn init(&self) -> anyhow::Result<()> {
+        self.ensure_data_dir_exists_and_is_writable()?;
+        self.read_or_create_config_file()?;
+        self.read_or_create_keypair()?;
+        Ok(())
     }
 }
 

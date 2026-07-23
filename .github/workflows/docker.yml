@@ -1,0 +1,48 @@
+name: Build and Publish Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+    contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        include:
+         - image: homeserver-testnet
+           build_args: |
+             BUILD_TARGET=testnet
+         - image: homeserver
+           build_args: |
+             BUILD_TARGET=homeserver
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: pubky/ci-workflows/.github/actions/docker/build_and_push@main
+        with:
+          registry: registry-1.docker.io/synonymsoft
+          context: .
+          push: true
+          latest: true
+          tags: |
+            type=ref,event=tag
+          platforms: |
+            linux/arm64
+            linux/amd64
+          image: ${{ matrix.image }}
+          cache_from: type=gha
+          cache_to: type=gha,mode=max
+          build_args: ${{ matrix.build_args }}

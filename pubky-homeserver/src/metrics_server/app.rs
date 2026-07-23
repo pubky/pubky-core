@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use crate::metrics_server::routes::metrics::Metrics;
+use crate::observability::Metrics;
 use crate::AppContext;
 use crate::AppContextConversionError;
 use axum::routing::get;

@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::routes::{
-    dav_handler, delete_entry,
+    admin_events, dav_handler, delete_entry,
     disable_users::{disable_user, enable_user},
-    generate_signup_token, info, root, user_quota,
+    generate_signup_token, info, root, signup_tokens, user_quota,
 };
 use super::trace::with_trace_layer;
 use super::{app_state::AppState, auth_middleware::AdminAuthLayer};
@@ -28,6 +28,8 @@ fn create_protected_router(password: &str) -> Router<AppState> {
                 .post(generate_signup_token::generate_signup_token_with_limits),
         )
         .route("/info", get(info::info))
+        .route("/events-stream", get(admin_events::feed_stream))
+        .route("/signup_tokens", get(signup_tokens::list_signup_tokens))
         .route("/webdav/{*entry_path}", delete(delete_entry::delete_entry))
         .route("/users/{pubkey}/disable", post(disable_user))
         .route("/users/{pubkey}/enable", post(enable_user))
@@ -117,6 +119,8 @@ impl AdminServer {
             context.file_service.clone(),
             &password,
             context.user_service.clone(),
+            context.events_service.clone(),
+            context.metrics.clone(),
         )
         .with_metadata_from_config(
             context.keypair.public_key().z32(),
@@ -187,9 +191,12 @@ mod tests {
     use axum::http::Method;
     use axum_test::TestServer;
     use base64::Engine;
+    use pubky_common::crypto::Keypair;
 
     use crate::data_directory::quota_config::BandwidthQuota;
     use crate::persistence::files::FileService;
+    use crate::persistence::sql::signup_code::{SignupCode, SignupCodeRepository};
+    use crate::shared::user_quota::UserQuota;
 
     use super::*;
 
@@ -204,10 +211,71 @@ mod tests {
                 FileService::new_from_context(context).unwrap(),
                 "",
                 context.user_service.clone(),
+                context.events_service.clone(),
+                context.metrics.clone(),
             ),
             "test",
         ))
         .unwrap()
+    }
+
+    /// Seed `paths` as PUT events for a fresh random user, returning that user's pubkey.
+    /// Within a test's fresh database, event ids are assigned in `paths` order starting at 1.
+    async fn seed_put_events(
+        context: &AppContext,
+        paths: &[&str],
+    ) -> pubky_common::crypto::PublicKey {
+        use crate::persistence::files::events::EventType;
+        use crate::persistence::sql::user::UserRepository;
+        use crate::shared::webdav::{EntryPath, WebDavPath};
+        use pubky_common::crypto::{Hash, Keypair};
+
+        let pubkey = Keypair::random().public_key();
+        let user = UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+        for p in paths {
+            let path = EntryPath::new(pubkey.clone(), WebDavPath::new(p).unwrap());
+            context
+                .events_service
+                .create_event(
+                    user.id,
+                    EventType::Put {
+                        content_hash: Hash::from_bytes([0; 32]),
+                    },
+                    &path,
+                    &mut context.sql_db.pool().into(),
+                )
+                .await
+                .unwrap();
+        }
+        pubkey
+    }
+
+    /// GET the admin event stream in **batch** mode (no `live`) and return the raw SSE
+    /// body, asserting a 200 with `Cache-Control: no-store`. Only use for non-live requests —
+    /// the body is finite, so it can be buffered to a string.
+    async fn admin_stream_body(server: &TestServer, query: &str) -> String {
+        let response = server
+            .get(&format!("/events-stream{query}"))
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-store"),
+            "admin stream must be Cache-Control: no-store"
+        );
+        response.text()
+    }
+
+    /// Count SSE event frames (`event: <TYPE>` lines) in a batch body.
+    fn count_sse_events(body: &str) -> usize {
+        body.lines().filter(|l| l.starts_with("event: ")).count()
     }
 
     #[tokio::test]
@@ -239,15 +307,132 @@ mod tests {
 
     #[tokio::test]
     #[pubky_test_utils::test]
-    async fn test_generate_signup_token_success() {
+    async fn test_list_signup_tokens_fail() {
         let context = AppContext::test().await;
         let server = create_test_server(&context);
+
+        let response = server.get("/signup_tokens").expect_failure().await;
+        response.assert_status_unauthorized();
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_create_and_list_signup_token_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
         let response = server
             .get("/generate_signup_token")
             .add_header("X-Admin-Password", "test")
             .expect_success()
             .await;
+        let token = response.text();
+
+        let response = server
+            .get("/signup_tokens")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
         response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token);
+        assert!(items[0]["created_at"].as_str().is_some());
+        assert_eq!(items[0]["used_at"], serde_json::Value::Null);
+        assert_eq!(items[0]["used_by"], serde_json::Value::Null);
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_list_signup_tokens_query_params_success() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let token1 = SignupCode::new("0000-0000-0001".to_string()).unwrap();
+        let token2 = SignupCode::new("0000-0000-0002".to_string()).unwrap();
+        let token3 = SignupCode::new("0000-0000-0003".to_string()).unwrap();
+        let token4 = SignupCode::new("0000-0000-0004".to_string()).unwrap();
+
+        for token in [&token1, &token2, &token3, &token4] {
+            SignupCodeRepository::create(
+                token,
+                &UserQuota::default(),
+                &mut context.sql_db.pool().into(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let used_by = Keypair::random().public_key();
+        SignupCodeRepository::mark_as_used(&token1, &used_by, &mut context.sql_db.pool().into())
+            .await
+            .unwrap();
+
+        // With three unused tokens, limit=1 proves the page size is applied and
+        // returns the last item in the page as the cursor.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=1")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(body["next_cursor"], token2.to_string());
+
+        // Increasing the limit changes the page size and advances the cursor.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=2")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(body["next_cursor"], token3.to_string());
+
+        // When the limit reaches all remaining unused tokens, there is no next page.
+        let response = server
+            .get("/signup_tokens?state=unused&limit=3")
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0]["token"], token2.to_string());
+        assert_eq!(items[1]["token"], token3.to_string());
+        assert_eq!(items[2]["token"], token4.to_string());
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
+
+        // The cursor starts after the token it names, while keeping the unused filter.
+        let response = server
+            .get(&format!(
+                "/signup_tokens?state=unused&limit=2&cursor={token2}"
+            ))
+            .add_header("X-Admin-Password", "test")
+            .expect_success()
+            .await;
+        response.assert_status_ok();
+
+        let body: serde_json::Value = response.json();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["token"], token3.to_string());
+        assert_eq!(items[1]["token"], token4.to_string());
+        assert_eq!(body["next_cursor"], serde_json::Value::Null);
     }
 
     fn auth_header() -> String {
@@ -424,5 +609,137 @@ mod tests {
         assert_eq!(limits.storage_quota_mb, QuotaOverride::Value(1024));
         assert_eq!(limits.rate_read, QuotaOverride::Value(bw("200mb/m")));
         assert_eq!(limits.rate_write, QuotaOverride::Default);
+    }
+
+    /// The stream rejects unauthenticated and malformed requests.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_rejects_unauthorized_and_invalid() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // Missing password → 401 (the stream lives behind AdminAuthLayer).
+        let response = server.get("/events-stream").expect_failure().await;
+        response.assert_status_unauthorized();
+
+        // Wrong password → 401.
+        let response = server
+            .get("/events-stream")
+            .add_header("X-Admin-Password", "wrongpassword")
+            .expect_failure()
+            .await;
+        response.assert_status_unauthorized();
+
+        // The malformed-request cases all 400 with a valid password.
+        for query in [
+            "?cursor=notanumber",
+            "?live=true&reverse=true",
+            "?limit=abc",
+            "?limit=0",
+        ] {
+            let response = server
+                .get(&format!("/events-stream{query}"))
+                .add_header("X-Admin-Password", "test")
+                .expect_failure()
+                .await;
+            response.assert_status_bad_request();
+        }
+    }
+
+    /// Batch mode returns every event — public and private — with `limit` enforced and the
+    /// SSE framing/no-store header the client expects. Empty DB yields an empty body.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_returns_all_events() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // Empty stream: 200, no-store (asserted in helper), no event frames.
+        assert_eq!(count_sse_events(&admin_stream_body(&server, "").await), 0);
+
+        // ids 1=/pub/a.txt, 2=/priv/app/secret.txt in this fresh DB.
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/priv/app/secret.txt"]).await;
+
+        // Full firehose: both visibilities present, framed as PUT events.
+        let body = admin_stream_body(&server, "").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(
+            body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())),
+            "stream should include the public event: {body}"
+        );
+        assert!(
+            body.contains(&format!("pubky://{}/priv/app/secret.txt", pubkey.z32())),
+            "stream should include the private event: {body}"
+        );
+        assert!(body.contains("event: PUT"), "expected SSE framing: {body}");
+        assert!(body.contains("cursor: "), "expected cursor lines: {body}");
+
+        // `limit=1` stops after the first event (the public one).
+        let body = admin_stream_body(&server, "?limit=1").await;
+        assert_eq!(count_sse_events(&body), 1);
+        assert!(body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())));
+        assert!(!body.contains("/priv/app/secret.txt"));
+    }
+
+    /// `user=` is an optional filter: it restricts the stream to the named users.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_user_filter() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let alice = seed_put_events(&context, &["/pub/alice.txt"]).await;
+        let bob = seed_put_events(&context, &["/pub/bob.txt"]).await;
+
+        // No filter → both users' events.
+        let body = admin_stream_body(&server, "").await;
+        assert_eq!(count_sse_events(&body), 2);
+
+        // Filter to alice → only alice's event.
+        let body = admin_stream_body(&server, &format!("?user={}", alice.z32())).await;
+        assert_eq!(count_sse_events(&body), 1);
+        assert!(body.contains(&format!("pubky://{}/pub/alice.txt", alice.z32())));
+        assert!(!body.contains(&format!("pubky://{}/pub/bob.txt", bob.z32())));
+    }
+
+    /// Repeated `path=` unions the filters (file-vs-directory matching).
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_repeated_path_filter() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/pub/b.txt", "/priv/x.txt"]).await;
+
+        // Exact file `/pub/a.txt` OR the `/priv/` subtree — not the sibling `/pub/b.txt`.
+        let body = admin_stream_body(&server, "?path=/pub/a.txt&path=/priv/").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(body.contains(&format!("pubky://{}/pub/a.txt", pubkey.z32())));
+        assert!(body.contains(&format!("pubky://{}/priv/x.txt", pubkey.z32())));
+        assert!(
+            !body.contains("/pub/b.txt"),
+            "sibling file must be excluded: {body}"
+        );
+    }
+
+    /// A single global `cursor=` resumes after the given event id.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn test_admin_stream_cursor_resume() {
+        let context = AppContext::test().await;
+        let server = create_test_server(&context);
+
+        // ids 1,2,3 in this fresh DB.
+        let pubkey = seed_put_events(&context, &["/pub/a.txt", "/pub/b.txt", "/pub/c.txt"]).await;
+
+        // Resume after cursor 1 → only the later two events.
+        let body = admin_stream_body(&server, "?cursor=1").await;
+        assert_eq!(count_sse_events(&body), 2);
+        assert!(
+            !body.contains("/pub/a.txt"),
+            "cursor=1 must skip the first event: {body}"
+        );
+        assert!(body.contains(&format!("pubky://{}/pub/b.txt", pubkey.z32())));
+        assert!(body.contains(&format!("pubky://{}/pub/c.txt", pubkey.z32())));
     }
 }

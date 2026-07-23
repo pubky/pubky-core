@@ -1,8 +1,8 @@
 {
   "name": "@synonymdev/pubky",
   "type": "module",
-  "description": "Pubky client",
-  "version": "0.9.0",
+  "description": "Decentralized identity, auth flows, and user-owned storage",
+  "version": "0.9.3",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -46,5 +46,8 @@
   },
   "dependencies": {
     "fetch-cookie": "^3.0.1"
+  },
+  "overrides": {
+    "electron": "41.0.2"
   }
 }

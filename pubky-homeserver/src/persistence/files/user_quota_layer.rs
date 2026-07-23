@@ -528,7 +528,9 @@ mod tests {
     #[pubky_test_utils::test]
     async fn test_quota_rechead() {
         use crate::persistence::files::entry::entry_layer::EntryLayer;
-        use crate::persistence::files::events::{EventRepository, EventsLayer, EventsService};
+        use crate::persistence::files::events::{
+            EventRepository, EventVisibility, EventsLayer, EventsService,
+        };
         use crate::persistence::sql::entry::EntryRepository;
         use crate::shared::webdav::{EntryPath, WebDavPath};
 
@@ -574,6 +576,7 @@ mod tests {
         let events = crate::persistence::files::events::EventRepository::get_by_cursor(
             None,
             Some(9999),
+            EventVisibility::All,
             &mut db.pool().into(),
         )
         .await
@@ -603,9 +606,14 @@ mod tests {
         assert_eq!(entry.content_length as usize, max_content);
 
         // Verify that event WAS created when write succeeded
-        let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-            .await
-            .expect("Should succeed");
+        let events = EventRepository::get_by_cursor(
+            None,
+            Some(9999),
+            EventVisibility::All,
+            &mut db.pool().into(),
+        )
+        .await
+        .expect("Should succeed");
         assert_eq!(
             events.len(),
             1,

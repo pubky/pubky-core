@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![warn(unused_crate_dependencies)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![allow(
@@ -45,11 +46,14 @@ pub use actors::SessionInfo;
 #[doc(inline)]
 pub use actors::deep_links;
 #[doc(inline)]
-pub use actors::{CookieCredential, CookieSessionView, GrantCredential, GrantSessionView};
+pub use actors::{
+    CookieCredential, CookieSessionView, DelegatedGrantCredentialState, GrantCredential,
+    GrantManager, GrantSessionView,
+};
+#[doc(inline)]
+pub use actors::{DelegatedGrantAuthFlowState, GrantAuthFlowState, PubkyGrantAuthFlow};
 #[doc(inline)]
 pub use actors::{Event, EventCursor, EventStreamBuilder, EventType};
-#[doc(inline)]
-pub use actors::{GrantAuthFlowState, PubkyGrantAuthFlow};
 #[doc(inline)]
 pub use actors::{PublicStorage, SessionStorage};
 
@@ -74,6 +78,8 @@ pub use actors::DEFAULT_HTTP_RELAY;
 pub use actors::pkdns::DEFAULT_STALE_AFTER;
 #[doc(inline)]
 pub use actors::{DEFAULT_HTTP_RELAY_INBOX, EncryptedHttpRelayInboxChannel, HttpRelayInboxChannel};
+#[doc(hidden)]
+pub use actors::{DelegatedSignFn, delegated_sign_callback};
 #[doc(inline)]
 pub use pkarr;
 
@@ -93,3 +99,6 @@ pub use pubky_common::{
     session::CookieSessionRecord,
 };
 pub use reqwest::{Method, StatusCode};
+
+#[cfg(test)]
+use pubky_testnet as _; // Used in docstring tests.

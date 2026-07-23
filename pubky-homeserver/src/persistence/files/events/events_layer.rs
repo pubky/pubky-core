@@ -278,7 +278,7 @@ mod tests {
     use crate::{
         persistence::{
             files::{
-                events::{EventRepository, EventType, EventsService},
+                events::{EventRepository, EventType, EventVisibility, EventsService},
                 opendal::opendal_test_operators::OpendalTestOperators,
             },
             sql::user::UserRepository,
@@ -309,9 +309,14 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 1);
             let first_event = events.first().expect("Should succeed");
             assert_eq!(first_event.path, entry_path);
@@ -324,9 +329,14 @@ mod tests {
                 .expect("Should succeed because the path starts with a pubkey");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 2);
             let second_event = events.get(1).expect("Should succeed");
             assert_eq!(second_event.path, entry_path);
@@ -339,9 +349,14 @@ mod tests {
                 .expect("Should succeed");
 
             // Make sure the event is written to the database correctly
-            let events = EventRepository::get_by_cursor(None, Some(9999), &mut db.pool().into())
-                .await
-                .expect("Should succeed");
+            let events = EventRepository::get_by_cursor(
+                None,
+                Some(9999),
+                EventVisibility::All,
+                &mut db.pool().into(),
+            )
+            .await
+            .expect("Should succeed");
             assert_eq!(events.len(), 3);
             let third_event = events.get(2).expect("Should succeed");
             assert_eq!(third_event.path, entry_path);

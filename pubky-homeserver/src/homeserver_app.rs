@@ -9,7 +9,7 @@ use crate::admin_server::{AdminServer, AdminServerBuildError};
 use crate::client_server::{ClientServer, ClientServerBuildError};
 use crate::metrics_server::{MetricsServer, MetricsServerBuildError};
 use crate::republishers::{
-    HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisher,
+    HomeserverKeyRepublisher, KeyRepublisherBuildError, UserKeysRepublisherJob,
 };
 use crate::tracing::init_tracing_logs_with_config_if_set;
 #[cfg(any(test, feature = "testing"))]
@@ -19,8 +19,6 @@ use anyhow::Result;
 use pubky_common::crypto::PublicKey;
 use std::path::PathBuf;
 use std::time::Duration;
-
-const INITIAL_DELAY_BEFORE_REPUBLISH: Duration = Duration::from_secs(60);
 
 /// Errors that can occur when building a `HomeserverApp`.
 #[derive(thiserror::Error, Debug)]
@@ -46,13 +44,11 @@ pub struct HomeserverApp {
     #[allow(dead_code)] // Keep this alive. When dropped, the homeserver will stop.
     client_server: ClientServer,
 
-    #[allow(dead_code)]
-    // Keep this alive. Republishing is stopped when the UserKeysRepublisher is dropped.
-    pub(crate) user_keys_republisher: UserKeysRepublisher,
+    // Republishing is stopped when the UserKeysRepublisherJob is dropped.
+    _user_keys_republisher_job: Option<UserKeysRepublisherJob>,
 
-    #[allow(dead_code)]
-    // Keep this alive. Republishing is stopped when the HomeserverKeyRepublisher is dropped.
-    pub(crate) key_republisher: HomeserverKeyRepublisher,
+    // Republishing is stopped when the HomeserverKeyRepublisher is dropped.
+    _key_republisher: HomeserverKeyRepublisher,
 
     #[allow(dead_code)] // Keep this alive. When dropped, the admin server will stop.
     admin_server: Option<AdminServer>,
@@ -89,8 +85,15 @@ impl HomeserverApp {
 
         tracing::debug!("Homeserver data dir: {}", context.data_dir.path().display());
 
-        let user_keys_republisher =
-            UserKeysRepublisher::start_delayed(&context, INITIAL_DELAY_BEFORE_REPUBLISH);
+        let mut pkarr_builder = context.pkarr_builder.clone();
+        pkarr_builder.no_relays(); // Disable relays to avoid their rate limiting.
+        let republish_interval =
+            Duration::from_secs(context.config_toml.pkdns.user_keys_republisher_interval);
+        let user_keys_republisher_job = UserKeysRepublisherJob::start(
+            context.sql_db.clone(),
+            pkarr_builder,
+            republish_interval,
+        );
 
         let admin_server = if context.config_toml.admin.enabled {
             Some(AdminServer::start(&context).await?)
@@ -117,8 +120,8 @@ impl HomeserverApp {
             client_server,
             admin_server,
             metrics_server,
-            user_keys_republisher,
-            key_republisher,
+            _user_keys_republisher_job: user_keys_republisher_job,
+            _key_republisher: key_republisher,
         })
     }
 
