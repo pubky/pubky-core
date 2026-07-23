@@ -1,5 +1,6 @@
 use crate::commands::Commands;
 use clap::Parser;
+use clap_verbosity_flag::Verbosity;
 use std::path::PathBuf;
 
 fn validate_config_dir_path(path: &str) -> Result<PathBuf, String> {
@@ -18,4 +19,7 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
+
+    #[command(flatten)]
+    pub verbosity: Verbosity,
 }
