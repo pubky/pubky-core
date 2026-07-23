@@ -265,7 +265,7 @@ impl Pubky {
     /// @param {PublicKey} user
     /// @returns {Promise<PublicKey|undefined>} Homeserver public key, or `undefined` when the
     ///   user has no resolvable homeserver record.
-    /// @throws When a record is present but its `_pubky` target is malformed.
+    /// @throws When Pkarr resolution fails or a resolved `_pubky` target is malformed.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
     pub async fn get_homeserver_of(
         &self,

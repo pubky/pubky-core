@@ -10,6 +10,7 @@ use std::time::Duration;
 use pkarr::{
     ResolvePolicy, SignedPacket, Timestamp,
     dns::rdata::{RData, SVCB},
+    errors::ResolveError,
 };
 
 use crate::{
@@ -143,11 +144,13 @@ impl Pkdns {
     ///
     /// Returns:
     /// - `Ok(Some(host))` when the `_pubky` record resolves to a valid homeserver public key,
-    /// - `Ok(None)` when no Pkarr record exists, or the record carries no `_pubky` target.
-    /// - `Err(_)` when a record *is* present but its `_pubky` target cannot be parsed as a
-    ///   public key.
+    /// - `Ok(None)` when no Pkarr record exists, or the record carries no `_pubky` target,
+    /// - `Err(_)` when Pkarr resolution fails, or a resolved `_pubky` target cannot be parsed as
+    ///   a public key.
     ///
     /// # Errors
+    /// - [`crate::errors::Error::Pkarr`] ([`PkarrError::Resolve`]) if Pkarr resolution fails for
+    ///   any reason other than [`ResolveError::NotFound`].
     /// - [`crate::errors::Error::Pkarr`] ([`PkarrError::InvalidRecord`]) if the resolved `_pubky`
     ///   target is not a valid public key (e.g. a bare domain or corrupted data).
     pub async fn get_homeserver_of(
@@ -159,16 +162,12 @@ impl Pkdns {
             "Resolving homeserver for public key {} via PKARR",
             user_public_key
         );
-        let Ok(packet) = self
+        let resolution = self
             .client
             .pkarr()
             .resolve(user_public_key, ResolvePolicy::CacheFirst)
-            .await
-        else {
-            cross_log!(debug, "No PKARR record resolved for {}", user_public_key);
-            return Ok(None);
-        };
-        let result = homeserver_pubkey_from_packet(&packet)?;
+            .await;
+        let result = Self::homeserver_pubkey_from_resolution(resolution)?;
         cross_log!(
             debug,
             "Homeserver resolution for {} yielded {:?}",
@@ -176,6 +175,19 @@ impl Pkdns {
             result
         );
         Ok(result)
+    }
+
+    /// Convert a Pkarr resolution into the public homeserver lookup result.
+    ///
+    /// A missing packet is a valid absence; all operational resolution failures remain errors.
+    fn homeserver_pubkey_from_resolution(
+        resolution: std::result::Result<SignedPacket, ResolveError>,
+    ) -> Result<Option<PublicKey>> {
+        match resolution {
+            Ok(packet) => homeserver_pubkey_from_packet(&packet),
+            Err(ResolveError::NotFound) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub(crate) async fn require_homeserver_of(
@@ -197,11 +209,12 @@ impl Pkdns {
     /// Returns:
     /// - `Ok(Some(host))` if resolvable,
     /// - `Ok(None)` if no record is found or no homeserver is configured,
-    /// - `Err(_)` if the resolved `_pubky` record is malformed.
+    /// - `Err(_)` if Pkarr resolution fails or the resolved `_pubky` record is malformed.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if called without an attached keypair.
-    /// - Returns [`crate::errors::Error::Pkarr`] if the resolved `_pubky` record is malformed
+    /// - Returns [`crate::errors::Error::Pkarr`] if Pkarr resolution fails or the resolved
+    ///   `_pubky` record is malformed.
     pub async fn get_homeserver(&self) -> Result<Option<PublicKey>> {
         let kp = self.keypair.as_ref().ok_or_else(|| {
             Error::from(AuthError::Validation(
@@ -511,16 +524,37 @@ pub fn extract_host_from_packet(packet: &SignedPacket) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pkarr::dns::rdata::TXT;
+    use std::{num::NonZeroUsize, sync::Arc};
+
+    use pkarr::{Cache, InMemoryCache, dns::rdata::TXT};
 
     #[tokio::test]
-    async fn require_homeserver_of_returns_validation_when_unresolved() {
-        let client = PubkyHttpClient::builder()
+    async fn require_homeserver_of_returns_validation_when_packet_has_no_pubky_record() {
+        let user = Keypair::random();
+        let mut dnslink_txt = TXT::new();
+        dnslink_txt
+            .add_string("dnslink=/ipfs/example")
+            .expect("valid dnslink string");
+        let packet = SignedPacket::builder()
+            .txt(
+                "_dnslink".try_into().expect("_dnslink name"),
+                dnslink_txt,
+                3600,
+            )
+            .sign(&user)
+            .expect("signed packet");
+
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
+        let cache_key: pkarr::CacheKey = user.public_key().as_inner().into();
+        cache.put(&cache_key, &packet);
+
+        let mut client_builder = PubkyHttpClient::builder();
+        client_builder
             .isolated_pkarr_test()
-            .build()
-            .expect("client");
+            .pkarr(|builder| builder.cache(cache));
+        let client = client_builder.build().expect("client");
         let pkdns = Pkdns::with_client(client);
-        let user = Keypair::random().public_key();
+        let user = user.public_key();
 
         let err = pkdns
             .require_homeserver_of(&user)
@@ -531,6 +565,25 @@ mod tests {
             err,
             Error::Request(crate::errors::RequestError::Validation { message })
                 if message == format!("could not resolve homeserver for {}", user.z32())
+        ));
+    }
+
+    #[test]
+    fn homeserver_pubkey_from_resolution_returns_none_when_not_found() {
+        let resolved = Pkdns::homeserver_pubkey_from_resolution(Err(ResolveError::NotFound))
+            .expect("not found should be a valid absence");
+
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn homeserver_pubkey_from_resolution_propagates_operational_errors() {
+        let err = Pkdns::homeserver_pubkey_from_resolution(Err(ResolveError::NoResponses))
+            .expect_err("operational resolution errors must be preserved");
+
+        assert!(matches!(
+            err,
+            Error::Pkarr(PkarrError::Resolve(ResolveError::NoResponses))
         ));
     }
 

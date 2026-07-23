@@ -30,7 +30,7 @@ impl Pkdns {
     /// @param {PublicKey} user
     /// @returns {Promise<PublicKey|undefined>} Homeserver public key, or `undefined` when the
     ///   user has no resolvable homeserver record.
-    /// @throws When a record is present but its `_pubky` target is malformed.
+    /// @throws When Pkarr resolution fails or a resolved `_pubky` target is malformed.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
     pub async fn get_homeserver_of(&self, pubky: &PublicKey) -> JsResult<Option<PublicKey>> {
         Ok(self
@@ -43,6 +43,8 @@ impl Pkdns {
     /// Resolve the homeserver for **this** user (requires keypair).
     ///
     /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
+    /// @throws When no keypair is attached, Pkarr resolution fails, or a resolved `_pubky` target
+    ///   is malformed.
     #[wasm_bindgen(js_name = "getHomeserver")]
     pub async fn get_homeserver(&self) -> JsResult<Option<PublicKey>> {
         Ok(self.0.get_homeserver().await?.map(Into::into))

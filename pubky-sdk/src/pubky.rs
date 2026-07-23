@@ -212,12 +212,12 @@ impl Pubky {
     /// Resolve current homeserver for a user public key via Pkarr.
     ///
     /// Returns `Ok(Some(host))` when the `_pubky` record resolves to a valid homeserver public
-    /// key, `Ok(None)` when no record exists or no homeserver is configured, and `Err(_)` when a
-    /// record is present but its `_pubky` target is malformed.
+    /// key, `Ok(None)` when no record exists or no homeserver is configured, and `Err(_)` when
+    /// Pkarr resolution fails or a resolved `_pubky` target is malformed.
     ///
     /// # Errors
-    /// - [`crate::errors::Error::Pkarr`] if the resolved `_pubky` target is not a valid public
-    ///   key (see [`Pkdns::get_homeserver_of`]).
+    /// - [`crate::errors::Error::Pkarr`] if Pkarr resolution fails or the resolved `_pubky`
+    ///   target is not a valid public key (see [`Pkdns::get_homeserver_of`]).
     pub async fn get_homeserver_of(
         &self,
         user_public_key: &PublicKey,
