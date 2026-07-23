@@ -14,7 +14,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -29,7 +29,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           components: rustfmt
           override: true
       - name: Check formatting
@@ -43,7 +43,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           components: clippy
           override: true
       - name: Cache
@@ -66,7 +66,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           components: rustfmt, clippy
           override: true
       - name: Cache
@@ -120,7 +120,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           override: true
       - name: Install Nextest
         uses: taiki-e/install-action@nextest
@@ -137,7 +137,7 @@ jobs:
         run: |
           set -e
           # nextest does not support doctests yet.
-          cargo test --doc -p ${{ matrix.crate }} --all-features 
+          cargo test --doc -p ${{ matrix.crate }} --all-features
 
           if cargo nextest run \
             -p ${{ matrix.crate }} \
@@ -168,7 +168,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -183,7 +183,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -217,7 +217,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           target: wasm32-unknown-unknown
           override: true
 
@@ -330,7 +330,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
-          toolchain: 1.89
+          toolchain: "1.89"
           override: true
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
