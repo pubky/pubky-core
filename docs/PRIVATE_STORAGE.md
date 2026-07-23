@@ -1,4 +1,8 @@
-# Private Storage
+# Private Storage in the Client API
+
+The access rules in this document apply to the homeserver Client API. The Admin
+API has separate authorization rules: a homeserver administrator can read and
+write all tenant data, including data under `/priv/`.
 
 ## Storage namespaces
 
