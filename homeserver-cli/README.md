@@ -27,7 +27,7 @@ homeserver-cli --data-dir /path/to/config/dir admin info
 Alternatively, supply credentials directly via flags (password will be prompted interactively):
 
 ```sh
-homeserver-cli --admin-endpoint https://your-homeserver.example.com --admin-password admin info
+homeserver-cli admin --admin-endpoint https://your-homeserver.example.com --admin-password info
 ```
 
 ## Usage

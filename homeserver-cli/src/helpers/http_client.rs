@@ -32,7 +32,14 @@ impl std::fmt::Debug for Auth {
 }
 
 impl HttpClient {
-    pub fn new(base_url: Url, auth: Auth) -> Result<Self> {
+    pub fn new(mut base_url: Url, auth: Auth) -> Result<Self> {
+        if !base_url.path().ends_with('/') {
+            log::warn!(
+                "base URL '{}' has no trailing slash — appending one. Add a trailing slash to silence this warning.",
+                base_url
+            );
+            base_url.set_path(&format!("{}/", base_url.path()));
+        }
         let http = Client::builder()
             .timeout(Duration::from_secs(30))
             .user_agent(concat!(

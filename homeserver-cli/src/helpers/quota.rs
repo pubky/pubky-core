@@ -80,7 +80,7 @@ impl FromStr for RateLimit {
 
 fn err_msg(s: &str) -> String {
     format!(
-        "invalid rate '{s}': expected <number><b|kb|mb|gb>/<s|m|h> (e.g. 100mb/s) or 'unlimited'"
+        "invalid rate '{s}': expected <number><kb|mb|gb>/<s|m|h|d> (e.g. 100mb/s) or 'unlimited'"
     )
 }
 
