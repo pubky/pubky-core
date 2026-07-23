@@ -14,8 +14,7 @@ use opendal::Result;
 
 /// Finalizes storage mutations whose database effects must share one transaction.
 ///
-/// App-facing operators enable collision checks. Admin operators disable only
-/// that policy so legacy collisions can still be repaired through WebDAV.
+/// App-facing operators enable collision checks; admin operators do not.
 /// The transaction makes the database effects atomic; the external blob backend
 /// cannot be rolled back if a later database operation fails after `close()`.
 #[derive(Clone)]

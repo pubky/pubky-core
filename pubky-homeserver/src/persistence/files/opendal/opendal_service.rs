@@ -62,8 +62,8 @@ pub fn build_storage_operators(
         }
     };
 
-    // Both operators share the backend, but use separate finalization layers so
-    // admin WebDAV keeps its collision-policy bypass for legacy repairs.
+    // Collision checks apply only to app-facing mutations, so each operator
+    // needs its own finalization layer.
     let admin_operator = backend_operator.clone().layer(WriteFinalizationLayer::new(
         user_service.clone(),
         events_service.clone(),
