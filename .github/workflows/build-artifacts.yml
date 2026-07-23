@@ -26,6 +26,8 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
       - name: Install cross # Tool to cross-compile the binaries
         run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
 
