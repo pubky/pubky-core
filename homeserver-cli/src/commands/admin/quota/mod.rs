@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+pub mod error;
 pub mod get;
 pub mod set;
 use crate::commands::admin::context::AdminContext;

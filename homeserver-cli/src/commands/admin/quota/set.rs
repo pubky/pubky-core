@@ -1,3 +1,4 @@
+use super::error::map_http;
 use crate::commands::admin::context::AdminContext;
 use crate::helpers::quota::{Quota, QuotaUpdate, RateLimit};
 use anyhow::Result;
@@ -35,9 +36,10 @@ pub fn run(context: AdminContext, args: &SetArgs) -> Result<()> {
 
     context
         .client
-        .patch_json(&format!("users/{}/quota", pk), &body)?;
+        .patch_json(&format!("users/{}/quota", pk), &body)
+        .map_err(map_http)?;
 
-    println!("Updated quota for user: {}", pk);
+    println!("updated quota for user: {}", pk);
 
     Ok(())
 }

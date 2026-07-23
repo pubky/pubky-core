@@ -1,5 +1,7 @@
-use anyhow::{bail, Context, Result};
+use crate::helpers::errors::HttpStatusError;
+use anyhow::{Context, Error, Result};
 use reqwest::blocking::{Client, RequestBuilder, Response};
+use reqwest::Method;
 use serde::Serialize;
 use std::time::Duration;
 use url::Url;
@@ -14,6 +16,19 @@ pub struct HttpClient {
     http: Client,
     base_url: Url,
     auth: Auth,
+}
+
+pub fn http_status(err: &Error) -> Option<u16> {
+    err.downcast_ref::<HttpStatusError>().map(|e| e.status)
+}
+
+impl std::fmt::Debug for Auth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Auth::None => write!(f, "None"),
+            Auth::AdminPassword(_) => write!(f, "AdminPassword(***)"),
+        }
+    }
 }
 
 impl HttpClient {
@@ -35,24 +50,29 @@ impl HttpClient {
     }
 
     pub fn get(&self, path: &str) -> Result<Response> {
-        let url = self.url(path)?;
-        self.send(self.http.get(url.clone()), &url)
+        self.request(Method::GET, path)
+    }
+
+    pub fn post(&self, path: &str) -> Result<Response> {
+        self.request(Method::POST, path)
     }
 
     pub fn post_json<B: Serialize>(&self, path: &str, body: &B) -> Result<Response> {
-        let url = self.url(path)?;
-        self.send(self.http.post(url.clone()).json(body), &url)
-    }
-
-    #[allow(dead_code)] // used by unauthenticated commands (upcoming)
-    pub fn post(&self, path: &str) -> Result<Response> {
-        let url = self.url(path)?;
-        self.send(self.http.post(url.clone()), &url)
+        self.request_json(Method::POST, path, body)
     }
 
     pub fn patch_json<B: Serialize>(&self, path: &str, body: &B) -> Result<Response> {
+        self.request_json(Method::PATCH, path, body)
+    }
+
+    fn request(&self, method: Method, path: &str) -> Result<Response> {
         let url = self.url(path)?;
-        self.send(self.http.patch(url.clone()).json(body), &url)
+        self.send(self.http.request(method, url.clone()), &url)
+    }
+
+    fn request_json<B: Serialize>(&self, method: Method, path: &str, body: &B) -> Result<Response> {
+        let url = self.url(path)?;
+        self.send(self.http.request(method, url.clone()).json(body), &url)
     }
 
     fn url(&self, path: &str) -> Result<Url> {
@@ -66,9 +86,13 @@ impl HttpClient {
             .apply_auth(request)
             .send()
             .with_context(|| format!("request to {url} failed"))?;
-
-        if !response.status().is_success() {
-            bail!("{} returned {}", url, response.status());
+        let status = response.status();
+        if !status.is_success() {
+            return Err(HttpStatusError {
+                status: status.as_u16(),
+                url: url.clone(),
+            }
+            .into());
         }
         Ok(response)
     }

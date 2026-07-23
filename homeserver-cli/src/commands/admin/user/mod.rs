@@ -2,6 +2,7 @@ use clap::{Args, Subcommand};
 pub mod disable;
 pub mod enable;
 use crate::commands::admin::context::AdminContext;
+pub mod error;
 
 #[derive(Args, Debug)]
 pub struct UserCmd {

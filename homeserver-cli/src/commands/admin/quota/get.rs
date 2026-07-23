@@ -1,3 +1,4 @@
+use super::error::map_http;
 use crate::commands::admin::context::AdminContext;
 use crate::helpers::quota::UserQuota;
 use anyhow::{Context, Result};
@@ -12,7 +13,10 @@ pub struct GetArgs {
 pub fn run(context: AdminContext, args: &GetArgs) -> Result<()> {
     let pk = args.pubky.z32();
 
-    let response = context.client.get(&format!("users/{}/quota", pk))?;
+    let response = context
+        .client
+        .get(&format!("users/{}/quota", pk))
+        .map_err(map_http)?;
 
     let quota: UserQuota = response.json().context("failed to parse quota response")?;
 

@@ -2,6 +2,7 @@ use crate::config::ConfigToml;
 use clap::{Args, Subcommand};
 use url::Url;
 mod context;
+pub mod error;
 pub mod generate_signup_token;
 pub mod get_info;
 pub mod quota;

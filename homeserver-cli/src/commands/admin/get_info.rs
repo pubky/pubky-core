@@ -1,3 +1,4 @@
+use super::error::map_http;
 use crate::commands::admin::context::AdminContext;
 use anyhow::{Context, Result};
 use clap::Args;
@@ -17,7 +18,7 @@ struct AdminInfoResponse {
 }
 
 pub fn run(context: AdminContext, _args: &GetInfoArgs) -> Result<()> {
-    let response = context.client.get("info")?;
+    let response = context.client.get("info").map_err(map_http)?;
     let info = parse_info(response)?;
     println!("{}", format_info(&info));
     Ok(())
