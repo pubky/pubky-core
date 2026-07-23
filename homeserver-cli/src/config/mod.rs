@@ -24,12 +24,16 @@ impl ConfigToml {
         let content = match std::fs::read_to_string(&config_path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                log::debug!("config file not found at '{}', skipping", config_path.display());
+                log::debug!(
+                    "config file not found at '{}', skipping",
+                    config_path.display()
+                );
                 return Ok(None);
             }
             Err(e) => {
-                return Err(e)
-                    .with_context(|| format!("failed to read config file: {}", config_path.display()))
+                return Err(e).with_context(|| {
+                    format!("failed to read config file: {}", config_path.display())
+                })
             }
         };
         let config = toml::from_str(&content)

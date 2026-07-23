@@ -162,7 +162,10 @@ mod tests {
 
     #[test]
     fn quota_display_unlimited() {
-        assert_eq!(Quota::Unlimited(UnlimitedTag::Unlimited).to_string(), "unlimited");
+        assert_eq!(
+            Quota::Unlimited(UnlimitedTag::Unlimited).to_string(),
+            "unlimited"
+        );
     }
 
     // --- RateLimit::from_str ---
