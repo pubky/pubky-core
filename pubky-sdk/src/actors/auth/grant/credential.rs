@@ -24,13 +24,15 @@ use pubky_common::{
 use reqwest::{Method, RequestBuilder};
 use tokio::sync::Mutex;
 
-use super::grant_exchange::credential_from_grant_exchange;
+use super::{
+    grant_exchange::credential_from_grant_exchange,
+    pop_signer::{DelegatedSignFn, GrantPopSigner},
+};
 use crate::actors::session::core::PubkySession;
 use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
     PubkyHttpClient,
     actors::session::SessionInfo,
-    actors::storage::resource::resolve_pubky,
     cross_log,
     errors::{AuthError, RequestError, Result},
     util::check_http_status,
@@ -39,6 +41,7 @@ use crate::{
 /// Refresh the bearer proactively when it has less than this many seconds left.
 pub(crate) const REFRESH_SLACK_SECS: u64 = 300;
 
+const GRANT_SESSION_PATH: &str = "/auth/grant/session";
 const STORED_GRANT_CREDENTIAL_PREFIX: &str = "pubky-grant-credential-v1";
 const STORED_GRANT_CREDENTIAL_PREFIX_FAMILY: &str = "pubky-grant-credential-";
 
@@ -64,8 +67,8 @@ pub(crate) struct GrantCredentialState {
     pub grant_jws: String,
     /// Decoded grant claims — exposes `iss`, `client_id`, `cnf`, `jti`, …
     pub grant_claims: GrantClaims,
-    /// `PoP` keypair bound to the grant's `cnf` claim. Signs refresh proofs.
-    pub client_keypair: Keypair,
+    /// `PoP` signer bound to the grant's `cnf` claim. Signs refresh proofs.
+    pub client_signer: GrantPopSigner,
     /// Homeserver public key (`PoP` audience).
     pub homeserver_pk: PublicKey,
     /// Latest server-reported session metadata.
@@ -104,6 +107,30 @@ struct StoredGrantCredential {
     client_key_secret: [u8; 32],
     /// Homeserver public key used as the `PoP` audience.
     homeserver_pk: PublicKey,
+}
+
+/// Non-secret durable metadata for browser delegated grant restore.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DelegatedGrantCredentialState {
+    /// User-signed grant JWS.
+    pub grant_jws: String,
+    /// Homeserver public key used as the `PoP` audience.
+    pub homeserver_pk: PublicKey,
+    /// `IndexedDB` key id for the non-extractable private `CryptoKey`.
+    pub key_id: String,
+    /// Public key for the delegated `PoP` signer.
+    pub client_pk: PublicKey,
+}
+
+impl fmt::Debug for DelegatedGrantCredentialState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DelegatedGrantCredentialState")
+            .field("grant_jws", &"<redacted>")
+            .field("homeserver_pk", &self.homeserver_pk)
+            .field("key_id", &self.key_id)
+            .field("client_pk", &self.client_pk)
+            .finish()
+    }
 }
 
 impl fmt::Debug for StoredGrantCredential {
@@ -179,7 +206,7 @@ impl GrantCredential {
         response: GrantSessionResponse,
         grant_jws: String,
         grant_claims: GrantClaims,
-        client_keypair: Keypair,
+        client_signer: GrantPopSigner,
         homeserver_pk: PublicKey,
     ) -> Self {
         let info = to_session_info(&response.session);
@@ -188,7 +215,7 @@ impl GrantCredential {
             token_expires_at: response.session.token_expires_at,
             grant_jws,
             grant_claims,
-            client_keypair,
+            client_signer,
             homeserver_pk,
             session: response.session,
         };
@@ -203,20 +230,33 @@ impl GrantCredential {
         self.state.lock().await.bearer.clone()
     }
 
-    /// Export the durable refresh material needed to restore this credential.
+    /// Export the portable local secret material needed to restore this credential.
     ///
-    /// The returned token intentionally does not include the current bearer.
-    /// Restoring uses the grant + `PoP` key to mint a fresh bearer instead.
-    /// Treat it as a bearer-equivalent secret until the grant expires or is
-    /// revoked.
-    pub async fn export_secret(&self) -> String {
+    /// Returns `None` for delegated/browser-held `PoP` signers because their
+    /// private key material is intentionally not extractable.
+    pub async fn export_local_secret(&self) -> Option<String> {
         let state = self.state.lock().await;
-        StoredGrantCredential {
+        let client_key_secret = state.client_signer.local_secret()?;
+        Some(
+            StoredGrantCredential {
+                grant_jws: state.grant_jws.clone(),
+                client_key_secret,
+                homeserver_pk: state.homeserver_pk.clone(),
+            }
+            .encode(),
+        )
+    }
+
+    /// Export non-secret delegated restore metadata for browser-held keys.
+    pub async fn export_delegated_restore_state(&self) -> Option<DelegatedGrantCredentialState> {
+        let state = self.state.lock().await;
+        let signer = state.client_signer.delegated_state()?;
+        Some(DelegatedGrantCredentialState {
             grant_jws: state.grant_jws.clone(),
-            client_key_secret: state.client_keypair.secret(),
             homeserver_pk: state.homeserver_pk.clone(),
-        }
-        .encode()
+            key_id: signer.key_id,
+            client_pk: signer.public_key,
+        })
     }
 
     pub(crate) fn is_secret_token(token: &str) -> bool {
@@ -234,12 +274,36 @@ impl GrantCredential {
     /// - Propagates HTTP/server errors from `POST /auth/grant/session`.
     pub async fn import_secret(token: &str, client: &PubkyHttpClient) -> Result<Self> {
         let saved = StoredGrantCredential::decode(token)?;
-        let (grant_jws, grant_claims, client_keypair, homeserver_pk) = restore_material(saved)?;
+        let (grant_jws, grant_claims, client_signer, homeserver_pk) = restore_material(saved)?;
         credential_from_grant_exchange(
             client,
             grant_jws,
             grant_claims,
-            client_keypair,
+            client_signer,
+            homeserver_pk,
+        )
+        .await
+    }
+
+    /// Restore a delegated grant credential from origin-bound browser metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delegated grant metadata is invalid, if the
+    /// grant claims cannot be verified, or if the homeserver rejects the grant
+    /// session exchange.
+    pub async fn import_delegated_state(
+        state: DelegatedGrantCredentialState,
+        client: &PubkyHttpClient,
+        sign: DelegatedSignFn,
+    ) -> Result<Self> {
+        let (grant_jws, grant_claims, client_signer, homeserver_pk) =
+            restore_delegated_material(state, sign)?;
+        credential_from_grant_exchange(
+            client,
+            grant_jws,
+            grant_claims,
+            client_signer,
             homeserver_pk,
         )
         .await
@@ -261,16 +325,20 @@ impl GrantCredential {
         }
 
         let pop_jws = sign_pop_for_grant(
-            &state.client_keypair,
+            &state.client_signer,
             &state.homeserver_pk,
             &state.grant_claims.jti,
-        );
+        )
+        .await?;
         let body = serde_json::json!({ "grant": &state.grant_jws, "pop": pop_jws });
 
-        let url = format!("pubky{}/auth/grant/session", state.grant_claims.iss.z32());
-        let resolved = resolve_pubky(&url)?;
         let resp = client
-            .cross_request(Method::POST, resolved)
+            .cross_request_via_homeserver(
+                Method::POST,
+                &state.homeserver_pk,
+                &state.grant_claims.iss,
+                GRANT_SESSION_PATH,
+            )
             .await?
             .json(&body)
             .send()
@@ -286,6 +354,20 @@ impl GrantCredential {
         state.session = parsed.session;
         Ok(())
     }
+
+    async fn grant_session_request(
+        &self,
+        client: &PubkyHttpClient,
+        method: Method,
+    ) -> Result<RequestBuilder> {
+        let (homeserver, user) = {
+            let state = self.state.lock().await;
+            (state.homeserver_pk.clone(), state.grant_claims.iss.clone())
+        };
+        client
+            .cross_request_via_homeserver(method, &homeserver, &user, GRANT_SESSION_PATH)
+            .await
+    }
 }
 
 // Mirrors the cfg pair on the trait definition: native gets `Send` bounds
@@ -300,14 +382,9 @@ impl SessionCredential for GrantCredential {
     }
 
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
-        // Hit the auth endpoint directly and attach the bearer ourselves —
-        // `/auth/grant/session` is not a storage URL.
-        let user_pk = self.state.lock().await.grant_claims.iss.clone();
-        let url = format!("pubky{}/auth/grant/session", user_pk.z32());
-        let resolved = resolve_pubky(&url)?;
         let bearer = self.current_bearer().await;
-        let response = client
-            .cross_request(Method::DELETE, resolved)
+        let response = self
+            .grant_session_request(client, Method::DELETE)
             .await?
             .bearer_auth(&bearer)
             .send()
@@ -331,20 +408,18 @@ impl SessionCredential for GrantCredential {
         Ok(rb.bearer_auth(bearer))
     }
 
+    async fn can_attach_to(&self, homeserver: &PublicKey) -> bool {
+        &self.state.lock().await.homeserver_pk == homeserver
+    }
+
     async fn revalidate(
         &self,
         client: &PubkyHttpClient,
         _user: &PublicKey,
     ) -> Result<Option<SessionInfo>> {
-        // We hit the auth endpoint directly (not the storage path) and
-        // attach the bearer ourselves — `/auth/grant/session` is not a
-        // storage URL.
-        let user_pk = self.state.lock().await.grant_claims.iss.clone();
-        let url = format!("pubky{}/auth/grant/session", user_pk.z32());
-        let resolved = resolve_pubky(&url)?;
         let bearer = self.current_bearer().await;
-        let response = client
-            .cross_request(Method::GET, resolved)
+        let response = self
+            .grant_session_request(client, Method::GET)
             .await?
             .bearer_auth(&bearer)
             .send()
@@ -385,8 +460,8 @@ impl PubkySession {
     ///
     /// This mints a fresh bearer from the token's grant and `PoP` key instead
     /// of replaying an old short-lived bearer. The token should come from
-    /// [`GrantSessionView::export_secret`](crate::GrantSessionView::export_secret)
-    /// or [`GrantCredential::export_secret`].
+    /// [`GrantSessionView::export_local_secret`](crate::GrantSessionView::export_local_secret)
+    /// or [`GrantCredential::export_local_secret`].
     ///
     /// # Errors
     /// - See [`GrantCredential::import_secret`].
@@ -407,7 +482,7 @@ fn to_session_info(session: &GrantSessionInfo) -> SessionInfo {
 
 fn restore_material(
     saved: StoredGrantCredential,
-) -> Result<(String, GrantClaims, Keypair, PublicKey)> {
+) -> Result<(String, GrantClaims, GrantPopSigner, PublicKey)> {
     let grant_claims = GrantClaims::decode(&saved.grant_jws).map_err(|err| {
         AuthError::Validation(format!("invalid stored grant credential grant JWS: {err}"))
     })?;
@@ -426,7 +501,35 @@ fn restore_material(
     Ok((
         saved.grant_jws,
         grant_claims,
-        client_keypair,
+        GrantPopSigner::local(client_keypair),
+        saved.homeserver_pk,
+    ))
+}
+
+fn restore_delegated_material(
+    saved: DelegatedGrantCredentialState,
+    sign: DelegatedSignFn,
+) -> Result<(String, GrantClaims, GrantPopSigner, PublicKey)> {
+    let grant_claims = GrantClaims::decode(&saved.grant_jws).map_err(|err| {
+        AuthError::Validation(format!(
+            "invalid delegated grant credential grant JWS: {err}"
+        ))
+    })?;
+    if grant_claims.exp <= now_unix() {
+        return Err(AuthError::Validation("delegated grant credential has expired".into()).into());
+    }
+
+    if saved.client_pk != grant_claims.cnf {
+        return Err(AuthError::Validation(
+            "delegated grant credential client key does not match the grant cnf".into(),
+        )
+        .into());
+    }
+
+    Ok((
+        saved.grant_jws,
+        grant_claims,
+        GrantPopSigner::delegated(saved.key_id, saved.client_pk, sign),
         saved.homeserver_pk,
     ))
 }
@@ -442,22 +545,25 @@ fn invalid_stored_grant() -> AuthError {
 /// Builds the canonical `pubky-pop` claims (`aud`, `gid`, `nonce`, `iat`)
 /// and signs them with the client keypair via
 /// [`pubky_common::auth::jws::sign_jws`].
-pub(crate) fn sign_pop_for_grant(
-    client_keypair: &Keypair,
+pub(crate) async fn sign_pop_for_grant(
+    client_signer: &GrantPopSigner,
     homeserver_pk: &PublicKey,
     grant_id: &pubky_common::auth::jws::GrantId,
-) -> String {
+) -> Result<String> {
     let claims = PopProofClaims {
         aud: homeserver_pk.clone(),
         gid: grant_id.clone(),
         nonce: PopNonce::generate(),
         iat: now_unix(),
     };
-    pubky_common::auth::jws::sign_jws(client_keypair, POP_JWS_TYP, &claims)
+    client_signer.sign_jws(POP_JWS_TYP, &claims).await
 }
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
+    use pkarr::{Cache, InMemoryCache};
     use pubky_common::{
         auth::jws::{ClientId, GRANT_JWS_TYP, GrantId},
         capabilities::Capability,
@@ -483,6 +589,58 @@ mod tests {
         let error = restore_material(stored).unwrap_err().to_string();
 
         assert!(error.contains("client key does not match"));
+    }
+
+    #[test]
+    fn restore_delegated_material_rejects_mismatched_client_key() {
+        let (stored, _claims) = stored_credential(now_unix() + 3600);
+        let saved = DelegatedGrantCredentialState {
+            grant_jws: stored.grant_jws,
+            homeserver_pk: stored.homeserver_pk,
+            key_id: "delegated-test-key".into(),
+            client_pk: Keypair::random().public_key(),
+        };
+
+        let error = restore_delegated_material(saved, test_delegated_signer())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("client key does not match"));
+    }
+
+    #[test]
+    fn restore_delegated_material_rejects_expired_grant() {
+        let (stored, claims) = stored_credential(now_unix().saturating_sub(1));
+        let saved = DelegatedGrantCredentialState {
+            grant_jws: stored.grant_jws,
+            homeserver_pk: stored.homeserver_pk,
+            key_id: "delegated-test-key".into(),
+            client_pk: claims.cnf,
+        };
+
+        let error = restore_delegated_material(saved, test_delegated_signer())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("has expired"));
+    }
+
+    #[tokio::test]
+    async fn export_local_secret_is_only_available_for_local_signers() {
+        let (stored, claims) = stored_credential(now_unix() + 3600);
+        let local_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
+        let delegated_signer = GrantPopSigner::delegated(
+            "delegated-test-key".into(),
+            claims.cnf.clone(),
+            test_delegated_signer(),
+        );
+
+        let local = test_credential(stored.clone(), claims.clone(), local_signer);
+        let delegated = test_credential(stored, claims, delegated_signer);
+
+        assert!(local.export_local_secret().await.is_some());
+        assert!(delegated.export_local_secret().await.is_none());
+        assert!(delegated.export_delegated_restore_state().await.is_some());
     }
 
     #[test]
@@ -523,5 +681,94 @@ mod tests {
             homeserver_pk: homeserver_keypair.public_key(),
         };
         (stored, claims)
+    }
+
+    fn test_credential(
+        stored: StoredGrantCredential,
+        claims: GrantClaims,
+        client_signer: GrantPopSigner,
+    ) -> GrantCredential {
+        let now = now_unix();
+        GrantCredential::from_response(
+            GrantSessionResponse {
+                token: "test-bearer".into(),
+                session: GrantSessionInfo {
+                    homeserver: stored.homeserver_pk.clone(),
+                    pubky: claims.iss.clone(),
+                    client_id: claims.client_id.clone(),
+                    capabilities: claims.caps.clone(),
+                    grant_id: claims.jti.clone(),
+                    token_expires_at: now + 300,
+                    grant_expires_at: claims.exp,
+                    created_at: now,
+                },
+            },
+            stored.grant_jws,
+            claims,
+            client_signer,
+            stored.homeserver_pk,
+        )
+    }
+
+    fn test_delegated_signer() -> DelegatedSignFn {
+        super::super::pop_signer::delegated_sign_callback(|_| async { Ok(vec![0; 64]) })
+    }
+
+    #[tokio::test]
+    async fn can_attach_to_only_matches_bound_homeserver() {
+        let bound = Keypair::random().public_key();
+        let other = Keypair::random().public_key();
+        let (mut stored, claims) = stored_credential(now_unix() + 3600);
+        stored.homeserver_pk = bound.clone();
+        let client_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
+        let credential = test_credential(stored, claims, client_signer);
+
+        assert!(
+            credential.can_attach_to(&bound).await,
+            "grant credential must attach to the homeserver it was minted for"
+        );
+        assert!(
+            !credential.can_attach_to(&other).await,
+            "grant credential must NOT attach to a homeserver it was not minted for"
+        );
+    }
+
+    #[tokio::test]
+    async fn grant_session_request_routes_through_bound_homeserver() {
+        use pkarr::{SignedPacket, dns::rdata::SVCB};
+
+        let (mut stored, claims) = stored_credential(now_unix() + 3600);
+        let homeserver_keypair = pkarr::Keypair::random();
+        stored.homeserver_pk =
+            PublicKey::try_from_z32(&homeserver_keypair.public_key().to_string()).unwrap();
+        let icann = SVCB::new(10, "example.com".try_into().unwrap());
+        let homeserver_packet = SignedPacket::builder()
+            .https(".".try_into().unwrap(), icann, 3600)
+            .sign(&homeserver_keypair)
+            .unwrap();
+        let client_signer = GrantPopSigner::local(Keypair::from_secret(&stored.client_key_secret));
+        let credential = test_credential(stored, claims.clone(), client_signer);
+
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
+        let mut builder = PubkyHttpClient::builder();
+        builder
+            .isolated_pkarr_test()
+            .pkarr(|b| b.cache(cache.clone()));
+        let client = builder.build().unwrap();
+        cache.put(&homeserver_keypair.public_key().into(), &homeserver_packet);
+
+        let request = credential
+            .grant_session_request(&client, Method::POST)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(request.url().host_str(), Some("example.com"));
+        assert_eq!(request.url().path(), "/auth/grant/session");
+        assert_eq!(
+            request.headers().get("pubky-host").unwrap(),
+            &claims.iss.z32()
+        );
     }
 }

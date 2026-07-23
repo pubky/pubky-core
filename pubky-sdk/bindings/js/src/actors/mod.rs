@@ -1,4 +1,5 @@
 pub mod auth_flow;
+pub(crate) mod browser_grant_key_store;
 pub mod cookie_session;
 pub mod deep_links;
 pub mod event_stream;
@@ -8,5 +9,6 @@ pub mod grant_session;
 mod in_flight;
 pub mod pkdns;
 pub mod session;
+pub mod session_store;
 pub mod signer;
 pub mod storage;

@@ -9,26 +9,27 @@
 use axum::{
     body::Body,
     extract::{RawQuery, State},
-    http::{header, Response, StatusCode},
+    http::{header, HeaderMap, Response, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
     },
 };
 use futures_util::stream::Stream;
-use pubky_common::crypto::PublicKey;
+use pubky_common::{crypto::PublicKey, storage};
 use serde::Deserialize;
 use std::{collections::HashMap, convert::Infallible, time::Instant};
+use tower_cookies::Cookies;
 use url::form_urlencoded;
 
 use crate::{
     client_server::{
-        auth::{has_read_permission, AuthSession},
+        auth::{grant::bearer::extract_bearer_token, has_read_permission, AuthSession},
         query_params::ListQueryParams,
         AppState,
     },
     constants::PUBLIC_ROOT,
-    metrics_server::routes::metrics::Metrics,
+    observability::ConnectionGuard,
     persistence::{
         files::events::{
             EventCursor, EventEntity, EventsService, PathFilter, MAX_EVENT_STREAM_USERS,
@@ -82,6 +83,36 @@ pub struct EventStreamQueryParams {
     pub paths: Vec<WebDavPath>,
 }
 
+#[derive(Clone, Copy)]
+enum EventStreamTenantScope<'a> {
+    PublicOnly,
+    PrivateSingleTenant(&'a PublicKey),
+    PrivateUnsupported,
+}
+
+impl<'a> EventStreamTenantScope<'a> {
+    fn from_query(paths: &[WebDavPath], user_cursors: &'a [(PublicKey, Option<String>)]) -> Self {
+        if !paths
+            .iter()
+            .any(|path| storage::is_private_path(path.as_str()))
+        {
+            return Self::PublicOnly;
+        }
+
+        match user_cursors {
+            [(tenant, _)] => Self::PrivateSingleTenant(tenant),
+            _ => Self::PrivateUnsupported,
+        }
+    }
+
+    fn tenant(self) -> Option<&'a PublicKey> {
+        match self {
+            Self::PrivateSingleTenant(tenant) => Some(tenant),
+            Self::PublicOnly | Self::PrivateUnsupported => None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RawEventStreamQueryParams {
     #[serde(default)]
@@ -109,9 +140,15 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
         match key.as_ref() {
             "user" => users.push(value.to_string()),
             "limit" => {
-                limit = Some(value.parse::<u16>().map_err(|_| {
+                let parsed = value.parse::<u16>().map_err(|_| {
                     EventStreamError::InvalidParameter(format!("Invalid limit: {}", value))
-                })?);
+                })?;
+                if parsed == 0 {
+                    return Err(EventStreamError::InvalidParameter(
+                        "limit must be at least 1".to_string(),
+                    ));
+                }
+                limit = Some(parsed);
             }
             "reverse" => {
                 reverse = value == "true" || value == "1";
@@ -120,10 +157,8 @@ fn parse_query_params(query: &str) -> Result<EventStreamQueryParams, EventStream
                 live = value == "true" || value == "1";
             }
             // `path` is repeatable; empty values are ignored.
-            "path" => {
-                if !value.is_empty() {
-                    paths.push(value.to_string());
-                }
+            "path" if !value.is_empty() => {
+                paths.push(value.to_string());
             }
             _ => {} // Ignore unknown parameters
         }
@@ -212,34 +247,22 @@ impl TryFrom<RawEventStreamQueryParams> for EventStreamQueryParams {
     }
 }
 
-/// Format an event entity as SSE event data.
-/// Returns the multiline data field content.
-/// Each line will be prefixed with "data: " by the SSE library.
+/// Render a batch of events as the plain-text feed body used by `GET /events/`.
 ///
-/// ## Format
-/// ```text
-/// data: pubky://user_pubkey/pub/example.txt
-/// data: cursor: 42
-/// data: content_hash: r0NJufX5oaagQE3qNtzJSZvLJcmtwRK3zJqTyuQfMmI= (only for PUT events, base64-encoded blake3 hash)
-/// ```
-fn formatted_event_path(entity: &EventEntity) -> String {
-    // TODO: switch this formatter to use the shared `PubkyResource` type from `pubky-sdk`
-    // once the homeserver crate depends on it directly, so we avoid ad-hoc string
-    // reconstruction here.
-    format!("pubky://{}{}", entity.user_pubkey.z32(), entity.path.path())
-}
+/// One line per event (`<TYPE> pubky://<user>/<path>`), followed by a trailing
+/// `cursor: <id>` line pointing at the last event so the caller can resume.
+/// Returns an empty string when there are no events (and therefore no cursor line).
+fn format_events_feed(events: &[EventEntity]) -> String {
+    let mut result = events
+        .iter()
+        .map(|event| format!("{} {}", event.event_type, event.pubky_uri()))
+        .collect::<Vec<String>>();
 
-fn event_to_sse_data(entity: &EventEntity) -> String {
-    let path = formatted_event_path(entity);
-    let cursor_line = format!("cursor: {}", entity.cursor());
-
-    let mut lines = vec![path, cursor_line];
-    if let Some(hash) = entity.event_type.content_hash() {
-        let hash_base64 =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash.as_bytes());
-        lines.push(format!("content_hash: {}", hash_base64));
+    if let Some(next_cursor) = events.last().map(|event| event.id.to_string()) {
+        result.push(format!("cursor: {}", next_cursor));
     }
-    lines.join("\n")
+
+    result.join("\n")
 }
 
 /// Legacy text-based endpoint for fetching historical events.
@@ -287,20 +310,10 @@ pub async fn feed(
         .metrics
         .record_events_db_query(query_start.elapsed().as_millis());
 
-    let mut result = events
-        .iter()
-        .map(|event| format!("{} {}", event.event_type, formatted_event_path(event)))
-        .collect::<Vec<String>>();
-    let next_cursor = events.last().map(|event| event.id.to_string());
-
-    if let Some(next_cursor) = next_cursor {
-        result.push(format!("cursor: {}", next_cursor));
-    }
-
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain")
-        .body(Body::from(result.join("\n")))
+        .body(Body::from(format_events_feed(&events)))
         .unwrap())
 }
 
@@ -325,15 +338,24 @@ pub async fn feed(
 pub async fn feed_stream(
     State(state): State<AppState>,
     session: Option<AuthSession>,
+    headers: HeaderMap,
+    cookies: Cookies,
     raw_query: RawQuery,
 ) -> HttpResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let params =
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
+    let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
-    // Authorize the requested path filters before doing any work. Public paths
-    // need no session; any `/priv/` path requires a session whose single user
-    // matches and that holds a covering read capability.
-    let allowed_paths = authorized_paths(&params.paths, &params.user_cursors, session.as_ref())?;
+    // Bearer auth disables the homeserver-addressed cookie fallback.
+    let session = match session {
+        Some(session) => Some(session),
+        None if !has_bearer_auth(&headers) => {
+            resolve_tenant_cookie_session(&state, &cookies, tenant_scope).await
+        }
+        None => None,
+    };
+
+    let allowed_paths = authorized_paths(&params.paths, tenant_scope, session.as_ref())?;
 
     let mut user_cursor_map =
         resolve_user_cursors(&params.user_cursors, &state.events_service, &state.sql_db)
@@ -385,7 +407,7 @@ pub async fn feed_stream(
 
                 yield Ok(Event::default()
                     .event(event.event_type.to_string())
-                    .data(event_to_sse_data(&event)));
+                    .data(event.to_sse_data()));
 
                 total_sent += 1;
 
@@ -433,7 +455,7 @@ pub async fn feed_stream(
 
                         yield Ok(Event::default()
                             .event(event.event_type.to_string())
-                            .data(event_to_sse_data(&event)));
+                            .data(event.to_sse_data()));
 
                         total_sent += 1;
 
@@ -502,39 +524,40 @@ async fn resolve_user_cursors(
     Ok(user_cursor_map)
 }
 
-/// Authorize the requested `path`s and return the allow-list to apply to both
-/// the historical replay and the live phase.
-///
-/// - No requested path → implicit public-only (`/pub/`), no session needed.
-/// - Public (`/pub/...`) paths need no capability.
-/// - Any private (`/priv/...`) path requires a session (else 401), exactly one
-///   `user=` equal to the session user (else 403), and a read capability
-///   covering each private path (else 403).
-///
-/// If any requested private path is unauthorized the whole subscription is
-/// rejected.
+fn has_bearer_auth(headers: &HeaderMap) -> bool {
+    extract_bearer_token(headers).has_bearer_scheme()
+}
+
+async fn resolve_tenant_cookie_session(
+    state: &AppState,
+    cookies: &Cookies,
+    scope: EventStreamTenantScope<'_>,
+) -> Option<AuthSession> {
+    let EventStreamTenantScope::PrivateSingleTenant(tenant) = scope else {
+        return None;
+    };
+    let cookie_value = cookies.get(&tenant.z32()).map(|c| c.value().to_string());
+    state
+        .auth_state
+        .cookie_auth_service
+        .resolve_session_from_cookie(cookie_value, tenant)
+        .await
+}
+
 fn authorized_paths(
     paths: &[WebDavPath],
-    user_cursors: &[(PublicKey, Option<String>)],
+    scope: EventStreamTenantScope<'_>,
     session: Option<&AuthSession>,
 ) -> Result<Vec<PathFilter>, HttpError> {
-    // No path requested: default to public-only.
     if paths.is_empty() {
         return Ok(vec![
             WebDavPath::new_unchecked(PUBLIC_ROOT.to_string()).into()
         ]);
     }
 
-    // The tenant to authorize each path against. A private read is single-tenant,
-    // so a tenant only exists when the subscription names exactly one user.
-    let tenant = match user_cursors {
-        [(pubkey, _)] => Some(pubkey),
-        _ => None,
-    };
-
     let mut allowed = Vec::with_capacity(paths.len());
     for path in paths {
-        has_read_permission(session, tenant, path)?;
+        has_read_permission(session, scope.tenant(), path)?;
         allowed.push(path.clone().into());
     }
     Ok(allowed)
@@ -564,33 +587,10 @@ fn should_include_live_event(
     allowed_paths.iter().any(|filter| filter.matches(path))
 }
 
-/// Guard to ensure connection cleanup on any exit path
-struct ConnectionGuard {
-    metrics: Metrics,
-    start: Instant,
-}
-
-impl ConnectionGuard {
-    fn new(metrics: Metrics) -> Self {
-        metrics.increment_active_connections();
-        Self {
-            metrics,
-            start: Instant::now(),
-        }
-    }
-}
-
-impl Drop for ConnectionGuard {
-    fn drop(&mut self) {
-        self.metrics.decrement_active_connections();
-        self.metrics
-            .record_connection_closed(self.start.elapsed().as_millis());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client_server::auth::cookie::persistence::{SessionEntity, SessionSecret};
     use crate::client_server::auth::grant::session::GrantSession;
     use pubky_common::auth::jws::GrantId;
     use pubky_common::capabilities::{Capabilities, Capability};
@@ -617,6 +617,19 @@ mod tests {
         })
     }
 
+    fn cookie_session(user_key: PublicKey, capabilities: Capabilities) -> AuthSession {
+        AuthSession::Cookie(SessionEntity {
+            id: 1,
+            secret: SessionSecret::random(),
+            user_id: 1,
+            user_pubkey: user_key,
+            capabilities,
+            created_at: sqlx::types::chrono::DateTime::from_timestamp(0, 0)
+                .expect("valid timestamp")
+                .naive_utc(),
+        })
+    }
+
     fn cursors(keys: &[&PublicKey]) -> Vec<(PublicKey, Option<String>)> {
         keys.iter().map(|k| ((*k).clone(), None)).collect()
     }
@@ -628,84 +641,38 @@ mod tests {
             .status()
     }
 
-    #[test]
-    fn connection_guard_drops_on_early_return() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
-
-        // Create guard and return early - guard should still decrement
-        fn early_return_fn(metrics: Metrics) -> Result<(), &'static str> {
-            let _guard = ConnectionGuard::new(metrics.clone());
-            // Simulate early return (e.g., error condition)
-            return Err("early exit");
-            #[allow(unreachable_code)]
-            {
-                Ok(())
-            }
-        }
-
-        let result = early_return_fn(metrics.clone());
-        assert!(result.is_err(), "Should have returned early");
-
-        // Verify guard cleaned up properly despite early return
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after early return: {}",
-            output
-        );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count"),
-            "Should have recorded connection duration: {}",
-            output
-        );
+    fn authorize(
+        paths: &[WebDavPath],
+        user_cursors: &[(PublicKey, Option<String>)],
+        session: Option<&AuthSession>,
+    ) -> Result<Vec<PathFilter>, HttpError> {
+        authorized_paths(
+            paths,
+            EventStreamTenantScope::from_query(paths, user_cursors),
+            session,
+        )
     }
 
-    #[tokio::test]
-    async fn connection_guard_concurrent() {
-        let metrics = Metrics::new().expect("Failed to create metrics");
+    fn authorization_headers(value: axum::http::HeaderValue) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, value);
+        headers
+    }
 
-        // Create 5 concurrent guards using tokio::spawn
-        let handles: Vec<_> = (0..5)
-            .map(|i| {
-                let metrics_clone = metrics.clone();
-                tokio::spawn(async move {
-                    let _guard = ConnectionGuard::new(metrics_clone);
-                    // Simulate some work
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10 * i)).await;
-                    // Guard will be dropped here
-                })
-            })
-            .collect();
+    #[test]
+    fn has_bearer_auth_uses_bearer_scheme() {
+        let cases = [
+            (b"Bearer token".as_slice(), true),
+            (b"Bearer \xff".as_slice(), true),
+            (b"Basic \xff".as_slice(), false),
+        ];
 
-        // While tasks are running, check active connections
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        let output = metrics.render().expect("Failed to render metrics");
-        // We should have some active connections (implementation dependent on timing)
-        assert!(
-            output.contains("event_stream_active_connections"),
-            "Should have active connections metric: {}",
-            output
-        );
-
-        // Wait for all tasks to complete
-        for handle in handles {
-            handle.await.unwrap();
+        for (value, expected) in cases {
+            let headers = authorization_headers(
+                axum::http::HeaderValue::from_bytes(value).expect("valid header bytes"),
+            );
+            assert_eq!(has_bearer_auth(&headers), expected, "{value:?}");
         }
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        // All guards should be cleaned up
-        let output = metrics.render().expect("Failed to render metrics");
-        assert!(
-            output.contains("event_stream_active_connections") && output.contains("} 0"),
-            "Should have 0 active connections after all concurrent guards dropped: {}",
-            output
-        );
-        assert!(
-            output.contains("event_stream_connection_duration_ms_count") && output.contains("} 5"),
-            "Should have recorded 5 connection durations: {}",
-            output
-        );
     }
 
     #[test]
@@ -739,24 +706,50 @@ mod tests {
     }
 
     #[test]
-    fn no_path_defaults_to_public_dir_filter() {
+    fn parse_rejects_zero_limit() {
+        let err = parse_query_params(&format!("user={}&limit=0", pk().z32())).unwrap_err();
+        assert_eq!(err.to_string(), "limit must be at least 1");
+    }
+
+    #[test]
+    fn authorized_paths_defaults_to_public_dir_filter() {
         let u = pk();
-        let filters = authorized_paths(&[], &cursors(&[&u]), None).unwrap();
+        let filters = authorize(&[], &cursors(&[&u]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 
     #[test]
-    fn anonymous_private_path_is_unauthorized() {
+    fn authorized_paths_rejects_anonymous_private_path() {
         let u = pk();
-        let status = reject_status(authorized_paths(&[wd("/priv/app/")], &cursors(&[&u]), None));
+        let status = reject_status(authorize(&[wd("/priv/app/")], &cursors(&[&u]), None));
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[test]
-    fn private_path_with_multiple_users_is_forbidden() {
+    fn authorized_paths_allows_cookie_session_own_private_path() {
+        let owner = pk();
+        let session = cookie_session(owner.clone(), Capabilities::from(vec![Capability::root()]));
+        let filters = authorize(&[wd("/priv/app/")], &cursors(&[&owner]), Some(&session)).unwrap();
+        assert_eq!(filters, vec![pf("/priv/app/")]);
+    }
+
+    #[test]
+    fn authorized_paths_rejects_wrong_tenant() {
+        let (a, b) = (pk(), pk());
+        let session = cookie_session(a, Capabilities::from(vec![Capability::root()]));
+        let status = reject_status(authorize(
+            &[wd("/priv/app/")],
+            &cursors(&[&b]),
+            Some(&session),
+        ));
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn authorized_paths_rejects_private_path_with_multiple_users() {
         let (a, b) = (pk(), pk());
         let session = grant_session(a.clone(), Capabilities::from(vec![Capability::root()]));
-        let status = reject_status(authorized_paths(
+        let status = reject_status(authorize(
             &[wd("/priv/app/")],
             &cursors(&[&a, &b]),
             Some(&session),
@@ -765,14 +758,13 @@ mod tests {
     }
 
     #[test]
-    fn private_path_under_scoped_session_is_forbidden() {
+    fn authorized_paths_rejects_under_scoped_private_path() {
         let owner = pk();
         let session = grant_session(
             owner.clone(),
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        // A sibling scope not covered by the read cap.
-        let status = reject_status(authorized_paths(
+        let status = reject_status(authorize(
             &[wd("/priv/other/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -781,13 +773,13 @@ mod tests {
     }
 
     #[test]
-    fn mixed_public_and_private_authorized_union() {
+    fn authorized_paths_allows_mixed_public_and_private_union() {
         let owner = pk();
         let session = grant_session(
             owner.clone(),
             Capabilities::from(vec![Capability::read("/priv/app/")]),
         );
-        let filters = authorized_paths(
+        let filters = authorize(
             &[wd("/pub/"), wd("/priv/app/")],
             &cursors(&[&owner]),
             Some(&session),
@@ -797,9 +789,9 @@ mod tests {
     }
 
     #[test]
-    fn public_paths_with_multiple_users_are_authorized() {
+    fn authorized_paths_allows_public_paths_with_multiple_users() {
         let (a, b) = (pk(), pk());
-        let filters = authorized_paths(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
+        let filters = authorize(&[wd("/pub/")], &cursors(&[&a, &b]), None).unwrap();
         assert_eq!(filters, vec![pf("/pub/")]);
     }
 }

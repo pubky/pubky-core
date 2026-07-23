@@ -60,8 +60,3 @@ pub fn validate_capabilities(input: &str) -> JsResult<String> {
 
     Ok(normalized)
 }
-
-/// Internal: same as `validateCapabilities` but returns a Rust error.
-pub(crate) fn validate_caps_for_start(input: &str) -> Result<String, PubkyError> {
-    validate_capabilities(input)
-}

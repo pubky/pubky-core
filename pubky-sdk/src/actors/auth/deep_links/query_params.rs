@@ -1,3 +1,5 @@
+use std::io;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use pubky_common::{auth::jws::ClientId, capabilities::Capabilities, crypto::PublicKey};
 use url::Url;
@@ -26,7 +28,7 @@ pub(super) fn parse_secret(url: &Url) -> Result<[u8; 32], DeepLinkParseError> {
         let msg = format!("Expected 32 bytes, got {}", e.len());
         DeepLinkParseError::InvalidQueryParameter(
             "secret",
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg)),
+            Box::new(io::Error::new(io::ErrorKind::InvalidData, msg)),
         )
     })
 }
@@ -77,6 +79,18 @@ pub(super) fn append_signup_params(
     signup_token: Option<&str>,
 ) {
     append_signin_params(url, capabilities, relay, secret);
+    let mut query = url.query_pairs_mut();
+    query.append_pair("hs", &homeserver.z32());
+    if let Some(signup_token) = signup_token {
+        query.append_pair("st", signup_token);
+    }
+}
+
+pub(super) fn append_direct_signup_params(
+    url: &mut Url,
+    homeserver: &PublicKey,
+    signup_token: Option<&str>,
+) {
     let mut query = url.query_pairs_mut();
     query.append_pair("hs", &homeserver.z32());
     if let Some(signup_token) = signup_token {

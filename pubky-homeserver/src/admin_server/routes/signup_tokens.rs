@@ -98,6 +98,8 @@ mod tests {
                 FileService::new_from_context(context).unwrap(),
                 "",
                 context.user_service.clone(),
+                context.events_service.clone(),
+                context.metrics.clone(),
             ),
             "test",
         ))

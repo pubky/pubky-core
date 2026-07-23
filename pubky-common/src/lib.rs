@@ -15,6 +15,7 @@ mod keys;
 pub mod namespaces;
 pub mod recovery_file;
 pub mod session;
+pub mod storage;
 
 pub mod timestamp {
     //! Timestamp used across Pubky crates.

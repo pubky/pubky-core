@@ -2,7 +2,7 @@ use url::Url;
 
 use pubky_common::{
     auth::jws::ClientId,
-    crypto::{Keypair, random_bytes},
+    crypto::{Keypair, PublicKey, random_bytes},
 };
 
 use crate::actors::DEFAULT_HTTP_RELAY_INBOX;
@@ -11,6 +11,7 @@ use crate::actors::auth::deep_links::{
     SignupGrantParams,
 };
 use crate::actors::auth::grant::flow::PubkyGrantAuthFlow;
+use crate::actors::auth::grant::pop_signer::{DelegatedSignFn, GrantPopSigner};
 use crate::actors::auth::kind::AuthFlowKind;
 use crate::actors::auth::relay::auth_relay_listener::AuthRelayListener;
 use crate::errors::Result;
@@ -30,7 +31,7 @@ pub struct GrantAuthFlowBuilder {
     auth_kind: AuthFlowKind,
     client_secret: [u8; 32],
     client_id: ClientId,
-    client_keypair: Option<Keypair>,
+    client_signer: GrantPopSigner,
 }
 
 impl GrantAuthFlowBuilder {
@@ -43,7 +44,7 @@ impl GrantAuthFlowBuilder {
             auth_kind,
             client_secret: random_bytes::<32>(),
             client_id,
-            client_keypair: None,
+            client_signer: GrantPopSigner::local(Keypair::random()),
         }
     }
 
@@ -69,10 +70,23 @@ impl GrantAuthFlowBuilder {
     }
 
     /// Pin a specific Ed25519 keypair as the grant's `cnf` claim and `PoP` signer.
-    /// If omitted, a fresh random keypair is generated at [`Self::start`].
+    /// If omitted, the builder uses the fresh random local keypair generated at construction.
     #[must_use]
     pub fn client_keypair(mut self, keypair: Keypair) -> Self {
-        self.client_keypair = Some(keypair);
+        self.client_signer = GrantPopSigner::local(keypair);
+        self
+    }
+
+    /// Use a delegated PoP signer, for example in a browser environment.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn delegated_client_signer(
+        mut self,
+        key_id: String,
+        public_key: PublicKey,
+        sign: DelegatedSignFn,
+    ) -> Self {
+        self.client_signer = GrantPopSigner::delegated(key_id, public_key, sign);
         self
     }
 
@@ -90,7 +104,7 @@ impl GrantAuthFlowBuilder {
             auth_kind,
             client_secret,
             client_id,
-            client_keypair,
+            client_signer,
         } = self;
 
         let client = match client {
@@ -98,8 +112,7 @@ impl GrantAuthFlowBuilder {
             None => PubkyHttpClient::new()?,
         };
 
-        let client_keypair = client_keypair.unwrap_or_else(Keypair::random);
-        let client_pk = client_keypair.public_key();
+        let client_pk = client_signer.public_key();
 
         let auth_url = match auth_kind {
             AuthFlowKind::SignIn => DeepLink::SigninGrant(SigninGrantDeepLink::new(
@@ -141,7 +154,7 @@ impl GrantAuthFlowBuilder {
             relay_listener,
             client,
             auth_url.into(),
-            client_keypair,
+            client_signer,
         ))
     }
 }

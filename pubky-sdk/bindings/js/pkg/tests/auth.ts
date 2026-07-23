@@ -63,6 +63,28 @@ test("Auth: 3rd party signup", async (t) => {
   t.end();
 });
 
+test("Auth: direct signup deeplink", async (t) => {
+  const sdk = Pubky.testnet();
+
+  const signer = sdk.signer(Keypair.random());
+  const signupToken = await createSignupToken();
+  // A direct signup link carries only the homeserver (+ token).
+  const deeplink = `pubkyauth://direct_signup?hs=${HOMESERVER_PUBLICKEY.z32()}&st=${encodeURIComponent(
+    signupToken,
+  )}`;
+
+  await signer.handleDeepLink(deeplink);
+
+  const session = await signer.signin("direct-signup-js.test");
+  t.equal(
+    session.info.publicKey.z32(),
+    signer.publicKey.z32(),
+    "session belongs to expected user",
+  );
+
+  t.end();
+});
+
 test("Auth: 3rd party signin", async (t) => {
   const sdk = Pubky.testnet();
 
@@ -111,7 +133,7 @@ test("Grant auth: 3rd party signin", async (t) => {
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   const clientId = "grant-js.test";
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     capabilities,
     AuthFlowKind.signin(),
     { clientId, relay: TESTNET_HTTP_RELAY },
@@ -156,7 +178,7 @@ test("Grant auth: 3rd party signup", async (t) => {
 
   const capabilities = "/pub/pubky.app/:rw,/pub/foo.bar/file:r";
   const clientId = "grant-signup-js.test";
-  const flow = sdk.startGrantAuthFlow(
+  const flow = await sdk.startGrantAuthFlow(
     capabilities,
     AuthFlowKind.signup(HOMESERVER_PUBLICKEY, signupToken),
     { clientId, relay: TESTNET_HTTP_RELAY },
@@ -267,7 +289,7 @@ test("startGrantAuthFlow: rejects malformed inputs; normalizes valid; allows emp
   const clientId = "grant-validation-js.test";
 
   try {
-    sdk.startGrantAuthFlow(
+    await sdk.startGrantAuthFlow(
       "/ok/:rw,not/a/cap,/also:bad:x" as any,
       AuthFlowKind.signin(),
       { clientId, relay: TESTNET_HTTP_RELAY },
@@ -294,7 +316,7 @@ test("startGrantAuthFlow: rejects malformed inputs; normalizes valid; allows emp
   }
 
   {
-    const flow = sdk.startGrantAuthFlow(
+    const flow = await sdk.startGrantAuthFlow(
       "/pub/example/:wr" as any,
       AuthFlowKind.signin(),
       { clientId, relay: TESTNET_HTTP_RELAY },
@@ -308,7 +330,7 @@ test("startGrantAuthFlow: rejects malformed inputs; normalizes valid; allows emp
   }
 
   {
-    const flow = sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
+    const flow = await sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
       clientId,
       relay: TESTNET_HTTP_RELAY,
     });
@@ -327,7 +349,7 @@ test("startGrantAuthFlow: rejects malformed inputs; normalizes valid; allows emp
   }
 
   try {
-    sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
+    await sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
       clientId: "",
       relay: TESTNET_HTTP_RELAY,
     });
@@ -339,7 +361,7 @@ test("startGrantAuthFlow: rejects malformed inputs; normalizes valid; allows emp
   }
 
   try {
-    sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
+    await sdk.startGrantAuthFlow("", AuthFlowKind.signin(), {
       clientId,
       relay: "not a url",
     });
@@ -361,18 +383,27 @@ test("Grant auth: resume signin flow from saved state", async (t) => {
   await signer.signup(HOMESERVER_PUBLICKEY, signupToken);
 
   const capabilities = "/pub/pubky.app/:rw";
-  const originalFlow = sdk.startGrantAuthFlow(
+  const originalFlow = await sdk.startGrantAuthFlow(
     capabilities,
     AuthFlowKind.signin(),
     { clientId: "grant-resume-js.test", relay: TESTNET_HTTP_RELAY },
   );
-  const savedState = originalFlow.save();
   const savedUrl = originalFlow.authorizationUrl;
+  let savedState: string;
+  let delegated = false;
+  try {
+    savedState = originalFlow.saveDelegated();
+    delegated = true;
+  } catch (_error) {
+    savedState = originalFlow.saveLocal();
+  }
   originalFlow.free();
 
   await signer.approveAuthRequest(savedUrl);
 
-  const resumedFlow = sdk.resumeGrantAuthFlow(savedState);
+  const resumedFlow = delegated
+    ? await sdk.resumeDelegatedGrantAuthFlow(savedState)
+    : sdk.resumeGrantAuthFlow(savedState);
   t.equal(
     resumedFlow.authorizationUrl,
     savedUrl,
