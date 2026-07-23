@@ -13,6 +13,7 @@ categories = ["web-programming", "authentication", "cryptography"]
 
 [dependencies]
 anyhow.workspace = true
+urlencoding = "2"
 clap = { workspace = true, features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 url = { version = "2", features = ["serde"] }

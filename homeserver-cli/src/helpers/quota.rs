@@ -64,13 +64,13 @@ impl FromStr for RateLimit {
             .ok_or_else(|| err_msg(s))?;
         let (number, unit) = amount_part.split_at(unit_start);
 
-        if number.is_empty() || number.parse::<u64>().is_err() {
+        if number.is_empty() || number.parse::<u32>().is_err() {
             return Err(err_msg(s));
         }
-        if !matches!(unit, "b" | "kb" | "mb" | "gb") {
+        if !matches!(unit, "kb" | "mb" | "gb") {
             return Err(err_msg(s));
         }
-        if !matches!(period, "s" | "m" | "h") {
+        if !matches!(period, "s" | "m" | "h" | "d") {
             return Err(err_msg(s));
         }
 

@@ -1,5 +1,5 @@
-use super::error::map_http;
 use crate::commands::admin::context::AdminContext;
+use crate::commands::admin::quota::error::map_http;
 use crate::helpers::quota::UserQuota;
 use anyhow::{Context, Result};
 use clap::Args;

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use url::Url;
 
-use super::AdminCmd;
+use crate::commands::admin::AdminCmd;
 use crate::config::ConfigToml;
 
 use crate::helpers::http_client::{Auth, HttpClient};

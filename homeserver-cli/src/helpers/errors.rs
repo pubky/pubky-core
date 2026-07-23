@@ -13,13 +13,12 @@ pub enum ApiError {
     #[error("user not found")]
     UserNotFound,
 
-    #[error("invalid admin token")]
+    #[error("missing or invalid admin password")]
     InvalidToken,
 
-    #[error("wrong pubky format")]
-    WrongPubkyFormat,
+    #[error("invalid pubkey format")]
+    InvalidPubkyFormat,
 
-    #[allow(dead_code)]
-    #[error("server returned {status} for {url}")]
-    Unexpected { status: u16, url: String },
+    #[error("invalid quota format")]
+    InvalidQuotaFormat,
 }

@@ -3,9 +3,9 @@ use clap::{Args, Subcommand};
 use url::Url;
 mod context;
 pub mod error;
-pub mod generate_signup_token;
-pub mod get_info;
+pub mod info;
 pub mod quota;
+pub mod signup_token;
 pub mod user;
 use context::AdminContext;
 
@@ -23,8 +23,8 @@ pub struct AdminCmd {
 
 #[derive(Subcommand, Debug)]
 pub enum AdminSubcommands {
-    GetInfo(get_info::GetInfoArgs),
-    GenerateSignupToken(generate_signup_token::GenerateSignupTokenArgs),
+    Info(info::InfoArgs),
+    SignupToken(signup_token::SignupTokenCmd),
     User(user::UserCmd),
     Quota(quota::QuotaCmd),
 }
@@ -34,11 +34,11 @@ impl AdminCmd {
         let context = AdminContext::resolve(self, config.as_ref())?;
 
         match &self.subcommand {
-            AdminSubcommands::GetInfo(sbu_args) => {
-                get_info::run(context, sbu_args)?;
+            AdminSubcommands::Info(sbu_args) => {
+                info::run(context, sbu_args)?;
             }
-            AdminSubcommands::GenerateSignupToken(sbu_args) => {
-                generate_signup_token::run(context, sbu_args)?;
+            AdminSubcommands::SignupToken(sbu_args) => {
+                sbu_args.run(context)?;
             }
             AdminSubcommands::User(sbu_args) => {
                 sbu_args.run(context)?;
