@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 #[derive(Args, Debug)]
+#[command(about = "Generate a signup invite token with optional quota overrides")]
 pub struct GenerateArgs {
     #[arg(long)]
     pub storage_quota_mb: Option<Quota>,

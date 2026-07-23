@@ -5,6 +5,7 @@ pub mod set;
 use crate::commands::admin::context::AdminContext;
 
 #[derive(Args, Debug)]
+#[command(about = "Manage per-user quota settings")]
 pub struct QuotaCmd {
     #[command(subcommand)]
     pub subcommand: QuotaSubcommands,

@@ -6,6 +6,7 @@ use clap::Args;
 use pubky::PublicKey;
 
 #[derive(Args, Debug)]
+#[command(about = "Show the effective quota for a user")]
 pub struct GetArgs {
     pub pubky: PublicKey,
 }

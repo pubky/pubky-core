@@ -10,6 +10,7 @@ pub mod user;
 use context::AdminContext;
 
 #[derive(Args, Debug)]
+#[command(about = "Administrate a pubky homeserver")]
 pub struct AdminCmd {
     #[arg(long)]
     pub admin_password: bool,

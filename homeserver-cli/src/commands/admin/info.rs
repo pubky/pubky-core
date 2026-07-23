@@ -6,6 +6,7 @@ use reqwest::blocking::Response;
 use serde::Deserialize;
 
 #[derive(Args, Debug)]
+#[command(about = "Print homeserver statistics (users, disk usage, signup codes, version)")]
 pub struct InfoArgs {}
 
 #[derive(Debug, Deserialize)]

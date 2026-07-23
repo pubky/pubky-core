@@ -5,6 +5,7 @@ use clap::Args;
 use pubky::PublicKey;
 
 #[derive(Args, Debug)]
+#[command(about = "Re-enable a previously disabled user account")]
 pub struct EnableArgs {
     pub pubky: PublicKey,
 }

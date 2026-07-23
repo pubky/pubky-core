@@ -5,6 +5,7 @@ use crate::commands::admin::context::AdminContext;
 pub mod error;
 
 #[derive(Args, Debug)]
+#[command(about = "Manage user accounts")]
 pub struct UserCmd {
     #[command(subcommand)]
     pub subcommand: UserSubcommands,

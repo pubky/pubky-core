@@ -6,6 +6,7 @@ use clap::{ArgGroup, Args};
 use pubky::PublicKey;
 
 #[derive(Args, Debug)]
+#[command(about = "Override quota settings for a specific user")]
 #[command(group(
     ArgGroup::new("quota_fields")
         .required(true)

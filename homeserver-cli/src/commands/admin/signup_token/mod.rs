@@ -4,6 +4,7 @@ use crate::commands::admin::context::AdminContext;
 pub mod error;
 
 #[derive(Args, Debug)]
+#[command(about = "Manage signup invite tokens")]
 pub struct SignupTokenCmd {
     #[command(subcommand)]
     pub subcommand: SignupTokenSubcommands,
