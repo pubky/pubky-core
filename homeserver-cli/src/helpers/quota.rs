@@ -105,3 +105,136 @@ pub struct QuotaUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_write: Option<RateLimit>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quota(s: &str) -> Result<Quota, String> {
+        s.parse()
+    }
+
+    fn rate(s: &str) -> Result<RateLimit, String> {
+        s.parse()
+    }
+
+    // --- Quota::from_str ---
+
+    #[test]
+    fn quota_parses_number() {
+        assert!(matches!(quota("500"), Ok(Quota::Limit(500))));
+    }
+
+    #[test]
+    fn quota_parses_zero() {
+        assert!(matches!(quota("0"), Ok(Quota::Limit(0))));
+    }
+
+    #[test]
+    fn quota_parses_unlimited_lowercase() {
+        assert!(matches!(quota("unlimited"), Ok(Quota::Unlimited(_))));
+    }
+
+    #[test]
+    fn quota_parses_unlimited_uppercase() {
+        assert!(matches!(quota("UNLIMITED"), Ok(Quota::Unlimited(_))));
+    }
+
+    #[test]
+    fn quota_rejects_negative() {
+        assert!(quota("-1").is_err());
+    }
+
+    #[test]
+    fn quota_rejects_float() {
+        assert!(quota("1.5").is_err());
+    }
+
+    #[test]
+    fn quota_rejects_empty() {
+        assert!(quota("").is_err());
+    }
+
+    #[test]
+    fn quota_display_number() {
+        assert_eq!(Quota::Limit(1024).to_string(), "1024");
+    }
+
+    #[test]
+    fn quota_display_unlimited() {
+        assert_eq!(Quota::Unlimited(UnlimitedTag::Unlimited).to_string(), "unlimited");
+    }
+
+    // --- RateLimit::from_str ---
+
+    #[test]
+    fn rate_parses_mb_per_second() {
+        assert!(rate("100mb/s").is_ok());
+    }
+
+    #[test]
+    fn rate_parses_kb_per_minute() {
+        assert!(rate("512kb/m").is_ok());
+    }
+
+    #[test]
+    fn rate_parses_gb_per_hour() {
+        assert!(rate("1gb/h").is_ok());
+    }
+
+    #[test]
+    fn rate_parses_day_period() {
+        assert!(rate("10mb/d").is_ok());
+    }
+
+    #[test]
+    fn rate_parses_unlimited() {
+        assert!(rate("unlimited").is_ok());
+    }
+
+    #[test]
+    fn rate_is_case_insensitive() {
+        assert!(rate("100MB/S").is_ok());
+    }
+
+    #[test]
+    fn rate_trims_whitespace() {
+        assert!(rate("  100mb/s  ").is_ok());
+    }
+
+    #[test]
+    fn rate_rejects_bare_b_unit() {
+        assert!(rate("500b/s").is_err());
+    }
+
+    #[test]
+    fn rate_rejects_invalid_period() {
+        assert!(rate("100mb/w").is_err());
+    }
+
+    #[test]
+    fn rate_rejects_missing_slash() {
+        assert!(rate("100mbs").is_err());
+    }
+
+    #[test]
+    fn rate_rejects_missing_number() {
+        assert!(rate("mb/s").is_err());
+    }
+
+    #[test]
+    fn rate_rejects_missing_unit() {
+        assert!(rate("100/s").is_err());
+    }
+
+    #[test]
+    fn rate_rejects_empty() {
+        assert!(rate("").is_err());
+    }
+
+    #[test]
+    fn rate_normalizes_to_lowercase() {
+        let r = rate("100MB/S").unwrap();
+        assert_eq!(r.to_string(), "100mb/s");
+    }
+}
