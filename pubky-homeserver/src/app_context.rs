@@ -168,7 +168,12 @@ impl AppContext {
         let mut builder = pkarr::ClientBuilder::default();
         #[cfg(any(test, feature = "testing"))]
         if config_toml.general.database_url.is_test_db() {
-            builder.dht_report_policy(pkarr::dht::ReportPolicy::testnet());
+            builder
+                .no_default_network()
+                // Keep the client buildable without contacting the public DHT.
+                // Explicit testnet bootstrap nodes below replace this sentinel.
+                .bootstrap(&["127.0.0.1:9"])
+                .dht_report_policy(pkarr::dht::ReportPolicy::testnet());
         }
         if let Some(bootstrap_nodes) = &config_toml.pkdns.dht_bootstrap_nodes {
             let nodes = bootstrap_nodes
@@ -222,5 +227,23 @@ impl AppContext {
                 .await
                 .map_err(AppContextConversionError::SqlDb);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pkarr_builder_does_not_use_default_network() {
+        let builder =
+            AppContext::build_pkarr_builder_from_config(&ConfigToml::default_test_config());
+        let builder_debug = format!("{builder:?}");
+
+        assert!(builder_debug.contains("127.0.0.1:9"));
+        for relay in pkarr::DEFAULT_RELAYS {
+            assert!(!builder_debug.contains(relay));
+        }
+        builder.build().expect("isolated pkarr client should build");
     }
 }
