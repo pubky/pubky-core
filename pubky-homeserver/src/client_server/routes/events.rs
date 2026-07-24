@@ -346,8 +346,10 @@ pub async fn feed_stream(
         parse_query_params(raw_query.0.as_deref().unwrap_or("")).map_err(HttpError::from)?;
     let tenant_scope = EventStreamTenantScope::from_query(&params.paths, &params.user_cursors);
 
-    // Bearer auth disables the homeserver-addressed cookie fallback.
+    // A presented Bearer disables both middleware-resolved and
+    // homeserver-addressed cookie authentication for this endpoint.
     let session = match session {
+        Some(AuthSession::Cookie(_)) if has_bearer_auth(&headers) => None,
         Some(session) => Some(session),
         None if !has_bearer_auth(&headers) => {
             resolve_tenant_cookie_session(&state, &cookies, tenant_scope).await
