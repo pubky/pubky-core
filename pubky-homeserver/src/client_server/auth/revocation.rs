@@ -25,7 +25,7 @@ use super::AuthSession;
 
 mod listener;
 
-pub(crate) use listener::{AuthRevocationService, AuthRevocationUnavailable};
+pub(crate) use listener::{RevocationListener, RevocationUnavailable};
 
 /// Postgres channel used for committed authentication revocations.
 const PG_AUTH_REVOCATION_CHANNEL: &str = "auth_revocations";

@@ -27,7 +27,7 @@ pub use authorization::{has_read_permission, has_write_permission};
 pub use middleware::authentication::AuthenticationLayer;
 
 pub use grant::service::GrantAuthService;
-pub(crate) use revocation::{AuthRevocation, AuthRevocationService};
+pub(crate) use revocation::{AuthRevocation, RevocationListener};
 pub use router::{base_router, tenant_router};
 pub use session::AuthSession;
 pub use signup_service::{SignupService, SignupServiceError};

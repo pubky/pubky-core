@@ -373,7 +373,7 @@ pub async fn feed_stream(
     // the receiver catches anything committed after it.
     let pending_stream_auth = PendingStreamAuth::subscribe(
         matches!(tenant_scope, EventStreamTenantScope::PrivateSingleTenant(_)),
-        &state.auth_revocation_service,
+        &state.auth_state,
     )
     .await
     .map_err(|_| {
