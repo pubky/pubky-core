@@ -13,7 +13,7 @@ use crate::{
     observability::{Metrics, MetricsInitError},
     persistence::{
         files::{events::EventsService, FileIoError, FileService},
-        sql::{Migrator, PgEventListener, SqlDb},
+        sql::{ConnectionString, Migrator, PgEventListener, SqlDb},
     },
     ConfigToml, DataDir,
 };
@@ -54,6 +54,9 @@ pub enum AppContextConversionError {
     /// Failed to initialize metrics.
     #[error("Failed to initialize metrics: {0}")]
     Metrics(MetricsInitError),
+    /// No database URL configured.
+    #[error("No database_url configured. Set [general].database_url in config.toml.")]
+    NoDatabaseUrl,
 }
 
 /// The application context shared between all components.
@@ -196,31 +199,62 @@ impl AppContext {
     }
 
     /// Connect to the SQL database.
-    /// If we are in a test environment and it's a test db connection string,
-    /// we use an empheral test db.
-    /// Otherwise, we use the normal db connection.
+    ///
+    /// In test builds (`cfg(test)` or `feature = "testing"`), if no
+    /// `database_url` is configured, resolves it via
+    /// `TEST_PUBKY_CONNECTION_STRING` env var or the built-in default.
     async fn connect_to_sql_db(
         config_toml: &ConfigToml,
     ) -> Result<SqlDb, AppContextConversionError> {
-        #[cfg(any(test, feature = "testing"))]
-        {
-            // If we are in a test environment and it's a test db connection string,
-            // we use an empheral test db.
-            return if config_toml.general.database_url.is_test_db() {
-                Ok(SqlDb::test().await)
-            } else {
-                SqlDb::connect(&config_toml.general.database_url)
-                    .await
-                    .map_err(AppContextConversionError::SqlDb)
-            };
-        }
+        let con_string = Self::resolve_database_url(config_toml)?;
+        SqlDb::connect(&con_string)
+            .await
+            .map_err(AppContextConversionError::SqlDb)
+    }
 
-        #[cfg(not(any(test, feature = "testing")))]
-        {
-            // If we are not in a test environment, we use the normal db connection.
-            return SqlDb::connect(&config_toml.general.database_url)
-                .await
-                .map_err(AppContextConversionError::SqlDb);
+    /// Resolve the database URL from config, falling back to test defaults
+    /// when compiled with test support and no URL is configured.
+    fn resolve_database_url(
+        config_toml: &ConfigToml,
+    ) -> Result<ConnectionString, AppContextConversionError> {
+        match &config_toml.general.database_url {
+            Some(url) => Ok(url.clone()),
+            None => {
+                #[cfg(any(test, feature = "testing"))]
+                {
+                    Ok(SqlDb::derive_connection_string(None))
+                }
+                #[cfg(not(any(test, feature = "testing")))]
+                {
+                    Err(AppContextConversionError::NoDatabaseUrl)
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_database_url_returns_explicit_url() {
+        let mut config = ConfigToml::default_test_config();
+        let url = ConnectionString::new("postgres://localhost:9999/mydb").unwrap();
+        config.general.database_url = Some(url.clone());
+
+        let result = AppContext::resolve_database_url(&config).unwrap();
+        assert_eq!(result, url);
+    }
+
+    #[test]
+    fn resolve_database_url_falls_back_when_none() {
+        let config = ConfigToml::default_test_config();
+        assert!(config.general.database_url.is_none());
+
+        let result = AppContext::resolve_database_url(&config).unwrap();
+        // In test builds, None falls through to derive_connection_string(None),
+        // which returns DEFAULT_TEST_CONNECTION_STRING (with ?pubky-test=true).
+        assert!(result.is_test_db());
     }
 }

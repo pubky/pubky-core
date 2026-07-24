@@ -82,7 +82,8 @@ impl Drop for TestDbDropper {
 }
 
 #[cfg(any(test, feature = "testing"))]
-const DEFAULT_TEST_CONNECTION_STRING: &str = "postgres://localhost:5432/postgres";
+pub(crate) const DEFAULT_TEST_CONNECTION_STRING: &str =
+    "postgres://localhost:5432/postgres?pubky-test=true";
 
 #[cfg(any(test, feature = "testing"))]
 impl SqlDb {
@@ -124,44 +125,42 @@ impl SqlDb {
         Ok(con)
     }
 
-    /// Derives the admin connection string to use for the test database creation.
-    /// If the user passed a connection string, use it.
-    /// If the user passed a connection string as a env variable, use it.
-    /// If no connection string is passed, use the default test connection string.
-    pub fn derive_connection_string(
-        admin_con_string: Option<ConnectionString>,
-    ) -> ConnectionString {
-        if let Some(con_string) = admin_con_string {
-            // If the user passed a connection string, use it.
-            return con_string.clone();
+    /// Derives the connection string for test database creation.
+    ///
+    /// Priority:
+    /// 1. Explicitly provided URL (e.g. Docker Postgres) — used as-is
+    /// 2. `TEST_PUBKY_CONNECTION_STRING` environment variable
+    /// 3. [`DEFAULT_TEST_CONNECTION_STRING`] fallback
+    pub fn derive_connection_string(explicit: Option<ConnectionString>) -> ConnectionString {
+        if let Some(url) = explicit {
+            return url;
         }
-        if let Ok(raw_con_string) = std::env::var("TEST_PUBKY_CONNECTION_STRING") {
-            // If the user passed a connection string as a env variable, use it.
-            match ConnectionString::new(&raw_con_string) {
+
+        if let Ok(raw) = std::env::var("TEST_PUBKY_CONNECTION_STRING") {
+            match ConnectionString::new(&raw) {
                 Ok(con_string) => return con_string,
                 Err(e) => {
-                    tracing::warn!("Invalid database connection string in TEST_PUBKY_CONNECTION_STRING environment variable: {}. Fallback to default test connection string. Error: {e}", raw_con_string);
+                    tracing::warn!("Invalid TEST_PUBKY_CONNECTION_STRING: {raw}. Falling back to default. Error: {e}");
                 }
             }
         }
 
-        // If no connection string is passed, use the default test connection string.
         ConnectionString::new(DEFAULT_TEST_CONNECTION_STRING)
             .expect("Default test connection string is valid")
     }
 
-    /// Create a test database without running migrations
-    /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
-    /// If the DB_CONNECTION_STRING environment variable is set, the test database is created on the existing database
+    /// Create a test database without running migrations.
+    /// Convenience wrapper around [`Self::test_postgres_db`] that panics on failure.
+    #[cfg(test)]
     pub async fn test_without_migrations() -> Self {
         Self::test_postgres_db(None)
             .await
             .expect("Failed to create test database")
     }
 
-    /// Create a test database and run migrations
-    /// If the DB_CONNECTION_STRING environment variable is not set, a temporary directory is used for the sqlite database
-    /// If the DB_CONNECTION_STRING environment variable is set, the migrations are run on the existing database
+    /// Create a test database and run migrations.
+    /// Convenience wrapper around [`Self::test_without_migrations`] + [`Migrator::run`].
+    #[cfg(test)]
     pub async fn test() -> Self {
         use crate::persistence::sql::migrator::Migrator;
         let db = Self::test_without_migrations().await;
