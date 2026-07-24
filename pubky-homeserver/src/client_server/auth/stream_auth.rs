@@ -6,10 +6,7 @@ use tokio::sync::broadcast;
 
 use crate::shared::{HttpError, HttpResult};
 
-use super::{
-    revocation::AuthRevocationUnavailable, AuthRevocation, AuthRevocationService, AuthSession,
-    AuthState,
-};
+use super::{revocation::RevocationUnavailable, AuthRevocation, AuthSession, AuthState};
 
 /// Subscription state acquired before final session validation.
 /// Revocations committed before subscribing are caught by validation; later
@@ -24,10 +21,12 @@ impl PendingStreamAuth {
     /// tied to a credential, so it never waits on the listener.
     pub(crate) async fn subscribe(
         is_private: bool,
-        service: &AuthRevocationService,
-    ) -> Result<Self, AuthRevocationUnavailable> {
+        auth_state: &AuthState,
+    ) -> Result<Self, RevocationUnavailable> {
         if is_private {
-            Ok(Self::Private(service.subscribe().await?))
+            Ok(Self::Private(
+                auth_state.revocation_listener.subscribe().await?,
+            ))
         } else {
             Ok(Self::Public)
         }
