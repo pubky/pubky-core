@@ -263,13 +263,19 @@ impl Pubky {
     /// Uses an internal read-only Pkdns actor.
     ///
     /// @param {PublicKey} user
-    /// @returns {Promise<PublicKey|undefined>} Homeserver public key or `undefined` if not found.
+    /// @returns {Promise<PublicKey|undefined>} Homeserver public key, or `undefined` when the
+    ///   user has no resolvable homeserver record.
+    /// @throws When Pkarr resolution fails or a resolved `_pubky` target is malformed.
     #[wasm_bindgen(js_name = "getHomeserverOf")]
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
-        self.0
+    pub async fn get_homeserver_of(
+        &self,
+        user_public_key: &PublicKey,
+    ) -> JsResult<Option<PublicKey>> {
+        Ok(self
+            .0
             .get_homeserver_of(user_public_key.as_inner())
-            .await
-            .map(Into::into)
+            .await?
+            .map(Into::into))
     }
 
     /// Access the underlying HTTP client (advanced).

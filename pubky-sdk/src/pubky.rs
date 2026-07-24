@@ -209,10 +209,19 @@ impl Pubky {
         Pkdns::with_client(self.client.clone())
     }
 
-    /// Resolve a user's homeserver public key via Pkarr.
+    /// Resolve current homeserver for a user public key via Pkarr.
     ///
-    /// Returns `None` for missing records and for domain-only `_pubky` targets.
-    pub async fn get_homeserver_of(&self, user_public_key: &PublicKey) -> Option<PublicKey> {
+    /// Returns `Ok(Some(host))` when the `_pubky` record resolves to a valid homeserver public
+    /// key, `Ok(None)` when no record exists or no homeserver is configured, and `Err(_)` when
+    /// Pkarr resolution fails or a resolved `_pubky` target is malformed.
+    ///
+    /// # Errors
+    /// - [`crate::errors::Error::Pkarr`] if Pkarr resolution fails or the resolved `_pubky`
+    ///   target is not a valid public key (see [`Pkdns::get_homeserver_of`]).
+    pub async fn get_homeserver_of(
+        &self,
+        user_public_key: &PublicKey,
+    ) -> Result<Option<PublicKey>> {
         Pkdns::with_client(self.client.clone())
             .get_homeserver_of(user_public_key)
             .await
@@ -270,7 +279,7 @@ impl Pubky {
     ///
     /// // When subscribing to multiple users on the same homeserver,
     /// // specify the homeserver directly to avoid redundant Pkarr lookups
-    /// let homeserver = pubky.get_homeserver_of(&user1).await.unwrap();
+    /// let homeserver = pubky.get_homeserver_of(&user1).await?.unwrap();
     ///
     /// let mut stream = pubky.event_stream_for(&homeserver)
     ///     .add_users([(&user1, None), (&user2, None)])?

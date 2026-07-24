@@ -32,8 +32,12 @@ use reqwest::{Method, RequestBuilder, Response};
 use crate::actors::session::core::PubkySession;
 use crate::actors::session::credential::{SessionCredential, credential_session_missing};
 use crate::{
-    PubkyHttpClient, actors::session::SessionInfo, actors::storage::resource::resolve_pubky,
-    cross_log, errors::Result, util::check_http_status,
+    Error, PubkyHttpClient,
+    actors::session::SessionInfo,
+    actors::storage::resource::resolve_pubky,
+    cross_log,
+    errors::{PkarrError, Result},
+    util::check_http_status,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -84,6 +88,33 @@ impl CookieCredential {
 
     fn bound_homeserver(&self) -> Option<PublicKey> {
         self.homeserver.read().ok().and_then(|hs| hs.clone())
+    }
+
+    fn homeserver_for_unbound_session(
+        user: &PublicKey,
+        resolution: Result<Option<PublicKey>>,
+    ) -> Result<Option<PublicKey>> {
+        match resolution {
+            Ok(homeserver) => Ok(homeserver),
+            Err(Error::Pkarr(PkarrError::Resolve(error))) => {
+                cross_log!(
+                    warn,
+                    "Homeserver lookup for {user} failed; falling back to pubky URL routing: {error}"
+                );
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn resolve_unbound_homeserver(
+        client: &PubkyHttpClient,
+        user: &PublicKey,
+    ) -> Result<Option<PublicKey>> {
+        let resolution = crate::Pkdns::with_client(client.clone())
+            .get_homeserver_of(user)
+            .await;
+        Self::homeserver_for_unbound_session(user, resolution)
     }
 
     /// Build a cookie credential from a successful `/session` or `/signup`
@@ -225,11 +256,7 @@ impl SessionCredential for CookieCredential {
     async fn signout(&self, client: &PubkyHttpClient) -> Result<()> {
         let homeserver = match self.bound_homeserver() {
             Some(homeserver) => Some(homeserver),
-            None => {
-                crate::Pkdns::with_client(client.clone())
-                    .get_homeserver_of(&self.user)
-                    .await
-            }
+            None => Self::resolve_unbound_homeserver(client, &self.user).await?,
         };
         let rb = session_request(client, Method::DELETE, &self.user, homeserver.as_ref()).await?;
         let rb = self.attach(rb, client).await?;
@@ -276,11 +303,7 @@ impl SessionCredential for CookieCredential {
         let bind_on_success = bound_homeserver.is_none();
         let homeserver = match bound_homeserver {
             Some(homeserver) => Some(homeserver),
-            None => {
-                crate::Pkdns::with_client(client.clone())
-                    .get_homeserver_of(user)
-                    .await
-            }
+            None => Self::resolve_unbound_homeserver(client, user).await?,
         };
         let rb = session_request(client, Method::GET, user, homeserver.as_ref()).await?;
         let rb = self.attach(rb, client).await?;
@@ -322,6 +345,7 @@ impl PubkySession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pkarr::errors::ResolveError;
     use pubky_common::{
         capabilities::{Capabilities, Capability},
         crypto::Keypair,
@@ -364,5 +388,30 @@ mod tests {
                 .can_attach_to(&Keypair::random().public_key())
                 .await
         );
+    }
+
+    #[test]
+    fn operational_resolution_error_uses_pubky_url_fallback() {
+        let user = Keypair::random().public_key();
+        let resolution = Err(PkarrError::Resolve(ResolveError::NoResponses).into());
+
+        let homeserver = CookieCredential::homeserver_for_unbound_session(&user, resolution)
+            .expect("operational resolution errors should use the fallback");
+
+        assert_eq!(homeserver, None);
+    }
+
+    #[test]
+    fn malformed_homeserver_record_does_not_use_pubky_url_fallback() {
+        let user = Keypair::random().public_key();
+        let resolution = Err(PkarrError::InvalidRecord("invalid target".into()).into());
+
+        let error = CookieCredential::homeserver_for_unbound_session(&user, resolution)
+            .expect_err("malformed records must remain visible");
+
+        assert!(matches!(
+            error,
+            Error::Pkarr(PkarrError::InvalidRecord(message)) if message == "invalid target"
+        ));
     }
 }
