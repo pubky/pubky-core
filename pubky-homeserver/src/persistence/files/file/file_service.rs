@@ -47,7 +47,6 @@ impl FileService {
         let opendal_service = OpendalService::new_from_config(
             &config.storage,
             data_directory,
-            &db,
             events_service,
             user_service,
         )?;

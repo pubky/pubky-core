@@ -478,7 +478,7 @@ mod tests {
         let server = create_test_server(&context);
         let auth_value = auth_header();
 
-        // Register a user so writes are accepted by the entry layer
+        // Register a user so storage finalization can lock and account for the write.
         let keypair = Keypair::from_secret(&[0; 32]);
         let pubkey = keypair.public_key();
         UserRepository::create(&pubkey, &mut context.sql_db.pool().into())
