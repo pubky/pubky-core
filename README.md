@@ -86,4 +86,3 @@ Additional optional arguments can be used to run it in the background, but the m
 ## Links
 
 - [Contributors Guide](./CONTRIBUTORS.md)
-
