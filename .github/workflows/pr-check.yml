@@ -13,7 +13,6 @@ jobs:
       - name: Set up MSRV toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           override: true
       - name: Cache
@@ -28,7 +27,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           components: rustfmt
           override: true
@@ -42,7 +40,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           components: clippy
           override: true
@@ -65,7 +62,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           components: rustfmt, clippy
           override: true
@@ -119,7 +115,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           override: true
       - name: Install Nextest
@@ -167,7 +162,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           override: true
       - name: Cache
@@ -182,7 +176,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           override: true
       - name: Cache
@@ -216,7 +209,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           target: wasm32-unknown-unknown
           override: true
@@ -329,7 +321,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "1.89"
           override: true
       - name: Cache Rust
