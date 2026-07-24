@@ -14,7 +14,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89"
-          override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Verify MSRV
@@ -29,7 +28,6 @@ jobs:
         with:
           toolchain: "1.89"
           components: rustfmt
-          override: true
       - name: Check formatting
         run: cargo fmt --check
 
@@ -42,7 +40,6 @@ jobs:
         with:
           toolchain: "1.89"
           components: clippy
-          override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
@@ -64,7 +61,6 @@ jobs:
         with:
           toolchain: "1.89"
           components: rustfmt, clippy
-          override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Check excluded helper crates
@@ -116,7 +112,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89"
-          override: true
       - name: Install Nextest
         uses: taiki-e/install-action@nextest
       - name: Cache
@@ -163,7 +158,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89"
-          override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Build docs
@@ -177,7 +171,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89"
-          override: true
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Cargo check examples
@@ -211,7 +204,6 @@ jobs:
         with:
           toolchain: "1.89"
           target: wasm32-unknown-unknown
-          override: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -322,7 +314,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89"
-          override: true
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
       - name: Run docker postgres tests
