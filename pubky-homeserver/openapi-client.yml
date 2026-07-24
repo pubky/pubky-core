@@ -21,12 +21,12 @@ info:
     - **Grant-based (current):** `Authorization: Bearer <token>` obtained via `POST /auth/grant/session`.
     - **Cookie-based (deprecated):** Session cookie set by `POST /signup` or `POST /session`.
 
-    Grant middleware runs first; if it produces a session, cookie middleware is skipped.
+    A resolved bearer session takes precedence over cookie authentication.
 
     ## Capabilities
 
-    Write operations and private reads are gated by capability-based access control.
-    Capabilities are path-scoped (e.g. `read_write:/pub/app/`) or `root`.
+    Private reads and all writes are capability-gated. Capabilities use
+    `<scope>:<actions>`, for example `/priv/app/:rw`; `/:rw` covers both roots.
 
     ## Write Path Restriction
 
@@ -599,7 +599,7 @@ paths:
       tags:
       - Events
       summary: Historical event feed (plain text)
-      description: 'Legacy endpoint returning a plain-text feed of file change events.
+      description: 'Public, unauthenticated feed containing `/pub/...` events only.
 
 '
       operationId: getEventFeed

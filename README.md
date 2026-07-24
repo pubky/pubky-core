@@ -36,7 +36,7 @@ This repository contains the core infrastructure: a homeserver that stores and s
 
 ## What Is a Homeserver?
 
-A Pubky homeserver stores and serves user data. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated writes and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
+A Pubky homeserver stores and serves user data. Users choose which homeserver holds their data, and can move to another at any time. The homeserver exposes HTTP APIs for authenticated storage and public reads, and publishes [PKARR](https://github.com/pubky/pkarr) records so other clients can discover where a user's data lives.
 
 - Public-key based sign-up, sign-in and third-party app authorization.
 - File storage via HTTP `PUT`, `GET`, `DELETE`, and listing APIs (WebDAV-like).

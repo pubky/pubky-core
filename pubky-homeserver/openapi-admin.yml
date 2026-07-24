@@ -467,9 +467,9 @@ paths:
                   rate_read: 100mb/m
               resetToDefault:
                 value:
-                  storage_quota_mb: 
-                  rate_read: 
-                  rate_write: 
+                  storage_quota_mb:
+                  rate_read:
+                  rate_write:
               setUnlimited:
                 value:
                   rate_read: unlimited

@@ -196,7 +196,7 @@ This example defaults to `../sample_recovery.key`, which has an empty passphrase
 
 - **Pubky** facade: `new Pubky()` (mainnet defaults) or `Pubky.testnet()` (localhost wiring).
 - **Signer** -> **Session**: `signer.signup(homeserver, invite?)` creates the account; `signer.signin(clientId)` returns a grant-backed `session`.
-- **SessionStorage** (read/write): absolute paths like `"/pub/my-cool-app/file.txt"`.
+- **SessionStorage** (read/write): absolute paths under `/pub/` or `/priv/`.
 - **PublicStorage** (read-only): addressed paths like `"<pubky>/pub/my-cool-app/file.txt"`.
 - **https://\_pubky.<key> subdomains and key TLDs**: `https://_pubky.<public_key>/<abs-path>`, supported by the Pubky client.
 - **Recovery file**: encrypted root secret; decrypted with a passphrase to get a `Keypair`.
@@ -233,7 +233,7 @@ This example defaults to `../sample_recovery.key`, which has an empty passphrase
 - **401 Unauthorized**
   You tried to write without a valid session cookie (e.g., after `signout()`), or against the wrong user.
 - **403 Forbidden**
-  You tried to write outside `/pub/` (e.g., `/priv/...` is not allowed).
+  The path is outside `/pub/` and `/priv/`, targets another user, or the session lacks a covering capability.
 - **Wrong passphrase**
   Decryption of the recovery file fails—double-check the passphrase.
 - **Windows paths / quoting**

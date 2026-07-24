@@ -530,8 +530,9 @@ async fn events_stream_cookie_cross_user_secret_is_unauthenticated() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// A valid cookie plus an invalid `Authorization: Bearer` is rejected: a
-/// presented bearer disables the cookie fallback (conservative precedence).
+/// A valid cookie plus an invalid `Authorization: Bearer` is rejected for both
+/// homeserver- and user-addressed requests: a presented bearer disables the
+/// cookie fallback (conservative precedence).
 #[tokio::test]
 #[pubky_testnet::test]
 async fn events_stream_cookie_not_used_when_bearer_present() {
@@ -555,6 +556,17 @@ async fn events_stream_cookie_not_used_when_bearer_present() {
     let response = pubky
         .client()
         .request(Method::GET, &url)
+        .header("Cookie", cookie.clone())
+        .header("Authorization", "Bearer not-a-real-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let response = pubky
+        .client()
+        .request(Method::GET, &url)
+        .header("pubky-host", a.z32())
         .header("Cookie", cookie)
         .header("Authorization", "Bearer not-a-real-token")
         .send()
