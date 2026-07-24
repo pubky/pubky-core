@@ -137,7 +137,7 @@ jobs:
         run: |
           set -e
           # nextest does not support doctests yet.
-          cargo test --doc -p ${{ matrix.crate }} --all-features 
+          cargo test --doc -p ${{ matrix.crate }} --all-features
 
           if cargo nextest run \
             -p ${{ matrix.crate }} \
