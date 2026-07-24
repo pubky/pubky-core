@@ -23,9 +23,30 @@ pub fn run(context: AdminContext, args: &GetArgs) -> Result<()> {
 
     println!("Quota for user {}:", pk);
     println!("  effective:");
-    println!("    storage_quota_mb: {}", quota.effective.storage_quota_mb);
-    println!("    rate_read:        {}", quota.effective.rate_read);
-    println!("    rate_write:       {}", quota.effective.rate_write);
+    println!(
+        "    storage_quota_mb:    {}",
+        quota.effective.display_storage()
+    );
+    println!(
+        "    rate_read:           {}",
+        quota.effective.display_rate_read()
+    );
+    println!(
+        "    rate_read_burst:     {}",
+        quota.effective.display_rate_read_burst()
+    );
+    println!(
+        "    rate_write:          {}",
+        quota.effective.display_rate_write()
+    );
+    println!(
+        "    rate_write_burst:    {}",
+        quota.effective.display_rate_write_burst()
+    );
+    println!(
+        "    allowed_write_paths: {}",
+        quota.effective.display_allowed_write_paths()
+    );
 
     Ok(())
 }
