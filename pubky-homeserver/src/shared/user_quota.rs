@@ -1170,13 +1170,21 @@ mod tests {
 
     #[test]
     fn test_is_write_path_allowed_prefix_match() {
+        // Matching is namespace-agnostic: a `/priv/` entry behaves like a `/pub/` one.
         let q = UserQuota {
-            allowed_write_paths: Some(vec![wdp("/pub/tokens/"), wdp("/pub/paykit/")]),
+            allowed_write_paths: Some(vec![
+                wdp("/pub/tokens/"),
+                wdp("/pub/paykit/"),
+                wdp("/priv/app/"),
+            ]),
             ..Default::default()
         };
         assert!(q.is_write_path_allowed("/pub/tokens/foo.json"));
         assert!(q.is_write_path_allowed("/pub/paykit/bar"));
+        assert!(q.is_write_path_allowed("/priv/app/foo.json"));
+        assert!(q.is_write_path_allowed("/priv/app/sub/deep.json"));
         assert!(!q.is_write_path_allowed("/pub/other/file"));
+        assert!(!q.is_write_path_allowed("/priv/other/file"));
         assert!(!q.is_write_path_allowed("/pub/token")); // no trailing slash match
     }
 

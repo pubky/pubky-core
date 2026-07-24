@@ -22,7 +22,8 @@ async fn put_quota_applied() {
         .unwrap();
 
     let p1 = "/pub/data";
-    let p2 = "/pub/data2";
+    // `/priv/` draws from the same quota bucket as `/pub/`.
+    let p2 = "/priv/data2";
 
     // First 600 KB → OK (201)
     let data_600k: Vec<u8> = vec![0; 600_000];
@@ -76,6 +77,7 @@ async fn put_quota_applied() {
     let resp = session.storage().put(p1, data_1mb_minus_256).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
+
 /// Regression test: quota early-rejection still works when bandwidth throttling
 /// is active. The bandwidth middleware wraps the request body in a throttled
 /// stream that loses `body.size_hint()`. The fix reads Content-Length from
