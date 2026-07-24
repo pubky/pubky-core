@@ -410,7 +410,8 @@ import { Pubky, PublicKey, Keypair } from "@synonymdev/pubky";
 const pubky = new Pubky();
 
 // Read-only resolver
-const homeserver = await pubky.getHomeserverOf(PublicKey.from("pubky<z32>")); // string | undefined
+const homeserver = await pubky.getHomeserverOf(PublicKey.from("pubky<z32>")); // PublicKey | undefined
+// Rejects if PKARR resolution fails or the `_pubky` target is malformed.
 
 // With keys (signer-bound)
 const signer = pubky.signer(Keypair.random());

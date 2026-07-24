@@ -233,6 +233,7 @@ impl Pkdns {
     /// # Errors
     /// - [`crate::errors::Error::Authentication`] if called without a keypair or validation fails.
     /// - [`crate::errors::Error::Pkarr`] if PKARR/DHT resolution or publish fails.
+    /// - [`PkarrError::InvalidRecord`] if no override is given and the existing `_pubky` target is malformed.
     pub async fn publish_homeserver_force(&self, host_override: Option<&PublicKey>) -> Result<()> {
         self.publish_homeserver(host_override, PublishMode::Force)
             .await
@@ -245,6 +246,7 @@ impl Pkdns {
     /// # Errors
     /// - [`crate::errors::Error::Authentication`] if called without a keypair or validation fails.
     /// - [`crate::errors::Error::Pkarr`] if PKARR/DHT resolution or publish fails.
+    /// - [`PkarrError::InvalidRecord`] if no override is given and the existing `_pubky` target is malformed.
     pub async fn publish_homeserver_if_stale(
         &self,
         host_override: Option<&PublicKey>,
@@ -288,7 +290,7 @@ impl Pkdns {
         let existing = most_recent_packet(resolved, cached);
 
         // 2) Decide host string to publish.
-        let Some(host_str) = Self::select_host(&pubky, host_override, existing.as_ref()) else {
+        let Some(host_str) = Self::select_host(&pubky, host_override, existing.as_ref())? else {
             return Ok(());
         };
 
@@ -343,26 +345,23 @@ impl Pkdns {
         pubky: &PublicKey,
         host_override: Option<&PublicKey>,
         existing: Option<&SignedPacket>,
-    ) -> Option<String> {
-        determine_host(host_override, existing).map_or_else(
-            || {
-                cross_log!(
-                    info,
-                    "No existing host found for {}; skipping publish",
-                    pubky
-                );
-                None
-            },
-            |h| {
-                cross_log!(
-                    info,
-                    "Selected host {} for `_pubky` publish of {}",
-                    h,
-                    pubky
-                );
-                Some(h)
-            },
-        )
+    ) -> Result<Option<String>> {
+        let Some(host) = determine_host(host_override, existing)? else {
+            cross_log!(
+                info,
+                "No existing host found for {}; skipping publish",
+                pubky
+            );
+            return Ok(None);
+        };
+
+        cross_log!(
+            info,
+            "Selected host {} for `_pubky` publish of {}",
+            host,
+            pubky
+        );
+        Ok(Some(host))
     }
 
     fn should_skip_due_to_age(
@@ -484,13 +483,16 @@ fn most_recent_packet(
 fn determine_host(
     override_host: Option<&PublicKey>,
     dht_packet: Option<&SignedPacket>,
-) -> Option<String> {
+) -> Result<Option<String>> {
     if let Some(host) = override_host {
         cross_log!(info, "Using override host {} for `_pubky` publish", host);
-        return Some(host.z32());
+        return Ok(Some(host.z32()));
     }
     cross_log!(debug, "Deriving publish host from existing `_pubky` record");
-    dht_packet.and_then(extract_host_from_packet)
+    let Some(packet) = dht_packet else {
+        return Ok(None);
+    };
+    Ok(homeserver_pubkey_from_packet(packet)?.map(|pk| pk.z32()))
 }
 
 /// Resolve the `_pubky` homeserver pointer from a signed Pkarr packet into a [`PublicKey`].
@@ -702,6 +704,27 @@ mod tests {
 
         let err =
             homeserver_pubkey_from_packet(&packet).expect_err("malformed target must be rejected");
+        assert!(
+            matches!(err, Error::Pkarr(PkarrError::InvalidRecord(_))),
+            "expected PkarrError::InvalidRecord, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn republish_rejects_malformed_existing_target() {
+        let user = Keypair::random();
+        let packet = SignedPacket::builder()
+            .https(
+                "_pubky".try_into().expect("_pubky name"),
+                SVCB::new(0, "example.com".try_into().expect("host name")),
+                3600,
+            )
+            .sign(&user)
+            .expect("signed packet");
+
+        let err = determine_host(None, Some(&packet))
+            .expect_err("republishing must reject a malformed existing target");
+
         assert!(
             matches!(err, Error::Pkarr(PkarrError::InvalidRecord(_))),
             "expected PkarrError::InvalidRecord, got {err:?}"
