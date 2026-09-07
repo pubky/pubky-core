@@ -356,3 +356,9 @@ jobs:
           save-on-workflow-dispatch: true
       - name: Lint (host targets)
         run: mbx clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Lint wasm crate (wasm32)
+        run: mbx clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
