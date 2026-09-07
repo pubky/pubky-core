@@ -6,6 +6,8 @@ updates:
       interval: "weekly"
       time: "08:00"
       day: "tuesday"
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "deps"
     rebase-strategy: "auto"
