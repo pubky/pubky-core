@@ -31,6 +31,24 @@
 //! # Ok(()) }
 //! ```
 //!
+//! ## Sign in (split relay receipt from session exchange)
+//! ```no_run
+//! # use pubky::{AuthFlowKind, Capabilities, CookieCredential, PubkyCookieAuthFlow, PubkyHttpClient};
+//! # async fn run() -> pubky::Result<()> {
+//! # #[allow(deprecated)] {
+//! let client = PubkyHttpClient::new()?;
+//! let flow = PubkyCookieAuthFlow::builder(&Capabilities::default(), AuthFlowKind::signin())
+//!     .client(client.clone())
+//!     .start()?;
+//! let token = flow.await_token().await?;
+//!
+//! // Homeserver resolution and `/session` exchange are now independent from
+//! // relay polling. Retain `token` to retry failures while it remains valid.
+//! let credential = CookieCredential::from_auth_token(&token, &client, None).await?;
+//! # }
+//! # Ok(()) }
+//! ```
+//!
 //! ## Sign up
 //! ```no_run
 //! # use pubky::{Capabilities, PubkyCookieAuthFlow, AuthFlowKind, PublicKey};
@@ -175,6 +193,14 @@ impl PubkyCookieAuthFlow {
     }
 
     /// Block until the signer approves and we receive an [`AuthToken`].
+    ///
+    /// This is the first stage of split cookie authentication. For an inbox
+    /// relay, the SDK attempts a best-effort acknowledgement before this method
+    /// returns; acknowledgement failure does not discard the verified token.
+    /// The token is returned to the caller instead of being hidden inside
+    /// [`await_credential`](Self::await_credential). Retain it and pass it to
+    /// [`CookieCredential::from_auth_token`] to retry homeserver resolution or
+    /// the `/session` exchange independently from relay polling.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error::Authentication`] if the relay channel
