@@ -328,7 +328,10 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [testnet, homeserver]
     steps:
       - uses: actions/checkout@v7
       - name: Build Docker image
-        run: docker build .
+        run: docker build --build-arg BUILD_TARGET=${{ matrix.target }} .
