@@ -7,8 +7,8 @@ use pubky::{AuthToken, CookieCredential, PubkyCookieAuthFlow, PubkyHttpClient, P
 async fn cookie_auth_can_be_completed_in_two_stages(
     flow: PubkyCookieAuthFlow,
     client: &PubkyHttpClient,
-    homeserver: Option<PublicKey>,
 ) -> pubky::Result<CookieCredential> {
+    let homeserver: Option<PublicKey> = flow.target_homeserver();
     let token: AuthToken = flow.await_token().await?;
     CookieCredential::from_auth_token(&token, client, homeserver).await
 }

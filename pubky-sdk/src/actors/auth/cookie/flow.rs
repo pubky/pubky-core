@@ -40,11 +40,12 @@
 //! let flow = PubkyCookieAuthFlow::builder(&Capabilities::default(), AuthFlowKind::signin())
 //!     .client(client.clone())
 //!     .start()?;
+//! let homeserver = flow.target_homeserver();
 //! let token = flow.await_token().await?;
 //!
 //! // Homeserver resolution and `/session` exchange are now independent from
 //! // relay polling. Retain `token` to retry failures while it remains valid.
-//! let credential = CookieCredential::from_auth_token(&token, &client, None).await?;
+//! let credential = CookieCredential::from_auth_token(&token, &client, homeserver).await?;
 //! # }
 //! # Ok(()) }
 //! ```
@@ -268,7 +269,12 @@ impl PubkyCookieAuthFlow {
     /// Only signup links carry it. Signin links intentionally return `None`; a
     /// signin cookie stays unbound and private event streams remain anonymous
     /// until the resulting session successfully revalidates.
-    fn target_homeserver(&self) -> Option<crate::PublicKey> {
+    ///
+    /// Capture this value before calling [`await_token`](Self::await_token),
+    /// which consumes the flow, then pass it to
+    /// [`CookieCredential::from_auth_token`] during the session exchange.
+    #[must_use]
+    pub fn target_homeserver(&self) -> Option<crate::PublicKey> {
         match &self.auth_url {
             DeepLink::Signup(link) => Some(link.params().homeserver.clone()),
             _ => None,
