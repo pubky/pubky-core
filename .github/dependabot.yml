@@ -16,3 +16,18 @@ updates:
       cargo-dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "08:00"
+      day: "tuesday"
+    commit-message:
+      prefix: "ci"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
