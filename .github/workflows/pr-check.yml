@@ -349,8 +349,7 @@ jobs:
           toolchain: "1.89"
           components: clippy
       - name: Set up mbx (mr boxington)
-        # actionlint disable=unpinned-uses: pilot, comparison only
-        uses: jdx/mr-boxington-action@v1
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777
         with:
           # match the cache key to the pinned 1.89 toolchain
           toolchain: "1.89"
