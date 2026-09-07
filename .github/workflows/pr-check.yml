@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   msrv:
     runs-on: ubuntu-latest
@@ -40,17 +43,21 @@ jobs:
         with:
           toolchain: "1.89"
           components: clippy
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Set up mbx
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          version: "1.9.0"
+          toolchain: "1.89"
+          cache-generation: ci-mbx-v1-clippy
 
       - name: Lint (host targets)
-        run: cargo clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
+        run: mbx clippy --workspace --all-features --exclude pubky-wasm -- -D warnings
 
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
 
       - name: Lint wasm crate (wasm32)
-        run: cargo clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
+        run: mbx clippy -p pubky-wasm --target wasm32-unknown-unknown -- -D warnings
 
   helper-crates:
     runs-on: ubuntu-latest
@@ -115,8 +122,12 @@ jobs:
           toolchain: "1.89"
       - name: Install Nextest
         uses: taiki-e/install-action@nextest
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Set up mbx
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          version: "1.9.0"
+          toolchain: "1.89"
+          cache-generation: ci-mbx-v1-test-${{ matrix.crate }}
       - name: Wait for PostgreSQL
         run: |
           for i in {1..10}; do
@@ -129,10 +140,10 @@ jobs:
           set -e
           # nextest does not support doctests yet.
           if [ "${{ matrix.crate }}" != "homeservercli" ]; then
-            cargo test --doc -p ${{ matrix.crate }} --all-features
+            mbx test --doc -p ${{ matrix.crate }} --all-features
           fi
 
-          if cargo nextest run \
+          if mbx nextest run \
             -p ${{ matrix.crate }} \
             --all-features \
             --test-threads num-cpus \
