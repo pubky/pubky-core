@@ -157,8 +157,27 @@ impl CookieCredential {
         Ok(Self::new(user, cookie, record, homeserver))
     }
 
-    /// Establish a cookie credential from a signed [`AuthToken`] (legacy flow).
-    pub(crate) async fn from_auth_token(
+    /// Establish a cookie credential from a verified, signed [`AuthToken`]
+    /// (legacy flow).
+    ///
+    /// This is the second stage of split cookie authentication. Obtain the
+    /// token with [`crate::PubkyCookieAuthFlow::await_token`], retain it, then
+    /// call this method to resolve the homeserver and exchange the token at
+    /// `/session`. Because the token is borrowed, callers may retry failures
+    /// independently from relay polling while the token remains valid.
+    ///
+    /// [`AuthToken`] is short-lived and one-shot at the homeserver. A retry is
+    /// therefore not guaranteed to recover an exchange whose request reached
+    /// the homeserver but whose response was lost.
+    ///
+    /// `homeserver` binds signup credentials to the homeserver named by the
+    /// signup deep link. Pass `None` for signin, whose deep link does not name
+    /// a homeserver.
+    ///
+    /// # Errors
+    /// - Propagates homeserver resolution, HTTP transport, authentication, and
+    ///   response decoding failures.
+    pub async fn from_auth_token(
         token: &AuthToken,
         client: &PubkyHttpClient,
         homeserver: Option<PublicKey>,
