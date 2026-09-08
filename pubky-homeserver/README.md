@@ -69,6 +69,7 @@ For testing, use `AppContext::new_ephemeral` to create a context backed by an au
 ```toml
 [dev-dependencies]
 pubky-homeserver = { version = "0.x", features = ["testing"] }
+pubky-common = "0.x"
 ```
 
 ```rust,ignore

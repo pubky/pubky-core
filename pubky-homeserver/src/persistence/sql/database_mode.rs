@@ -60,10 +60,11 @@ impl DatabaseMode {
     /// 2. `TEST_PUBKY_CONNECTION_STRING` environment variable → `EphemeralTest`
     /// 3. [`DEFAULT_TEST_SERVER`] fallback → `EphemeralTest`
     pub fn resolve_test(explicit: Option<ConnectionString>) -> anyhow::Result<Self> {
-        Ok(Self::resolve_test_inner(
-            explicit,
-            ConnectionString::from_test_env()?,
-        ))
+        let from_env = match explicit {
+            Some(_) => None,
+            None => ConnectionString::from_test_env()?,
+        };
+        Ok(Self::resolve_test_inner(explicit, from_env))
     }
 
     /// Pure resolution logic, separated from env access for testability.

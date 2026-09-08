@@ -419,10 +419,14 @@ fn resolve_persistent_database_url(
     programmatic: Option<ConnectionString>,
     from_config: Option<ConnectionString>,
 ) -> anyhow::Result<Option<ConnectionString>> {
+    let from_env = match programmatic {
+        Some(_) => None,
+        None => ConnectionString::from_test_env()?,
+    };
     Ok(resolve_persistent_database_url_inner(
         programmatic,
         from_config,
-        ConnectionString::from_test_env()?,
+        from_env,
     ))
 }
 

@@ -272,9 +272,13 @@ impl AppContext {
         }
 
         if let Some(relays) = &config.pkdns.dht_relay_nodes {
-            builder
-                .relays(relays)
-                .expect("parameters are already urls and therefore valid.");
+            if relays.is_empty() {
+                builder.no_relays();
+            } else {
+                builder
+                    .relays(relays)
+                    .expect("parameters are already URLs and therefore valid.");
+            }
         }
         if let Some(request_timeout) = &config.pkdns.dht_request_timeout_ms {
             let duration = Duration::from_millis(request_timeout.get());
