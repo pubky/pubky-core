@@ -6,6 +6,7 @@ use super::{TransportHost, classify_transport_host, homeserver_url};
 use futures_util::StreamExt;
 use tokio::net::TcpStream;
 
+use crate::errors::PkarrError;
 use crate::{PubkyHttpClient, PublicKey, Result, cross_log};
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use url::Url;
@@ -51,9 +52,13 @@ impl TransportResolver {
     }
 
     /// Look up the transport for `qname`, resolving via PKARR on cache miss.
-    pub(crate) async fn resolve(&self, qname: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
+    pub(crate) async fn resolve(
+        &self,
+        qname: &str,
+        pkarr: &pkarr::Client,
+    ) -> Result<ResolvedTransport> {
         if let Some(t) = self.cached(qname) {
-            return t;
+            return Ok(t);
         }
         self.resolve_and_cache(qname, pkarr).await
     }
@@ -69,7 +74,11 @@ impl TransportResolver {
 
     /// Slow path: acquire a per-qname guard, double-check the cache, resolve,
     /// and store the result.
-    async fn resolve_and_cache(&self, qname: &str, pkarr: &pkarr::Client) -> ResolvedTransport {
+    async fn resolve_and_cache(
+        &self,
+        qname: &str,
+        pkarr: &pkarr::Client,
+    ) -> Result<ResolvedTransport> {
         let guard = {
             let mut guards = self.guards.lock().unwrap_or_else(PoisonError::into_inner);
             Arc::clone(guards.entry(qname.to_string()).or_default())
@@ -78,53 +87,68 @@ impl TransportResolver {
 
         // Another task may have resolved while we waited for the guard.
         if let Some(t) = self.cached(qname) {
-            return t;
+            return Ok(t);
         }
 
-        let t = Self::resolve_from_pkarr(pkarr, qname).await;
+        let t = Self::resolve_from_pkarr(pkarr, qname).await?;
         self.cache
             .write()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(qname.to_string(), (Instant::now(), t.clone()));
-        t
+        Ok(t)
     }
 
     /// Inspect PKARR endpoints and probe reachability to pick a transport.
-    async fn resolve_from_pkarr(pkarr: &pkarr::Client, qname: &str) -> ResolvedTransport {
-        let stream = pkarr.resolve_https_endpoints(qname);
+    async fn resolve_from_pkarr(pkarr: &pkarr::Client, qname: &str) -> Result<ResolvedTransport> {
+        let stream = pkarr.try_resolve_endpoints(qname, true);
         futures_util::pin_mut!(stream);
 
-        let mut has_direct = false;
         let mut direct_addrs = Vec::new();
         let mut icann: Option<(String, Option<u16>)> = None;
+        let mut resolution_error = None;
 
-        while let Some(ep) = stream.next().await {
+        while let Some(result) = stream.next().await {
+            let ep = match result {
+                Ok(endpoint) => endpoint,
+                Err(error) => {
+                    resolution_error.get_or_insert(error);
+                    continue;
+                }
+            };
             if let Some(domain) = ep.domain() {
                 if icann.is_none() {
                     icann = Some((domain.to_string(), ep.port()));
                 }
             } else {
-                has_direct = true;
                 direct_addrs.extend(ep.to_socket_addrs());
             }
         }
 
         let Some((domain, port)) = icann else {
-            return ResolvedTransport::PubkyTls;
+            if !direct_addrs.is_empty() {
+                return Ok(ResolvedTransport::PubkyTls);
+            }
+            return Err(resolution_error.map_or_else(
+                || {
+                    PkarrError::InvalidRecord(format!("no usable HTTPS endpoints for {qname}"))
+                        .into()
+                },
+                crate::Error::from,
+            ));
         };
-        if !has_direct {
-            return ResolvedTransport::Icann { domain, port };
+        if direct_addrs.is_empty() {
+            return Ok(ResolvedTransport::Icann { domain, port });
         }
 
         // Both exist — probe direct endpoint reachability.
         if probe_reachable(&direct_addrs, PROBE_TIMEOUT).await {
-            ResolvedTransport::PubkyTls
+            Ok(ResolvedTransport::PubkyTls)
         } else {
             cross_log!(
                 warn,
                 "Direct endpoint unreachable for {qname}; ICANN fallback to {domain}"
             );
-            ResolvedTransport::Icann { domain, port }
+            Ok(ResolvedTransport::Icann { domain, port })
         }
     }
 }
@@ -199,7 +223,7 @@ impl PubkyHttpClient {
         let url = homeserver_url(homeserver, path)?;
         let homeserver_z32 = homeserver.z32();
         let pubky_host_z32 = pubky_host.z32();
-        let transport = self.transport.resolve(&homeserver_z32, &self.pkarr).await;
+        let transport = self.transport.resolve(&homeserver_z32, &self.pkarr).await?;
 
         self.build_request(
             method,
@@ -217,7 +241,10 @@ impl PubkyHttpClient {
     ) -> Result<RequestBuilder> {
         // Bypass cross_request so discovery cannot recursively trigger itself.
         let url = homeserver_url(homeserver, "/info")?;
-        let transport = self.transport.resolve(&homeserver.z32(), &self.pkarr).await;
+        let transport = self
+            .transport
+            .resolve(&homeserver.z32(), &self.pkarr)
+            .await?;
 
         self.build_transport_request(Method::GET, &url, &transport)
     }
@@ -272,7 +299,7 @@ impl PubkyHttpClient {
 
         // `_pubky.<pk>` endpoints live under the full qname, not the bare key apex.
         let qname = url.host_str().unwrap_or(&pubky_host).to_string();
-        let transport = self.transport.resolve(&qname, &self.pkarr).await;
+        let transport = self.transport.resolve(&qname, &self.pkarr).await?;
         let standard_pubky_host =
             matches!(&transport, ResolvedTransport::Icann { .. }).then_some(pubky_host);
         let pubky_host = addressing.into_pubky_host(standard_pubky_host);
@@ -492,7 +519,90 @@ mod tests {
         let pkarr = pkarr_with_packet(&kp, &packet);
 
         let t = TransportResolver::resolve_from_pkarr(&pkarr, &kp.public_key().to_string()).await;
-        assert!(matches!(t, ResolvedTransport::PubkyTls));
+        assert!(matches!(t, Ok(ResolvedTransport::PubkyTls)));
+    }
+
+    #[tokio::test]
+    async fn failed_transport_resolution_recovers_without_cache_expiry() {
+        let server = httpmock::MockServer::start_async().await;
+        let unavailable = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET);
+                then.status(503);
+            })
+            .await;
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::MIN));
+        let client = PubkyHttpClient::builder()
+            .pkarr(|builder| {
+                builder
+                    .no_dht()
+                    .relays(&[server.base_url()])
+                    .unwrap()
+                    .cache(Arc::<InMemoryCache>::clone(&cache))
+            })
+            .build()
+            .unwrap();
+        let key = Keypair::random();
+        let name = key.public_key().to_string();
+        assert!(matches!(
+            client.transport.resolve(&name, &client.pkarr).await,
+            Err(crate::Error::Pkarr(PkarrError::Resolve(_)))
+        ));
+        assert!(client.transport.cached(&name).is_none());
+        unavailable.assert_hits_async(1).await;
+
+        let packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(1, "example.com".try_into().unwrap()),
+                3600,
+            )
+            .sign(&key)
+            .unwrap();
+        cache.put(&key.public_key().into(), &packet);
+        let clone = client.clone();
+        assert!(matches!(clone.transport.resolve(&name, &clone.pkarr).await,
+            Ok(ResolvedTransport::Icann { domain, .. }) if domain == "example.com"));
+        assert!(matches!(
+            client.transport.cached(&name),
+            Some(ResolvedTransport::Icann { .. })
+        ));
+        unavailable.assert_hits_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn empty_transport_resolution_is_not_cached() {
+        let key = Keypair::random();
+        let packet = SignedPacket::builder().sign(&key).unwrap();
+        let pkarr = pkarr_with_packet(&key, &packet);
+        let transport = TransportResolver::new();
+        let name = key.public_key().to_string();
+        assert!(matches!(
+            transport.resolve(&name, &pkarr).await,
+            Err(crate::Error::Pkarr(PkarrError::InvalidRecord(_)))
+        ));
+        assert!(transport.cached(&name).is_none());
+    }
+
+    #[tokio::test]
+    async fn direct_transport_without_addresses_is_not_cached() {
+        let key = Keypair::random();
+        let packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(1, ".".try_into().unwrap()),
+                3600,
+            )
+            .sign(&key)
+            .unwrap();
+        let pkarr = pkarr_with_packet(&key, &packet);
+        let transport = TransportResolver::new();
+        let name = key.public_key().to_string();
+        assert!(matches!(
+            transport.resolve(&name, &pkarr).await,
+            Err(crate::Error::Pkarr(PkarrError::InvalidRecord(_)))
+        ));
+        assert!(transport.cached(&name).is_none());
     }
 
     #[tokio::test]
@@ -506,8 +616,8 @@ mod tests {
         let pkarr = pkarr_with_packet(&kp, &packet);
 
         let t = TransportResolver::resolve_from_pkarr(&pkarr, &kp.public_key().to_string()).await;
-        assert!(matches!(t, ResolvedTransport::Icann { .. }));
-        if let ResolvedTransport::Icann { domain, .. } = t {
+        assert!(matches!(t, Ok(ResolvedTransport::Icann { .. })));
+        if let Ok(ResolvedTransport::Icann { domain, .. }) = t {
             assert_eq!(domain, "example.com");
         }
     }
@@ -623,7 +733,7 @@ mod tests {
 
         let t = TransportResolver::resolve_from_pkarr(&pkarr, &kp.public_key().to_string()).await;
         assert!(
-            matches!(t, ResolvedTransport::Icann { ref domain, .. } if domain == "example.com"),
+            matches!(t, Ok(ResolvedTransport::Icann { ref domain, .. }) if domain == "example.com"),
             "expected ICANN fallback, got {t:?}"
         );
     }
