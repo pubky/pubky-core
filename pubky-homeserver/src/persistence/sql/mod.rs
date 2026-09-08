@@ -5,7 +5,7 @@
 //! The [`UnifiedExecutor`] abstraction allows repository methods to work with
 //! both pooled connections and explicit transactions.
 
-mod connection_string;
+pub(crate) mod connection_string;
 mod database_mode;
 pub(crate) mod entities;
 mod migration;

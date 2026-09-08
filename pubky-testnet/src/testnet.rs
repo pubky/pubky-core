@@ -96,33 +96,33 @@ impl Testnet {
     /// Run the full homeserver app with the given config and keypair.
     /// Automatically applies testnet overrides (bootstrap nodes, relays, in-memory storage,
     /// database connection string).
+    ///
+    /// The database is chosen by [`DatabaseMode::resolve_test`]: this testnet's own
+    /// connection string (from [`EphemeralTestnetBuilder::postgres`](crate::EphemeralTestnetBuilder::postgres)
+    /// or docker postgres) first, then `TEST_PUBKY_CONNECTION_STRING`, then the config's
+    /// `[general].database_url`, then the default test server.
+    ///
+    /// [`DatabaseMode::resolve_test`]: pubky_homeserver::DatabaseMode::resolve_test
     pub async fn create_homeserver_with(
         &mut self,
         mut config: ConfigToml,
         keypair: Keypair,
     ) -> Result<&HomeserverApp> {
-        config.general.database_url = self
-            .postgres_connection_string
-            .clone()
-            .or(config.general.database_url);
         config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
         if !self.dht_relay_urls().is_empty() {
             config.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
         }
         config.storage.backend = StorageConfigToml::InMemory;
 
-        let (context, temp_dir) = AppContext::new_ephemeral(config, keypair).await?;
-        self.start_homeserver(context, temp_dir).await
+        let context =
+            AppContext::new_ephemeral(config, keypair, self.postgres_connection_string.clone())
+                .await?;
+        self.start_homeserver(context).await
     }
 
-    /// Start a homeserver, keeping the temp dir alive for the data directory.
-    pub(crate) async fn start_homeserver(
-        &mut self,
-        context: AppContext,
-        temp_dir: tempfile::TempDir,
-    ) -> Result<&HomeserverApp> {
+    /// Start a homeserver and keep it alive for the lifetime of this testnet.
+    pub(crate) async fn start_homeserver(&mut self, context: AppContext) -> Result<&HomeserverApp> {
         let homeserver = HomeserverApp::start(context).await?;
-        self.temp_dirs.push(temp_dir);
         self.homeservers.push(homeserver);
         Ok(self
             .homeservers

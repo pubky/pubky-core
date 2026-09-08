@@ -175,27 +175,24 @@ mod tests {
 
     async fn test_context(
         keypair: pubky_common::crypto::Keypair,
-    ) -> (AppContext, mainline::Testnet, tempfile::TempDir) {
+    ) -> (AppContext, mainline::Testnet) {
         let dht = mainline::Testnet::builder(1).build().unwrap();
-        let pkarr_builder = test_client_builder(&dht);
-        let config = crate::ConfigToml::default_test_config();
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let data_path = temp_dir.path().to_path_buf();
-        let db_mode = crate::persistence::sql::DatabaseMode::resolve_test(
-            config.general.database_url.clone(),
+        let context = AppContext::new_ephemeral_with_pkarr(
+            crate::ConfigToml::default_test_config(),
+            keypair,
+            None,
+            test_client_builder(&dht),
         )
-        .unwrap();
-        let context = AppContext::new(data_path, config, keypair, db_mode, pkarr_builder)
-            .await
-            .expect("failed to build test AppContext");
-        (context, dht, temp_dir)
+        .await
+        .expect("failed to build test AppContext");
+        (context, dht)
     }
 
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_resolve_https_endpoint_with_pkarr_client() {
         let keypair = pubky_common::crypto::Keypair::from_secret(&[0; 32]);
-        let (context, _dht, _temp_dir) = test_context(keypair).await;
+        let (context, _dht) = test_context(keypair).await;
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();
@@ -221,8 +218,7 @@ mod tests {
     #[tokio::test]
     #[pubky_test_utils::test]
     async fn test_endpoints() {
-        let (context, _dht, _temp_dir) =
-            test_context(pubky_common::crypto::Keypair::random()).await;
+        let (context, _dht) = test_context(pubky_common::crypto::Keypair::random()).await;
         let _republisher = HomeserverKeyRepublisher::start(&context, 8080, 8080)
             .await
             .unwrap();

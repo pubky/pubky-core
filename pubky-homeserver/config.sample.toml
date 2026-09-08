@@ -152,9 +152,14 @@ user_keys_republisher_interval = 14400 # 4 hours in seconds
 # List of bootstrap nodes for the DHT.
 # If not set, the default pkarr bootstrap nodes will be used.
 # domain:port format.
-# If you set custom bootstrap nodes (e.g. for a private DHT), you should also
-# explicitly set dht_relay_nodes (or clear it with an empty list) to avoid
-# mixing private bootstrap nodes with the default public relays.
+# Setting this does NOT disable the default relays below. If you point at a
+# private DHT and leave dht_relay_nodes unset, this homeserver still publishes
+# to the public pkarr relays and resolves from both networks. Set
+# dht_relay_nodes = [] to stay off the public relays. A warning is logged at
+# startup if you set bootstrap nodes without setting relays.
+# (Earlier versions cleared the relays implicitly whenever bootstrap nodes were
+# set; clearing them is now explicit.)
+# An empty list means "no bootstrap nodes" and starts an isolated DHT.
 dht_bootstrap_nodes = [
     "router.bittorrent.com:6881",
     "dht.transmissionbt.com:6881",
@@ -164,7 +169,8 @@ dht_bootstrap_nodes = [
 
 # Relay node urls for the DHT.
 # Improves the availability of pkarr packets.
-# If not set, the default pkarr relay nodes will be used.
+# If not set, the default pkarr relay nodes will be used, even when custom
+# dht_bootstrap_nodes are configured. Set to [] to disable relays entirely.
 dht_relay_nodes = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"]
 
 # Default UDP request timeout for the DHT

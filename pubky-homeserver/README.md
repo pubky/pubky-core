@@ -77,10 +77,11 @@ use pubky_homeserver::{AppContext, ConfigToml, HomeserverApp};
 use pubky_common::crypto::Keypair;
 
 let config = ConfigToml::default_test_config();
-let (context, _temp_dir) = AppContext::new_ephemeral(config, Keypair::random())
-    .await.unwrap();
-let app = HomeserverApp::start(context).await.unwrap();
-// _temp_dir keeps the data directory alive until dropped
+// The context owns its temp dir, which is removed when the last clone drops.
+// `None` = no database override, so TEST_PUBKY_CONNECTION_STRING then
+// `[general].database_url` then the default test server decide.
+let ctx = AppContext::new_ephemeral(config, Keypair::random(), None).await.unwrap();
+let app = HomeserverApp::start(ctx).await.unwrap();
 ```
 
 ### Binary
@@ -90,6 +91,29 @@ See [Install and Run Pubky Homeserver](../docs/INSTALL.md) for full setup instru
 ```bash
 pubky-homeserver --data-dir ~/.pubky
 ```
+
+## Upgrade notes
+
+### DHT relays are no longer cleared implicitly
+
+Earlier versions called pkarr's `no_relays()` whenever `[pkdns].dht_bootstrap_nodes`
+was set, so pointing the homeserver at a private DHT also took it off the public
+pkarr relays. That coupling is gone: bootstrap nodes and relays are now configured
+independently.
+
+**If you run a private or custom DHT**, a config that sets `dht_bootstrap_nodes` and
+leaves `dht_relay_nodes` unset will now publish its pkarr record — the server public
+key and its endpoint — to the default public relays as well, and resolve from both
+networks. Add an explicit opt-out:
+
+```toml
+[pkdns]
+dht_bootstrap_nodes = ["my-dht-node.internal:6881"]
+dht_relay_nodes = []   # stay off the public relays
+```
+
+The homeserver logs a warning at startup when it detects this combination.
+Deployments that use the default (public) DHT are unaffected.
 
 ## Storage
 

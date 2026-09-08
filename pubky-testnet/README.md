@@ -25,7 +25,14 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
 
 The data directory is auto-initialized on first run with a `config.toml` and server keypair. On subsequent runs, the existing state is picked up and the homeserver keeps the same identity.
 
-The `TEST_PUBKY_CONNECTION_STRING` environment variable is read on every startup and overrides the `database_url` in the on-disk config.
+The database is chosen by one rule, used by every testnet mode and by the test macro:
+
+1. a connection string set in code — `EphemeralTestnetBuilder::postgres()` or docker postgres,
+2. the `TEST_PUBKY_CONNECTION_STRING` environment variable,
+3. `[general].database_url` from the homeserver config,
+4. the default test server (`postgres://localhost:5432/postgres`) — ephemeral testnets only; the persistent testnet errors instead.
+
+The seeded `config.toml` is fully commented out, so the persistent testnet runs on the homeserver defaults — including `signup_mode = "token_required"`, where the in-memory testnet is open. Signups will fail with `400 Token required` until you either create a signup token (`GET http://localhost:6288/generate_signup_token` with the `X-Admin-Password` header) or seed a config with `signup_mode = "open"`. The effective signup mode is logged on startup.
 
 To seed a custom homeserver config on first run (errors if `config.toml` already exists):
 

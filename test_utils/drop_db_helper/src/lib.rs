@@ -43,8 +43,22 @@ pub fn register_db_to_drop(
     Ok(())
 }
 
+/// Whether at least one ephemeral test database is waiting to be dropped.
+///
+/// A database is registered when the last `SqlDb` handle to it is dropped.
+/// Background tasks (http servers, republishers) release their handles
+/// asynchronously after shutdown is signalled, so the registration can land
+/// slightly after the homeserver value itself has been dropped. Callers that
+/// shut a homeserver down and then clean up can poll this to wait for it.
+pub fn has_registered_dbs() -> bool {
+    // Recover from poisoning rather than reporting "nothing to drop": a thread that
+    // panicked while holding the lock must not cause us to leak databases. This has to
+    // agree with `get_db_to_drop`, or a poisoned lock would report work that then panics.
+    !get_vec().lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
 fn get_db_to_drop() -> Option<DbToDrop> {
-    let mut vec = get_vec().lock().expect("Should always work");
+    let mut vec = get_vec().lock().unwrap_or_else(|e| e.into_inner());
     vec.pop()
 }
 

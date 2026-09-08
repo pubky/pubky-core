@@ -53,60 +53,33 @@ const DEFAULT_TEST_SERVER: &str = "postgres://localhost:5432/postgres";
 
 #[cfg(any(test, feature = "testing"))]
 impl DatabaseMode {
-    /// Resolve a `database_url` from config into a `DatabaseMode`.
+    /// Pick the ephemeral test database, applying the shared precedence rule in
+    /// [`ConnectionString::resolve_for_test`] and falling back to
+    /// [`DEFAULT_TEST_SERVER`] when nothing is configured:
     ///
-    /// Priority:
-    /// 1. Explicitly provided URL (e.g. from Docker Postgres or config) → `EphemeralTest`
-    /// 2. `TEST_PUBKY_CONNECTION_STRING` environment variable → `EphemeralTest`
-    /// 3. [`DEFAULT_TEST_SERVER`] fallback → `EphemeralTest`
-    pub fn resolve_test(explicit: Option<ConnectionString>) -> anyhow::Result<Self> {
-        let from_env = match explicit {
-            Some(_) => None,
-            None => ConnectionString::from_test_env()?,
-        };
-        Ok(Self::resolve_test_inner(explicit, from_env))
-    }
-
-    /// Pure resolution logic, separated from env access for testability.
-    fn resolve_test_inner(
-        explicit: Option<ConnectionString>,
-        from_env: Option<ConnectionString>,
-    ) -> Self {
-        let url = explicit.or(from_env).unwrap_or_else(|| {
-            ConnectionString::new(DEFAULT_TEST_SERVER)
-                .expect("Default test connection string is valid")
-        });
-        Self::EphemeralTest(url)
+    /// 1. `override_url` (e.g. docker postgres or `EphemeralTestnetBuilder::postgres`)
+    /// 2. `TEST_PUBKY_CONNECTION_STRING`
+    /// 3. `from_config` — `[general].database_url`
+    /// 4. [`DEFAULT_TEST_SERVER`]
+    ///
+    /// The result is always [`EphemeralTest`](Self::EphemeralTest): tests get a fresh
+    /// database on the chosen server, never the server's own database.
+    pub fn resolve_test(
+        override_url: Option<ConnectionString>,
+        from_config: Option<ConnectionString>,
+    ) -> anyhow::Result<Self> {
+        let url =
+            ConnectionString::resolve_for_test(override_url, from_config)?.unwrap_or_else(|| {
+                ConnectionString::new(DEFAULT_TEST_SERVER)
+                    .expect("Default test connection string is valid")
+            });
+        Ok(Self::EphemeralTest(url))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolve_test_explicit_wins_over_env() {
-        let explicit = ConnectionString::new("postgres://custom:5432/mydb").unwrap();
-        let from_env = ConnectionString::new("postgres://env:5432/envdb").unwrap();
-        let result = DatabaseMode::resolve_test_inner(Some(explicit.clone()), Some(from_env));
-        assert_eq!(result.connection_string(), &explicit);
-        assert!(matches!(result, DatabaseMode::EphemeralTest(_)));
-    }
-
-    #[test]
-    fn resolve_test_env_used_when_no_explicit() {
-        let from_env = ConnectionString::new("postgres://env:5432/envdb").unwrap();
-        let result = DatabaseMode::resolve_test_inner(None, Some(from_env.clone()));
-        assert_eq!(result.connection_string(), &from_env);
-        assert!(matches!(result, DatabaseMode::EphemeralTest(_)));
-    }
-
-    #[test]
-    fn resolve_test_falls_back_to_default() {
-        let result = DatabaseMode::resolve_test_inner(None, None);
-        assert_eq!(result.connection_string().as_str(), DEFAULT_TEST_SERVER);
-        assert!(matches!(result, DatabaseMode::EphemeralTest(_)));
-    }
 
     #[test]
     fn require_direct_returns_direct_when_url_set() {
@@ -126,5 +99,48 @@ mod tests {
             result.is_err(),
             "require_direct should error when url is None"
         );
+    }
+
+    #[test]
+    fn resolve_test_override_wins_and_is_ephemeral() {
+        // An override short-circuits the env lookup, so this is independent of
+        // whatever TEST_PUBKY_CONNECTION_STRING happens to be set to.
+        let override_url = ConnectionString::new("postgres://custom:5432/mydb").unwrap();
+        let mode = DatabaseMode::resolve_test(
+            Some(override_url.clone()),
+            Some(ConnectionString::new("postgres://config:5432/db").unwrap()),
+        )
+        .unwrap();
+        assert_eq!(mode.connection_string(), &override_url);
+        assert!(
+            matches!(mode, DatabaseMode::EphemeralTest(_)),
+            "tests always get an ephemeral database, never Direct"
+        );
+    }
+
+    #[test]
+    fn resolve_test_keeps_old_style_pubky_test_param_url() {
+        let url =
+            ConnectionString::new("postgres://user:pass@localhost:5432/postgres?pubky-test=true")
+                .unwrap();
+        let mode = DatabaseMode::resolve_test(Some(url), None).unwrap();
+        assert!(matches!(mode, DatabaseMode::EphemeralTest(_)));
+    }
+
+    #[test]
+    fn resolve_test_uses_the_config_then_the_default_server() {
+        // With no override the env var is consulted, so only assert the lower tiers
+        // when the ambient environment leaves it unset.
+        if std::env::var(super::super::connection_string::TEST_CONNECTION_STRING_ENV).is_ok() {
+            return;
+        }
+
+        let from_config = ConnectionString::new("postgres://config:5432/db").unwrap();
+        let mode = DatabaseMode::resolve_test(None, Some(from_config.clone())).unwrap();
+        assert_eq!(mode.connection_string(), &from_config);
+
+        let mode = DatabaseMode::resolve_test(None, None).unwrap();
+        assert_eq!(mode.connection_string().as_str(), DEFAULT_TEST_SERVER);
+        assert!(matches!(mode, DatabaseMode::EphemeralTest(_)));
     }
 }
