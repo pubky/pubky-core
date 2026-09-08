@@ -3808,7 +3808,7 @@ dependencies = [
 [[package]]
 name = "pkarr"
 version = "8.0.1"
-source = "git+https://github.com/pubky/pkarr.git?rev=9513d032c4f549ec6d6cc1a7baef305f00524fc1#9513d032c4f549ec6d6cc1a7baef305f00524fc1"
+source = "git+https://github.com/pubky/pkarr.git?rev=b09864db53bf3f4a95e877c2c9cc01a7b8a364af#b09864db53bf3f4a95e877c2c9cc01a7b8a364af"
 dependencies = [
  "async-compat",
  "base32",
