@@ -80,3 +80,6 @@ url = "2"
 wasm-bindgen-futures = "0.4"
 # Same version as used by reqwest version defined above
 wasm-streams = "0.5"
+
+[patch.crates-io]
+pkarr = { git = "https://github.com/pubky/pkarr.git", rev = "5443822f8eb479862cfa8a269356eb4da4db5d4d" }

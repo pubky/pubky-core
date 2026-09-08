@@ -3807,9 +3807,8 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "8.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3248274a604751c9a6749137cebfe0ddfc8b4b0e31c779515c4f984c937a4dac"
+version = "8.0.1"
+source = "git+https://github.com/pubky/pkarr.git?rev=5443822f8eb479862cfa8a269356eb4da4db5d4d#5443822f8eb479862cfa8a269356eb4da4db5d4d"
 dependencies = [
  "async-compat",
  "base32",
