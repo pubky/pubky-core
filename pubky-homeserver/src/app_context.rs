@@ -256,6 +256,12 @@ impl AppContext {
     /// Config wins for bootstrap nodes, relays and request timeout; the builder supplies
     /// everything else.
     ///
+    /// `data_path` must already exist and be writable — this constructor does not create
+    /// it. The convenience constructors handle that for you
+    /// ([`from_persistent_dir`](Self::from_persistent_dir) via
+    /// [`PersistentDataDir::bootstrap`](crate::PersistentDataDir::bootstrap), `new_ephemeral`
+    /// via a temp dir); a caller assembling the parts itself owns that step.
+    ///
     /// See [`from_persistent_dir`](Self::from_persistent_dir) and
     /// `new_ephemeral` for common combinations.
     pub async fn new(
@@ -375,6 +381,36 @@ impl AppContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The context owns its ephemeral data directory: it survives as long as any clone
+    /// does, and goes away with the last one. This is why `AppContext` holds the
+    /// `TempDir` rather than handing it back for the caller to keep alive.
+    #[tokio::test]
+    #[pubky_test_utils::test]
+    async fn ephemeral_data_dir_outlives_every_clone_of_the_context() {
+        let context =
+            AppContext::new_ephemeral(ConfigToml::default_test_config(), Keypair::random(), None)
+                .await
+                .expect("failed to build ephemeral AppContext");
+        let data_path = context.data_path.clone();
+        assert!(
+            data_path.is_dir(),
+            "the temp data dir should exist up front"
+        );
+
+        let clone = context.clone();
+        drop(context);
+        assert!(
+            data_path.is_dir(),
+            "a surviving clone must keep the data dir alive"
+        );
+
+        drop(clone);
+        assert!(
+            !data_path.exists(),
+            "dropping the last clone must remove the data dir"
+        );
+    }
 
     fn config_with_bootstrap(nodes: &[&str]) -> ConfigToml {
         use crate::DomainPort;

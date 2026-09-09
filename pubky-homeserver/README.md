@@ -69,12 +69,10 @@ For testing, use `AppContext::new_ephemeral` to create a context backed by an au
 ```toml
 [dev-dependencies]
 pubky-homeserver = { version = "0.x", features = ["testing"] }
-pubky-common = "0.x"
 ```
 
 ```rust,ignore
-use pubky_homeserver::{AppContext, ConfigToml, HomeserverApp};
-use pubky_common::crypto::Keypair;
+use pubky_homeserver::{AppContext, ConfigToml, HomeserverApp, Keypair};
 
 let config = ConfigToml::default_test_config();
 // The context owns its temp dir, which is removed when the last clone drops.

@@ -30,6 +30,25 @@ fn apply_static_testnet_overrides(config: &mut ConfigToml, bootstrap_nodes: Vec<
     config.admin.listen_socket = SocketAddr::new(BIND_ALL, testnet_ports::HOMESERVER_ADMIN);
 }
 
+/// Guidance attached to homeserver startup failures, naming the database that was tried
+/// and the two ways to change it.
+///
+/// A `database_url` read from a config file is often just the embedded default rather than
+/// something anyone chose, so a bare "authentication failed" from that host is confusing
+/// without saying where the value came from.
+fn database_hint(url: Option<&ConnectionString>, config_path: Option<&Path>) -> String {
+    let target = match url {
+        Some(url) => format!("Tried {}.", url.redacted()),
+        None => "No database was configured.".to_string(),
+    };
+    let config_hint = match config_path {
+        Some(path) => format!("database_url in {}", path.display()),
+        None => "database_url in the homeserver config".to_string(),
+    };
+    // No trailing period: anyhow joins this to the cause with ": ".
+    format!("Could not start the homeserver's database. {target} Set TEST_PUBKY_CONNECTION_STRING, or {config_hint}")
+}
+
 /// How the testnet stores homeserver state.
 #[derive(Debug)]
 enum StorageMode {
@@ -400,7 +419,13 @@ impl StaticTestnet {
 
         let data_path = persistent_dir.path().to_path_buf();
         let pkarr_builder = AppContext::isolated_pkarr_builder(&config);
-        let context = AppContext::new(data_path, config, keypair, db_mode, pkarr_builder).await?;
+        let hint = database_hint(
+            config.general.database_url.as_ref(),
+            Some(&persistent_dir.get_config_file_path()),
+        );
+        let context = AppContext::new(data_path, config, keypair, db_mode, pkarr_builder)
+            .await
+            .with_context(|| hint)?;
         let homeserver = HomeserverApp::start(context).await?;
         self.testnet.homeservers.push(homeserver);
         Ok(())
@@ -416,12 +441,14 @@ impl StaticTestnet {
 
         // The database is chosen inside `new_ephemeral`, by the same rule every other
         // testnet path uses — see `ConnectionString::resolve_for_test`.
+        let hint = database_hint(config.general.database_url.as_ref(), config_path);
         let context = AppContext::new_ephemeral(
             config,
             testnet_keypair(),
             self.testnet.postgres_connection_string.clone(),
         )
-        .await?;
+        .await
+        .with_context(|| hint)?;
         self.testnet.start_homeserver(context).await?;
         Ok(())
     }

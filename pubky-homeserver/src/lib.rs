@@ -35,6 +35,9 @@ pub use data_directory::{
 pub use homeserver_app::{HomeserverApp, HomeserverAppBuildError};
 pub use metrics_server::{MetricsServer, MetricsServerBuildError};
 pub use persistence::sql::{ConnectionString, DatabaseMode};
+/// Re-exported so callers of [`AppContext::new`] and friends do not need a direct
+/// `pubky-common` dependency just to name the server identity type.
+pub use pubky_common::crypto::Keypair;
 pub use shared::quota::{
     BandwidthQuota, DefaultQuotasToml, GlobPattern, HttpMethod, LimitKey, LimitKeyType, PathLimit,
     RequestCountQuota, TimeUnit,

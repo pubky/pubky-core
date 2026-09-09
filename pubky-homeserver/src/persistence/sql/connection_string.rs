@@ -32,6 +32,20 @@ impl ConnectionString {
         self.0.as_str()
     }
 
+    /// The connection string with any password masked, for logs and error messages.
+    ///
+    /// [`Display`] and [`as_str`](Self::as_str) render the URL verbatim, credentials
+    /// included — use this whenever the value may reach a log line or an error a user sees.
+    pub fn redacted(&self) -> String {
+        let mut url = self.0.clone();
+        if url.password().is_some() {
+            // set_password only fails for urls that cannot have credentials, which a
+            // validated postgres url always can.
+            let _ = url.set_password(Some("****"));
+        }
+        url.to_string()
+    }
+
     /// **The** precedence rule for choosing a database in test and testnet builds.
     /// Every test/testnet code path resolves through this one function.
     ///
@@ -337,6 +351,27 @@ mod tests {
     fn test_non_postgres_url_rejected() {
         let result: Result<ConnectionString, _> = "sqlite:///path/to/sqlite.db".parse();
         assert!(result.is_err(), "sqlite URLs should be rejected");
+    }
+
+    #[test]
+    fn redacted_masks_the_password_but_keeps_the_rest() {
+        let redacted = cs("postgres://user:hunter2@db.example:5432/mydb").redacted();
+        assert!(
+            !redacted.contains("hunter2"),
+            "the password must not survive redaction: {redacted}"
+        );
+        for part in ["user", "db.example", "5432", "mydb"] {
+            assert!(
+                redacted.contains(part),
+                "{part} should still be visible for diagnosis: {redacted}"
+            );
+        }
+    }
+
+    #[test]
+    fn redacted_leaves_a_passwordless_url_alone() {
+        let url = "postgres://localhost:5432/mydb";
+        assert_eq!(cs(url).redacted(), url);
     }
 
     #[test]
