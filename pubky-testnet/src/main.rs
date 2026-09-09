@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -81,60 +80,10 @@ async fn main() -> Result<()> {
     drop(testnet);
 
     if !persistent {
-        cleanup_ephemeral_databases().await;
+        // Cleanup all ephemeral test databases. Test databases are only registered
+        // for the drop after the testnet is dropped.
+        pubky_testnet::drop_test_databases().await;
     }
 
     Ok(())
-}
-
-/// Drops the ephemeral test databases the testnet created.
-///
-/// A database is only registered for the drop once the last handle to it is
-/// released, and the background tasks holding those handles (http servers,
-/// republishers) shut down asynchronously — so registrations trickle in after
-/// the testnet value itself has been dropped rather than all at once.
-///
-/// Wait for the first one, then keep draining until nothing new has registered
-/// for [`QUIET_PERIOD`], so a late arrival is not left behind on the server.
-async fn cleanup_ephemeral_databases() {
-    if !wait_for_db_registration(DB_REGISTRATION_TIMEOUT).await {
-        tracing::warn!(
-            "Timed out waiting for the ephemeral database to be released; \
-             it may be left behind on the postgres server."
-        );
-        return;
-    }
-
-    loop {
-        pubky_testnet::drop_test_databases().await;
-        // Anything that registers during this window is picked up by the next
-        // pass; a full quiet period with nothing new means we are done.
-        if !wait_for_db_registration(QUIET_PERIOD).await {
-            return;
-        }
-    }
-}
-
-/// How long to wait for the first ephemeral database to be registered for cleanup.
-/// Generous enough to cover the graceful shutdown of the http servers.
-const DB_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// How long a drain pass waits for stragglers before declaring cleanup finished.
-const QUIET_PERIOD: Duration = Duration::from_millis(500);
-
-/// How often to re-check the registration list.
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
-
-/// Waits until at least one ephemeral test database is registered for cleanup.
-///
-/// Returns `true` if one showed up, `false` if `timeout` elapsed first.
-async fn wait_for_db_registration(timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
-    while !pubky_testnet::has_registered_dbs() {
-        if Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-    true
 }

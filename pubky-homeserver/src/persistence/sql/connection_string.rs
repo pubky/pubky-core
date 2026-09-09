@@ -60,10 +60,10 @@ impl ConnectionString {
     /// testnet treats it as a configuration error).
     ///
     /// The env var deliberately sits *above* the config, following the usual
-    /// argument → environment → config-file → default convention, and because a
-    /// `database_url` in a config file is often just the embedded default rather than
-    /// something anyone chose. A caller that must pin a specific database regardless of
-    /// the environment passes it as `override_url`.
+    /// argument → environment → config-file → default convention: a developer or CI job
+    /// pointing a whole run at one server should not have to edit every config. A caller
+    /// that must pin a specific database regardless of the environment passes it as
+    /// `override_url`.
     ///
     /// [`DatabaseMode::resolve_test`]: super::DatabaseMode::resolve_test
     /// [`EphemeralTestnetBuilder::postgres`]: https://docs.rs/pubky-testnet
@@ -72,24 +72,30 @@ impl ConnectionString {
         override_url: Option<Self>,
         from_config: Option<Self>,
     ) -> anyhow::Result<Option<Self>> {
+        Self::resolve_for_test_with_env(override_url, from_config, || {
+            std::env::var(TEST_CONNECTION_STRING_ENV)
+        })
+    }
+
+    /// [`resolve_for_test`](Self::resolve_for_test) with the environment injected.
+    ///
+    /// Every tier is then reachable from a test without setting a process-wide variable —
+    /// which would race with the many tests that read `TEST_PUBKY_CONNECTION_STRING`
+    /// concurrently, and would otherwise force those tests to skip themselves in exactly
+    /// the environment (CI) where the variable is always set.
+    #[cfg(any(test, feature = "testing"))]
+    pub(crate) fn resolve_for_test_with_env(
+        override_url: Option<Self>,
+        from_config: Option<Self>,
+        read_env: impl FnOnce() -> Result<String, std::env::VarError>,
+    ) -> anyhow::Result<Option<Self>> {
         // Skip the env lookup entirely when an override is present, so an unparseable
         // env var cannot fail a run that was never going to consult it.
         let from_env = match override_url {
             Some(_) => None,
-            None => Self::from_test_env()?,
+            None => Self::parse_env_value(read_env())?,
         };
-        Ok(Self::pick(override_url, from_env, from_config))
-    }
-
-    /// Pure precedence logic, separated from env access so it can be tested
-    /// without mutating the process environment.
-    #[cfg(any(test, feature = "testing"))]
-    fn pick(
-        override_url: Option<Self>,
-        from_env: Option<Self>,
-        from_config: Option<Self>,
-    ) -> Option<Self> {
-        override_url.or(from_env).or(from_config)
+        Ok(override_url.or(from_env).or(from_config))
     }
 
     /// Read a connection string from the `TEST_PUBKY_CONNECTION_STRING` environment variable.
@@ -111,9 +117,41 @@ impl ConnectionString {
             Err(std::env::VarError::NotPresent) => return Ok(None),
             Err(e) => anyhow::bail!("Invalid {TEST_CONNECTION_STRING_ENV}: {e}"),
         };
-        let cs = Self::new(&raw)
-            .map_err(|e| anyhow::anyhow!("Invalid {TEST_CONNECTION_STRING_ENV} ({raw:?}): {e}"))?;
+        let cs = Self::new(&raw).map_err(|e| {
+            anyhow::anyhow!(
+                "Invalid {TEST_CONNECTION_STRING_ENV} ({}): {e}",
+                Self::redact_unparsed(&raw)
+            )
+        })?;
         Ok(Some(cs))
+    }
+
+    /// Mask any credentials in a string that failed to become a [`ConnectionString`].
+    ///
+    /// The value still has to appear in the error — naming the offending input is the
+    /// whole point — but it reaches logs and terminals, and a rejected value can carry a
+    /// real password: `mysql://user:hunter2@host/db` is a perfectly good URL that fails
+    /// only the postgres-scheme check. [`redacted`](Self::redacted) cannot be used here
+    /// because there is no valid `ConnectionString` to call it on.
+    #[cfg(any(test, feature = "testing"))]
+    fn redact_unparsed(raw: &str) -> String {
+        // The host check matters: `user:hunter2@garbage` parses happily as scheme
+        // `user` with no authority, so `password()` is `None` and nothing would be
+        // masked. Only the structured form is safe to mask structurally.
+        if let Ok(mut url) = url::Url::parse(raw) {
+            if url.has_host() {
+                if url.password().is_some() {
+                    let _ = url.set_password(Some("****"));
+                }
+                return url.to_string();
+            }
+        }
+        // No authority to mask, but `user:pass@host` can still be in there.
+        // Drop everything up to the last `@` rather than echo it.
+        match raw.rsplit_once('@') {
+            Some((_, tail)) => format!("****@{tail}"),
+            None => raw.to_string(),
+        }
     }
 
     fn is_postgres(&self) -> bool {
@@ -202,76 +240,105 @@ mod tests {
         ConnectionString::new(url).unwrap()
     }
 
-    // --- Precedence: explicit -> env -> fallback ------------------------------
+    // --- Precedence: override -> env -> config ---------------------------------
+    //
+    // The environment is injected, so every tier is asserted deterministically and
+    // nothing depends on whether TEST_PUBKY_CONNECTION_STRING happens to be set.
 
-    #[test]
-    fn pick_override_wins_over_env_and_config() {
-        let override_url = cs("postgres://custom:5432/mydb");
-        let picked = ConnectionString::pick(
-            Some(override_url.clone()),
-            Some(cs("postgres://envhost:5432/envdb")),
-            Some(cs("postgres://confighost:5432/configdb")),
-        );
-        assert_eq!(picked, Some(override_url));
+    fn unset() -> Result<String, std::env::VarError> {
+        Err(std::env::VarError::NotPresent)
+    }
+
+    fn env(url: &str) -> Result<String, std::env::VarError> {
+        Ok(url.to_string())
+    }
+
+    fn resolve(
+        override_url: Option<ConnectionString>,
+        from_config: Option<ConnectionString>,
+        read_env: impl FnOnce() -> Result<String, std::env::VarError>,
+    ) -> Option<ConnectionString> {
+        ConnectionString::resolve_for_test_with_env(override_url, from_config, read_env).unwrap()
     }
 
     #[test]
-    fn pick_env_wins_over_config() {
-        let env = cs("postgres://envhost:5432/envdb");
-        let picked = ConnectionString::pick(
-            None,
-            Some(env.clone()),
-            Some(cs("postgres://confighost:5432/configdb")),
-        );
+    fn override_wins_over_env_and_config() {
+        let override_url = cs("postgres://custom:5432/mydb");
         assert_eq!(
-            picked,
-            Some(env),
-            "the env var has to beat the config, whose database_url is filled in by \
-             the embedded default even when the user never set one; a caller that must \
-             pin a database passes it as the override instead"
+            resolve(
+                Some(override_url.clone()),
+                Some(cs("postgres://confighost:5432/configdb")),
+                || env("postgres://envhost:5432/envdb"),
+            ),
+            Some(override_url)
         );
     }
 
     #[test]
-    fn pick_uses_the_config_when_nothing_outranks_it() {
+    fn env_wins_over_config() {
+        assert_eq!(
+            resolve(
+                None,
+                Some(cs("postgres://confighost:5432/configdb")),
+                || { env("postgres://envhost:5432/envdb") }
+            ),
+            Some(cs("postgres://envhost:5432/envdb")),
+            "one env var has to be able to point a whole run at a different server; \
+             a caller that must pin a database passes it as the override instead"
+        );
+    }
+
+    #[test]
+    fn config_is_used_when_nothing_outranks_it() {
         let from_config = cs("postgres://confighost:5432/configdb");
-        let picked = ConnectionString::pick(None, None, Some(from_config.clone()));
-        assert_eq!(picked, Some(from_config));
+        assert_eq!(
+            resolve(None, Some(from_config.clone()), unset),
+            Some(from_config)
+        );
     }
 
     #[test]
-    fn pick_returns_none_when_nothing_is_set() {
-        assert_eq!(ConnectionString::pick(None, None, None), None);
+    fn nothing_configured_anywhere_resolves_to_none() {
+        assert_eq!(
+            resolve(None, None, unset),
+            None,
+            "nothing configured anywhere leaves the choice to the caller"
+        );
     }
 
     #[test]
-    fn resolve_for_test_skips_env_lookup_when_an_override_is_set() {
-        // An override must short-circuit before `from_test_env`, so this holds
-        // regardless of what the ambient environment contains.
+    fn an_override_skips_the_env_lookup_entirely() {
+        // An unparseable env var must not fail a run that was never going to consult it.
         let override_url = cs("postgres://custom:5432/mydb");
-        let resolved = ConnectionString::resolve_for_test(
-            Some(override_url.clone()),
-            Some(cs("postgres://config:5432/db")),
-        )
-        .unwrap();
+        let resolved =
+            ConnectionString::resolve_for_test_with_env(Some(override_url.clone()), None, || {
+                panic!("the environment must not be read when an override is present")
+            })
+            .unwrap();
         assert_eq!(resolved, Some(override_url));
     }
 
     #[test]
-    fn resolve_for_test_falls_through_to_the_config_when_nothing_overrides_it() {
-        // Only meaningful with the env var unset; skip otherwise rather than mutate it.
-        if std::env::var(TEST_CONNECTION_STRING_ENV).is_ok() {
-            return;
-        }
-        let from_config = cs("postgres://config:5432/db");
+    fn an_invalid_env_var_is_an_error_not_a_fall_through_to_the_config() {
+        let err = ConnectionString::resolve_for_test_with_env(
+            None,
+            Some(cs("postgres://confighost:5432/configdb")),
+            || env("not-a-valid-url"),
+        )
+        .expect_err("a broken env var must be reported, not silently ignored");
+        assert!(err.to_string().contains(TEST_CONNECTION_STRING_ENV));
+    }
+
+    /// The public wrapper reads the real environment. Assert only what holds either way:
+    /// it agrees with the injected form given the same environment.
+    #[test]
+    fn resolve_for_test_matches_the_injected_form_for_the_ambient_environment() {
+        let from_config = cs("postgres://confighost:5432/configdb");
         assert_eq!(
             ConnectionString::resolve_for_test(None, Some(from_config.clone())).unwrap(),
-            Some(from_config)
-        );
-        assert_eq!(
-            ConnectionString::resolve_for_test(None, None).unwrap(),
-            None,
-            "nothing configured anywhere leaves the choice to the caller"
+            resolve(None, Some(from_config), || std::env::var(
+                TEST_CONNECTION_STRING_ENV
+            )),
         );
     }
 
@@ -301,6 +368,33 @@ mod tests {
             msg.contains(TEST_CONNECTION_STRING_ENV) && msg.contains("not-a-valid-url"),
             "error should name the env var and the offending value, got: {msg}"
         );
+    }
+
+    /// A rejected value can still carry a real password: this one is a valid URL that
+    /// fails only the postgres-scheme check, so the error must not echo it verbatim.
+    #[test]
+    fn a_rejected_env_value_does_not_leak_its_password() {
+        let err = ConnectionString::parse_env_value(Ok(
+            "mysql://user:hunter2@db.example:3306/mydb".to_string(),
+        ))
+        .expect_err("a non-postgres url should be rejected");
+        let msg = err.to_string();
+        assert!(!msg.contains("hunter2"), "password leaked into: {msg}");
+        assert!(
+            msg.contains("db.example"),
+            "the host should still be named so the value is identifiable: {msg}"
+        );
+    }
+
+    /// Same guarantee when the value is not a URL at all and cannot be masked
+    /// structurally.
+    #[test]
+    fn a_rejected_non_url_env_value_does_not_leak_credentials() {
+        let err = ConnectionString::parse_env_value(Ok("user:hunter2@garbage".to_string()))
+            .expect_err("garbage should be rejected");
+        let msg = err.to_string();
+        assert!(!msg.contains("hunter2"), "password leaked into: {msg}");
+        assert!(msg.contains("garbage"), "{msg}");
     }
 
     #[test]

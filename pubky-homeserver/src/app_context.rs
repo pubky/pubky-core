@@ -48,6 +48,9 @@ pub enum AppContextBuildError {
     /// Failed to build pkarr client.
     #[error("Failed to build pkarr client: {0}")]
     Pkarr(pkarr::errors::BuildError),
+    /// `[pkdns].dht_relay_nodes` contains a URL pkarr will not accept as a relay.
+    #[error("Invalid `dht_relay_nodes` under [pkdns]: {0}")]
+    RelayNodes(anyhow::Error),
     /// Failed to start the Postgres event listener.
     #[error("Failed to start Postgres event listener: {0}")]
     PgEventListener(sqlx::Error),
@@ -104,13 +107,22 @@ impl AppContext {
     /// Production shorthand: persistent data dir, public DHT, direct DB.
     ///
     /// Reads config and keypair from disk via [`crate::PersistentDataDir::bootstrap`].
+    ///
+    /// This is the **only** constructor that joins the public network: it starts from
+    /// `pkarr::ClientBuilder::default()`, so unless `[pkdns]` says otherwise this context
+    /// publishes its record to the public pkarr relays and resolves over the public DHT.
+    /// That is deliberate for production. Anything under test wants
+    /// [`new_ephemeral`](Self::new_ephemeral), or
+    /// [`isolated_pkarr_builder`](Self::isolated_pkarr_builder) with [`new`](Self::new).
+    ///
+    /// Requires `[general].database_url` to be set; there is no default, so a server
+    /// whose owner never chose a database fails here rather than connecting to one.
     pub async fn from_persistent_dir(
         dir: crate::PersistentDataDir,
     ) -> Result<Self, AppContextBuildError> {
         let (path, config, keypair) = dir.bootstrap().map_err(AppContextBuildError::Bootstrap)?;
         let db_mode = DatabaseMode::require_direct(config.general.database_url.clone())
             .map_err(AppContextBuildError::DatabaseResolution)?;
-        Self::warn_on_mixed_dht_network(&config);
         Self::new(
             path,
             config,
@@ -119,57 +131,6 @@ impl AppContext {
             pkarr::ClientBuilder::default(),
         )
         .await
-    }
-
-    /// Warn when a custom DHT is paired with the public pkarr relays.
-    ///
-    /// Setting `dht_bootstrap_nodes` no longer clears the relays, so records published
-    /// to a private DHT also reach `pkarr.pubky.app` / `.org`, and resolution mixes both
-    /// networks. Earlier versions silently called `no_relays()` here; clearing the relays
-    /// is now an explicit `dht_relay_nodes = []`, so warn rather than let an upgrade
-    /// quietly change where records end up.
-    fn warn_on_mixed_dht_network(config: &ConfigToml) {
-        if Self::mixes_private_dht_with_public_relays(config) {
-            tracing::warn!(
-                "[pkdns] sets custom `dht_bootstrap_nodes` while `dht_relay_nodes` is still \
-                 the public default ({}). This homeserver will publish its pkarr record to \
-                 the public relays as well as to your DHT, and resolve from both networks. \
-                 Set `dht_relay_nodes = []` to stay off the public relays, or list the relays \
-                 you want. Earlier versions disabled the relays here automatically.",
-                pkarr::DEFAULT_RELAYS.join(", "),
-            );
-        }
-    }
-
-    /// Whether this config joins a custom DHT while still pointing at the public relays.
-    ///
-    /// Note that a config read from a file always carries `dht_relay_nodes` — the embedded
-    /// default fills it in with [`pkarr::DEFAULT_RELAYS`] — so "the user did not choose
-    /// relays" means *unset or still equal to those defaults*, not just `None`.
-    /// See [`warn_on_mixed_dht_network`](Self::warn_on_mixed_dht_network).
-    fn mixes_private_dht_with_public_relays(config: &ConfigToml) -> bool {
-        let has_custom_bootstrap = config
-            .pkdns
-            .dht_bootstrap_nodes
-            .as_ref()
-            .is_some_and(|nodes| !nodes.is_empty());
-        if !has_custom_bootstrap {
-            return false;
-        }
-        match &config.pkdns.dht_relay_nodes {
-            // Unset: pkarr's own public defaults apply.
-            None => true,
-            // Still (or partly) the public defaults: not a deliberate choice.
-            Some(relays) => relays.iter().any(Self::is_default_public_relay),
-        }
-    }
-
-    /// Whether `relay` is one of pkarr's public default relays, ignoring a trailing slash.
-    fn is_default_public_relay(relay: &url::Url) -> bool {
-        let relay = relay.as_str().trim_end_matches('/');
-        pkarr::DEFAULT_RELAYS
-            .iter()
-            .any(|default| relay == default.trim_end_matches('/'))
     }
 
     /// Quick test context with default config and a deterministic keypair.
@@ -212,16 +173,26 @@ impl AppContext {
         keypair: Keypair,
         database_override: Option<crate::persistence::sql::ConnectionString>,
     ) -> Result<Self, AppContextBuildError> {
-        let pkarr_builder = Self::isolated_pkarr_builder(&config);
-        Self::new_ephemeral_with_pkarr(config, keypair, database_override, pkarr_builder).await
+        Self::new_ephemeral_with_pkarr(
+            config,
+            keypair,
+            database_override,
+            Self::isolated_pkarr_builder(),
+        )
+        .await
     }
 
-    /// Like [`new_ephemeral`](Self::new_ephemeral) but with a caller-supplied
-    /// pkarr builder — e.g. one pointed at a `mainline::Testnet`.
+    /// Like [`new_ephemeral`](Self::new_ephemeral) but with a caller-supplied pkarr
+    /// builder — e.g. one pointed at a `mainline::Testnet`.
+    ///
+    /// The builder decides which network this context joins, so pass one that is
+    /// isolated from the public DHT and relays; [`isolated_pkarr_builder`](Self::isolated_pkarr_builder)
+    /// is that starting point.
     ///
     /// As in [`new`](Self::new), the config's `[pkdns]` settings are applied on top of
     /// the given builder, so a config carrying `dht_bootstrap_nodes` overrides the
-    /// builder's network.
+    /// builder's network — and, because bootstrap nodes clear the relays, also any
+    /// relays the builder had set.
     #[cfg(any(test, feature = "testing"))]
     pub async fn new_ephemeral_with_pkarr(
         config: ConfigToml,
@@ -271,7 +242,7 @@ impl AppContext {
         db_mode: DatabaseMode,
         mut pkarr_builder: pkarr::ClientBuilder,
     ) -> Result<Self, AppContextBuildError> {
-        Self::apply_config_to_pkarr(&mut pkarr_builder, &config);
+        Self::apply_config_to_pkarr(&mut pkarr_builder, &config)?;
         let sql_db = SqlDb::connect(db_mode)
             .await
             .map_err(AppContextBuildError::SqlDb)?;
@@ -321,32 +292,43 @@ impl AppContext {
         })
     }
 
-    /// Create a pkarr builder isolated from the public network, with config applied.
+    /// A pkarr builder isolated from the public network: no default bootstrap nodes,
+    /// no default relays, testnet report policy.
     ///
-    /// Starts from a blank network (no default bootstrap nodes or relays, testnet
-    /// report policy). Config values are applied on top — used by testnets which
-    /// inject their own bootstrap/relay nodes via config.
+    /// This is the *base* for test and testnet clients. It carries no configuration —
+    /// [`new`](Self::new) applies the `[pkdns]` settings to whatever builder it is given,
+    /// so applying them here as well would only duplicate the work and its warnings.
+    ///
+    /// Use it as the base for anything that assembles a context itself —
+    /// [`new_ephemeral_with_pkarr`](Self::new_ephemeral_with_pkarr) for a custom network,
+    /// or [`new`](Self::new) directly, as the persistent testnet does when it needs a real
+    /// data directory but must still stay off the public DHT.
     #[cfg(any(test, feature = "testing"))]
-    pub fn isolated_pkarr_builder(config: &ConfigToml) -> pkarr::ClientBuilder {
+    pub fn isolated_pkarr_builder() -> pkarr::ClientBuilder {
         let mut builder = pkarr::ClientBuilder::default();
         builder
             .no_default_network()
-            // Sentinel bootstrap node so the builder stays valid even when
-            // no config-level bootstrap nodes are provided. Explicit testnet
-            // bootstrap nodes (from config) replace this via apply_config_to_pkarr.
+            // Sentinel bootstrap node so the builder stays valid even when neither the
+            // caller nor the config supplies bootstrap nodes. Real nodes replace it.
             // Port 9 is the RFC 863 "discard" protocol — guaranteed unreachable as a DHT node.
             .bootstrap(&["127.0.0.1:9"])
             .dht_report_policy(pkarr::dht::ReportPolicy::testnet());
-        Self::apply_config_to_pkarr(&mut builder, config);
         builder
     }
 
     /// Apply DHT configuration (bootstrap nodes, relays, timeouts) from config
     /// to a pkarr client builder.
     ///
-    /// An empty list means "none" for both `dht_bootstrap_nodes` and `dht_relay_nodes`:
-    /// no bootstrap nodes starts an isolated DHT, no relays disables relays entirely.
-    fn apply_config_to_pkarr(builder: &mut pkarr::ClientBuilder, config: &ConfigToml) {
+    /// Setting `dht_bootstrap_nodes` also clears the relays, so a custom DHT is not
+    /// silently paired with the public pkarr relays. An explicit `dht_relay_nodes` is
+    /// applied afterwards and therefore wins, including on a custom DHT.
+    ///
+    /// An empty `dht_bootstrap_nodes` list means "no bootstrap nodes" and starts an
+    /// isolated DHT.
+    fn apply_config_to_pkarr(
+        builder: &mut pkarr::ClientBuilder,
+        config: &ConfigToml,
+    ) -> Result<(), AppContextBuildError> {
         if let Some(bootstrap_nodes) = &config.pkdns.dht_bootstrap_nodes {
             if bootstrap_nodes.is_empty() {
                 tracing::warn!(
@@ -360,21 +342,24 @@ impl AppContext {
                 .map(|node| node.to_string())
                 .collect::<Vec<String>>();
             builder.bootstrap(&nodes);
+            // Choosing a DHT clears the relays: mixing testnet bootstrap nodes with
+            // mainnet relays gives very strange results. An explicit `dht_relay_nodes`
+            // below is applied after this and so still wins.
+            builder.no_relays();
         }
 
+        // A `url::Url` is not necessarily a valid relay (no host, wrong scheme, ...),
+        // so this is a config error to report, not an invariant to assert.
         if let Some(relays) = &config.pkdns.dht_relay_nodes {
-            if relays.is_empty() {
-                builder.no_relays();
-            } else {
-                builder
-                    .relays(relays)
-                    .expect("parameters are already URLs and therefore valid.");
-            }
+            builder
+                .relays(relays)
+                .map_err(|e| AppContextBuildError::RelayNodes(e.into()))?;
         }
         if let Some(request_timeout) = &config.pkdns.dht_request_timeout_ms {
             let duration = Duration::from_millis(request_timeout.get());
             builder.request_timeout(duration);
         }
+        Ok(())
     }
 }
 
@@ -412,6 +397,45 @@ mod tests {
         );
     }
 
+    /// The production constructor's failure path — which this branch newly made
+    /// reachable by removing `database_url` from the embedded defaults. A server whose
+    /// owner never chose a database must refuse to start rather than guess one.
+    ///
+    /// Also covers [`PersistentDataDir::bootstrap`], which runs first: the directory,
+    /// config and keypair must all exist by the time the database is considered.
+    ///
+    /// Independent of `TEST_PUBKY_CONNECTION_STRING` — the production path uses
+    /// `require_direct`, which never consults the environment.
+    #[tokio::test]
+    async fn from_persistent_dir_refuses_when_no_database_is_configured() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let dir = crate::PersistentDataDir::new(temp.path().join("pubky"));
+
+        // `AppContext` is deliberately not `Debug`, so discard the Ok value first.
+        let err = AppContext::from_persistent_dir(dir.clone())
+            .await
+            .map(|_| ())
+            .expect_err("a server with no configured database must not start");
+
+        assert!(
+            matches!(err, AppContextBuildError::DatabaseResolution(_)),
+            "expected DatabaseResolution, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("database_url"),
+            "the error must name the setting to fix: {err}"
+        );
+
+        assert!(
+            dir.get_config_file_path().exists(),
+            "bootstrap should have seeded config.toml before the database was considered"
+        );
+        assert!(
+            dir.get_secret_file_path().exists(),
+            "bootstrap should have created the keypair"
+        );
+    }
+
     fn config_with_bootstrap(nodes: &[&str]) -> ConfigToml {
         use crate::DomainPort;
         use std::str::FromStr;
@@ -426,96 +450,119 @@ mod tests {
         config
     }
 
-    /// Custom bootstrap nodes with no explicit relays leaves the public relays active.
-    /// That is a deliberate change from the old implicit `no_relays()`, so it has to be
-    /// warned about — see `warn_on_mixed_dht_network`.
+    fn relays_of(config: &ConfigToml) -> String {
+        let mut builder = pkarr::ClientBuilder::default();
+        AppContext::apply_config_to_pkarr(&mut builder, config).unwrap();
+        format!("{builder:?}")
+    }
+
+    fn has_default_relays(debug: &str) -> bool {
+        pkarr::DEFAULT_RELAYS.iter().any(|r| debug.contains(r))
+    }
+
+    /// Choosing a DHT clears the relays, so testnet bootstrap nodes are never paired
+    /// with mainnet relays.
     #[test]
-    fn mixed_network_is_detected_when_relays_are_unset() {
+    fn custom_bootstrap_nodes_clear_the_relays() {
+        // A literal address: pkarr resolves bootstrap entries to socket addresses, so an
+        // unresolvable hostname would simply be dropped and prove nothing.
         let config = config_with_bootstrap(&["127.0.0.1:6881"]);
-        assert_eq!(config.pkdns.dht_relay_nodes, None);
-        assert!(AppContext::mixes_private_dht_with_public_relays(&config));
-    }
-
-    /// The case that actually reaches production: a config read from disk always carries
-    /// `dht_relay_nodes`, because the embedded default fills it in with the public relays.
-    /// Checking for `None` alone would never fire.
-    #[test]
-    fn mixed_network_is_detected_for_a_config_read_from_a_file() {
-        let config = ConfigToml::from_str_with_defaults(
-            "[pkdns]\ndht_bootstrap_nodes = [\"my-dht.internal:6881\"]\n",
-        )
-        .unwrap();
-
-        assert!(
-            config
-                .pkdns
-                .dht_relay_nodes
-                .as_ref()
-                .is_some_and(|r| !r.is_empty()),
-            "the embedded default should have filled in the public relays"
+        assert_eq!(
+            config.pkdns.dht_relay_nodes, None,
+            "precondition: relays unset"
         );
+
+        let debug = relays_of(&config);
+        assert!(debug.contains("127.0.0.1:6881"), "{debug}");
         assert!(
-            AppContext::mixes_private_dht_with_public_relays(&config),
-            "a private DHT left on the default public relays must be flagged"
+            !has_default_relays(&debug),
+            "a custom DHT must not keep the public relays: {debug}"
         );
     }
 
+    /// ...but `dht_relay_nodes` is applied after that, so an explicit list still wins —
+    /// including the public relays, which is how a config file that sets both ends up on
+    /// a custom DHT *and* the public relays.
     #[test]
-    fn mixed_network_is_not_flagged_once_relays_are_explicit() {
+    fn an_explicit_relay_list_wins_over_the_bootstrap_clear() {
         let mut config = config_with_bootstrap(&["127.0.0.1:6881"]);
+        config.pkdns.dht_relay_nodes =
+            Some(vec![url::Url::parse("https://relay.example").unwrap()]);
+        let debug = relays_of(&config);
+        assert!(debug.contains("relay.example"), "{debug}");
+        assert!(!has_default_relays(&debug), "{debug}");
 
-        config.pkdns.dht_relay_nodes = Some(vec![]);
+        let mut config = config_with_bootstrap(&["127.0.0.1:6881"]);
+        config.pkdns.dht_relay_nodes = Some(
+            pkarr::DEFAULT_RELAYS
+                .iter()
+                .map(|r| url::Url::parse(r).unwrap())
+                .collect(),
+        );
+        let debug = relays_of(&config);
         assert!(
-            !AppContext::mixes_private_dht_with_public_relays(&config),
-            "`dht_relay_nodes = []` is the documented opt-out"
+            has_default_relays(&debug),
+            "listing the public relays explicitly must keep them: {debug}"
+        );
+    }
+
+    /// With no bootstrap nodes configured, the builder keeps its own relays unless the
+    /// config replaces them.
+    #[test]
+    fn relays_are_untouched_without_custom_bootstrap_nodes() {
+        let mut config = ConfigToml::default_test_config();
+        config.pkdns.dht_relay_nodes = None;
+        assert_eq!(config.pkdns.dht_bootstrap_nodes, None);
+        assert!(
+            has_default_relays(&relays_of(&config)),
+            "the public relays must survive a config that says nothing about them"
         );
 
         config.pkdns.dht_relay_nodes =
             Some(vec![url::Url::parse("https://relay.example").unwrap()]);
-        assert!(
-            !AppContext::mixes_private_dht_with_public_relays(&config),
-            "an explicit private relay list is a deliberate choice"
-        );
+        let debug = relays_of(&config);
+        assert!(debug.contains("relay.example"), "{debug}");
+        assert!(!has_default_relays(&debug), "{debug}");
     }
 
+    /// A `url::Url` is not necessarily a valid relay, and it comes straight from the
+    /// config file — so a bad value must surface as an error the operator can read,
+    /// not a panic at startup.
     #[test]
-    fn default_public_relays_are_recognised_with_or_without_trailing_slash() {
-        for relay in pkarr::DEFAULT_RELAYS {
-            assert!(AppContext::is_default_public_relay(
-                &url::Url::parse(relay).unwrap()
-            ));
+    fn an_unusable_relay_url_is_a_config_error_not_a_panic() {
+        let mut config = ConfigToml::default_test_config();
+        config.pkdns.dht_relay_nodes =
+            Some(vec![url::Url::parse("mailto:nobody@example").unwrap()]);
+
+        let mut builder = pkarr::ClientBuilder::default();
+        let err = AppContext::apply_config_to_pkarr(&mut builder, &config)
+            .expect_err("a relay url with no host must be rejected");
+        assert!(
+            matches!(err, AppContextBuildError::RelayNodes(_)),
+            "expected RelayNodes, got {err:?}"
+        );
+        assert!(err.to_string().contains("dht_relay_nodes"), "{err}");
+
+        // pkarr's error carries a readable explanation; keep it rather than the Debug
+        // form, which would render as `Parse(...)` / `NotHttp("...")` and bury the reason.
+        let cause = format!("{:#}", anyhow::Error::from(err));
+        assert!(
+            cause.contains("mailto:nobody@example"),
+            "the offending url should be named: {cause}"
+        );
+        for debug_marker in ["Parse(", "NotHttp("] {
             assert!(
-                AppContext::is_default_public_relay(
-                    &url::Url::parse(&format!("{relay}/")).unwrap()
-                ),
-                "url::Url normalises {relay} to a trailing slash, which must still match"
+                !cause.contains(debug_marker),
+                "error is being rendered with Debug, not Display: {cause}"
             );
         }
-        assert!(!AppContext::is_default_public_relay(
-            &url::Url::parse("https://relay.example").unwrap()
-        ));
-    }
-
-    #[test]
-    fn mixed_network_is_not_flagged_on_the_default_public_network() {
-        let config = ConfigToml::default_test_config();
-        assert_eq!(config.pkdns.dht_bootstrap_nodes, None);
-        assert!(
-            !AppContext::mixes_private_dht_with_public_relays(&config),
-            "default bootstrap nodes and default relays are the same network"
-        );
-
-        assert!(
-            !AppContext::mixes_private_dht_with_public_relays(&config_with_bootstrap(&[])),
-            "an empty bootstrap list is not a custom DHT"
-        );
     }
 
     /// An empty bootstrap list means "no bootstrap nodes", mirroring the relay handling.
     #[test]
     fn empty_bootstrap_list_clears_the_default_nodes() {
         let mut builder = pkarr::ClientBuilder::default();
-        AppContext::apply_config_to_pkarr(&mut builder, &config_with_bootstrap(&[]));
+        AppContext::apply_config_to_pkarr(&mut builder, &config_with_bootstrap(&[])).unwrap();
         let debug = format!("{builder:?}");
 
         assert!(
@@ -527,36 +574,10 @@ mod tests {
             .expect("a peerless DHT client should still build");
     }
 
-    /// Public (default) builder keeps default relays and applies config values.
-    #[test]
-    fn public_builder_keeps_defaults_and_applies_config() {
-        use crate::DomainPort;
-        use std::str::FromStr;
-
-        let mut config = ConfigToml::default_test_config();
-        config.pkdns.dht_bootstrap_nodes =
-            Some(vec![DomainPort::from_str("127.0.0.1:6881").unwrap()]);
-
-        let mut builder = pkarr::ClientBuilder::default();
-        AppContext::apply_config_to_pkarr(&mut builder, &config);
-        let debug = format!("{builder:?}");
-
-        assert!(
-            debug.contains("127.0.0.1:6881"),
-            "bootstrap node from config should be present: {debug}"
-        );
-        for relay in pkarr::DEFAULT_RELAYS {
-            assert!(
-                debug.contains(relay),
-                "default relay {relay} should still be present: {debug}"
-            );
-        }
-    }
-
     /// Isolated builder excludes public DHT nodes.
     #[test]
     fn isolated_builder_excludes_public_dht() {
-        let builder = AppContext::isolated_pkarr_builder(&ConfigToml::default_test_config());
+        let builder = AppContext::isolated_pkarr_builder();
         let debug = format!("{builder:?}");
 
         for relay in pkarr::DEFAULT_RELAYS {
@@ -566,5 +587,27 @@ mod tests {
             );
         }
         builder.build().expect("isolated pkarr client should build");
+    }
+
+    /// `new` applies the config on top of whatever builder it is given, so a config that
+    /// names a network still wins — the documented contract of both constructors.
+    #[test]
+    fn config_is_applied_on_top_of_a_caller_supplied_builder() {
+        use crate::DomainPort;
+        use std::str::FromStr;
+
+        let mut config = ConfigToml::default_test_config();
+        config.pkdns.dht_bootstrap_nodes =
+            Some(vec![DomainPort::from_str("127.0.0.1:7777").unwrap()]);
+
+        let mut builder = AppContext::isolated_pkarr_builder();
+        builder.bootstrap(&["127.0.0.1:6881"]);
+        AppContext::apply_config_to_pkarr(&mut builder, &config).unwrap();
+        let debug = format!("{builder:?}");
+
+        assert!(
+            debug.contains("127.0.0.1:7777") && !debug.contains("127.0.0.1:6881"),
+            "config bootstrap nodes must replace the caller's: {debug}"
+        );
     }
 }

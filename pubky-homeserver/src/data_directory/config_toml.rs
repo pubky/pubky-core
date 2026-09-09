@@ -213,7 +213,6 @@ impl ConfigToml {
     #[cfg(any(test, feature = "testing"))]
     pub fn default_test_config() -> Self {
         let mut config = Self::default();
-        config.general.database_url = None; // Resolved downstream via env var or default fallback.
         config.general.signup_mode = SignupMode::Open;
         // Use ephemeral ports (0) so parallel tests don't collide.
         config.drive.icann_listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -332,6 +331,23 @@ mod tests {
                     TargetLevel::from_str("tower_http=debug").unwrap()
                 ],
             })
+        );
+    }
+
+    /// The embedded defaults must leave `database_url` unset, so that a server whose
+    /// owner never chose a database fails loudly instead of silently connecting to one.
+    /// It is also what lets `[general].database_url` mean "someone picked this" wherever
+    /// it is read — see `ConnectionString::resolve_for_test`.
+    #[test]
+    fn embedded_defaults_configure_no_database() {
+        assert_eq!(ConfigToml::default().general.database_url, None);
+        assert_eq!(
+            ConfigToml::from_str_with_defaults("[general]\nsignup_mode = \"open\"\n")
+                .unwrap()
+                .general
+                .database_url,
+            None,
+            "a config that does not mention database_url must not acquire one"
         );
     }
 

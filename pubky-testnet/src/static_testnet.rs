@@ -33,9 +33,10 @@ fn apply_static_testnet_overrides(config: &mut ConfigToml, bootstrap_nodes: Vec<
 /// Guidance attached to homeserver startup failures, naming the database that was tried
 /// and the two ways to change it.
 ///
-/// A `database_url` read from a config file is often just the embedded default rather than
-/// something anyone chose, so a bare "authentication failed" from that host is confusing
-/// without saying where the value came from.
+/// `url` must be the database that was actually *resolved* — read it back from
+/// [`DatabaseMode::connection_string`], not from `config.general.database_url`, which is
+/// only the lowest tier of the precedence rule and is routinely outranked by
+/// `TEST_PUBKY_CONNECTION_STRING` or by an override set in code.
 fn database_hint(url: Option<&ConnectionString>, config_path: Option<&Path>) -> String {
     let target = match url {
         Some(url) => format!("Tried {}.", url.redacted()),
@@ -46,7 +47,8 @@ fn database_hint(url: Option<&ConnectionString>, config_path: Option<&Path>) -> 
         None => "database_url in the homeserver config".to_string(),
     };
     // No trailing period: anyhow joins this to the cause with ": ".
-    format!("Could not start the homeserver's database. {target} Set TEST_PUBKY_CONNECTION_STRING, or {config_hint}")
+    let env = pubky_homeserver::TEST_CONNECTION_STRING_ENV;
+    format!("Could not start the homeserver's database. {target} Set {env}, or {config_hint}")
 }
 
 /// How the testnet stores homeserver state.
@@ -400,10 +402,12 @@ impl StaticTestnet {
 
         apply_static_testnet_overrides(&mut config, self.parse_bootstrap_nodes()?);
         // Same precedence as every other testnet path — see `ConnectionString::resolve_for_test`.
-        // The persistent testnet needs a real database, so there is no default fallback here.
+        // The persistent testnet connects `Direct` to a real, long-lived database, so there
+        // is no default-server fallback: if nobody chose a database, that is an error
+        // rather than a guess.
         config.general.database_url = ConnectionString::resolve_for_test(
             self.testnet.postgres_connection_string.clone(),
-            config.general.database_url,
+            config.general.database_url.clone(),
         )?;
         // The seeded config.toml is fully commented out, so the homeserver defaults
         // apply — including `signup_mode = "token_required"`, unlike the in-memory
@@ -414,15 +418,20 @@ impl StaticTestnet {
             config.general.signup_mode,
             persistent_dir.get_config_file_path().display()
         );
-        let db_mode =
-            pubky_homeserver::DatabaseMode::require_direct(config.general.database_url.clone())?;
 
-        let data_path = persistent_dir.path().to_path_buf();
-        let pkarr_builder = AppContext::isolated_pkarr_builder(&config);
+        // Built before `require_direct` so the "nothing configured" case gets the same
+        // guidance as a failed connection — that is the case the hint exists for.
+        let config_file_path = persistent_dir.get_config_file_path();
         let hint = database_hint(
             config.general.database_url.as_ref(),
-            Some(&persistent_dir.get_config_file_path()),
+            Some(&config_file_path),
         );
+        let db_mode =
+            pubky_homeserver::DatabaseMode::require_direct(config.general.database_url.clone())
+                .context(hint.clone())?;
+
+        let data_path = persistent_dir.path().to_path_buf();
+        let pkarr_builder = AppContext::isolated_pkarr_builder();
         let context = AppContext::new(data_path, config, keypair, db_mode, pkarr_builder)
             .await
             .with_context(|| hint)?;
@@ -439,16 +448,19 @@ impl StaticTestnet {
         };
         apply_static_testnet_overrides(&mut config, self.parse_bootstrap_nodes()?);
 
-        // The database is chosen inside `new_ephemeral`, by the same rule every other
-        // testnet path uses — see `ConnectionString::resolve_for_test`.
-        let hint = database_hint(config.general.database_url.as_ref(), config_path);
-        let context = AppContext::new_ephemeral(
-            config,
-            testnet_keypair(),
+        // Resolve the database up front rather than letting `new_ephemeral` do it, so a
+        // failure can name the database that was actually tried. The rule is the same one
+        // every other testnet path uses — see `ConnectionString::resolve_for_test` — and
+        // feeding the resolved URL back in as the override is a no-op for it.
+        let db_mode = pubky_homeserver::DatabaseMode::resolve_test(
             self.testnet.postgres_connection_string.clone(),
-        )
-        .await
-        .with_context(|| hint)?;
+            config.general.database_url.clone(),
+        )?;
+        let resolved_url = db_mode.connection_string().clone();
+        let hint = database_hint(Some(&resolved_url), config_path);
+        let context = AppContext::new_ephemeral(config, testnet_keypair(), Some(resolved_url))
+            .await
+            .with_context(|| hint)?;
         self.testnet.start_homeserver(context).await?;
         Ok(())
     }
@@ -458,6 +470,67 @@ impl StaticTestnet {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// A freshly initialised data dir configures no database, and that state is what makes
+    /// the persistent testnet error instead of guessing one. The homeserver's embedded
+    /// `config.default.toml` deliberately leaves `database_url` unset for exactly this
+    /// reason — if a default is ever put back, the first assertion fails.
+    ///
+    /// Both halves are independent of `TEST_PUBKY_CONNECTION_STRING`: the env var can
+    /// supply a database, but it cannot make an unset config look set, nor make
+    /// `require_direct(None)` succeed.
+    #[test]
+    fn an_unconfigured_database_does_not_satisfy_the_persistent_testnet() {
+        let temp = TempDir::new().unwrap();
+        let persistent = PersistentDataDir::new(temp.path().to_path_buf());
+        persistent.init().unwrap();
+
+        let config = persistent.read_or_create_config_file().unwrap();
+        assert_eq!(
+            config.general.database_url, None,
+            "the seeded config.toml is fully commented out and the embedded default sets \
+             no database_url, so nothing should be configured here"
+        );
+        assert!(
+            pubky_homeserver::DatabaseMode::require_direct(config.general.database_url).is_err(),
+            "the persistent testnet must refuse to guess a database"
+        );
+    }
+
+    #[test]
+    fn database_hint_names_the_database_and_both_ways_to_change_it() {
+        let url = ConnectionString::new("postgres://user:hunter2@db.example:5432/mydb").unwrap();
+        let path = PathBuf::from("/data/pubky/config.toml");
+        let hint = database_hint(Some(&url), Some(&path));
+
+        assert!(
+            !hint.contains("hunter2"),
+            "the password must not reach an error message: {hint}"
+        );
+        for part in [
+            "db.example",
+            "5432",
+            "mydb",
+            pubky_homeserver::TEST_CONNECTION_STRING_ENV,
+        ] {
+            assert!(hint.contains(part), "{part} missing from: {hint}");
+        }
+        assert!(hint.contains("/data/pubky/config.toml"), "{hint}");
+        assert!(
+            !hint.ends_with('.'),
+            "anyhow joins this to the cause with \": \": {hint}"
+        );
+    }
+
+    #[test]
+    fn database_hint_without_a_database_or_a_config_file() {
+        let hint = database_hint(None, None);
+        assert!(hint.contains("No database was configured"), "{hint}");
+        assert!(
+            hint.contains("database_url in the homeserver config"),
+            "{hint}"
+        );
+    }
 
     #[test]
     fn static_overrides_apply_to_config() {

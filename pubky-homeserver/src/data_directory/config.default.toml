@@ -1,7 +1,11 @@
 [general]
 signup_mode = "token_required"
 user_storage_quota_mb = 0
-database_url = "postgres://localhost:5432/pubky_homeserver"
+# `database_url` is deliberately absent. This file is merged underneath every config read
+# from disk, so a value here would apply to servers whose owner never chose a database —
+# the homeserver would silently connect to it and run migrations against it. Leaving it
+# unset makes "no database configured" an error the operator can see and fix. The setting
+# is still documented (commented out) in config.sample.toml.
 
 [drive]
 pubky_listen_socket = "127.0.0.1:6287"

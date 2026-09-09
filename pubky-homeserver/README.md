@@ -92,26 +92,26 @@ pubky-homeserver --data-dir ~/.pubky
 
 ## Upgrade notes
 
-### DHT relays are no longer cleared implicitly
+### `database_url` must be set explicitly
 
-Earlier versions called pkarr's `no_relays()` whenever `[pkdns].dht_bootstrap_nodes`
-was set, so pointing the homeserver at a private DHT also took it off the public
-pkarr relays. That coupling is gone: bootstrap nodes and relays are now configured
-independently.
+The embedded default config used to supply
+`database_url = "postgres://localhost:5432/pubky_homeserver"`, which was merged underneath
+every `config.toml`. A server whose owner never chose a database would therefore connect to
+that one and run migrations against it.
 
-**If you run a private or custom DHT**, a config that sets `dht_bootstrap_nodes` and
-leaves `dht_relay_nodes` unset will now publish its pkarr record — the server public
-key and its endpoint — to the default public relays as well, and resolve from both
-networks. Add an explicit opt-out:
+That default is gone. If your `config.toml` leaves `database_url` commented out, the server
+now refuses to start:
 
-```toml
-[pkdns]
-dht_bootstrap_nodes = ["my-dht-node.internal:6881"]
-dht_relay_nodes = []   # stay off the public relays
+```
+No database_url configured. Set [general].database_url in config.toml.
 ```
 
-The homeserver logs a warning at startup when it detects this combination.
-Deployments that use the default (public) DHT are unaffected.
+Set it explicitly — see [INSTALL.md](../docs/INSTALL.md):
+
+```toml
+[general]
+database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
+```
 
 ## Storage
 

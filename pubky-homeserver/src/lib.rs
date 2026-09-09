@@ -34,6 +34,10 @@ pub use data_directory::{
 };
 pub use homeserver_app::{HomeserverApp, HomeserverAppBuildError};
 pub use metrics_server::{MetricsServer, MetricsServerBuildError};
+/// Name of the env var that overrides the database URL in test / testing builds,
+/// so callers and docs can refer to it instead of hardcoding the string.
+#[cfg(any(test, feature = "testing"))]
+pub use persistence::sql::TEST_CONNECTION_STRING_ENV;
 pub use persistence::sql::{ConnectionString, DatabaseMode};
 /// Re-exported so callers of [`AppContext::new`] and friends do not need a direct
 /// `pubky-common` dependency just to name the server identity type.

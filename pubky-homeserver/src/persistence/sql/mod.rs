@@ -5,7 +5,7 @@
 //! The [`UnifiedExecutor`] abstraction allows repository methods to work with
 //! both pooled connections and explicit transactions.
 
-pub(crate) mod connection_string;
+mod connection_string;
 mod database_mode;
 pub(crate) mod entities;
 mod migration;
@@ -16,6 +16,8 @@ mod sql_db;
 mod unified_executor;
 
 pub use connection_string::ConnectionString;
+#[cfg(any(test, feature = "testing"))]
+pub use connection_string::TEST_CONNECTION_STRING_ENV;
 pub use database_mode::DatabaseMode;
 pub use entities::entry;
 pub use entities::signup_code;

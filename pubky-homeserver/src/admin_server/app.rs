@@ -66,9 +66,9 @@ pub enum AdminServerBuildError {
     #[error("Failed to create admin server: {0}")]
     Server(anyhow::Error),
 
-    /// Failed to boostrap from the data directory.
-    #[error("Failed to boostrap from the data directory: {0}")]
-    DataDir(AppContextBuildError),
+    /// Failed to build the application context.
+    #[error("Failed to build the application context: {0}")]
+    AppContext(AppContextBuildError),
 }
 
 /// Admin server
@@ -88,7 +88,7 @@ impl AdminServer {
     pub async fn from_data_dir(data_dir: PersistentDataDir) -> Result<Self, AdminServerBuildError> {
         let context = AppContext::from_persistent_dir(data_dir)
             .await
-            .map_err(AdminServerBuildError::DataDir)?;
+            .map_err(AdminServerBuildError::AppContext)?;
         Self::start(Arc::new(context)).await
     }
 

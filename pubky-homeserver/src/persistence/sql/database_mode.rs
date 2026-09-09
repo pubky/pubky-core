@@ -1,4 +1,4 @@
-use super::connection_string::ConnectionString;
+use super::{ConnectionString, TEST_CONNECTION_STRING_ENV};
 
 /// How the homeserver should connect to its database.
 ///
@@ -38,7 +38,13 @@ impl DatabaseMode {
     }
 
     /// Returns the underlying connection string, regardless of mode.
-    #[cfg(test)]
+    ///
+    /// Resolving a mode is the only way to learn which database will actually be
+    /// used — the precedence rule in [`ConnectionString::resolve_for_test`] can pick
+    /// a URL that appears in neither the config nor the caller's override. Diagnostics
+    /// that want to name the database being tried should read it back from here rather
+    /// than re-deriving it.
+    #[cfg(any(test, feature = "testing"))]
     pub fn connection_string(&self) -> &ConnectionString {
         match self {
             Self::Direct(url) => url,
@@ -55,12 +61,13 @@ const DEFAULT_TEST_SERVER: &str = "postgres://localhost:5432/postgres";
 impl DatabaseMode {
     /// Pick the ephemeral test database, applying the shared precedence rule in
     /// [`ConnectionString::resolve_for_test`] and falling back to
-    /// [`DEFAULT_TEST_SERVER`] when nothing is configured:
+    /// the default test server (`postgres://localhost:5432/postgres`) when nothing is
+    /// configured:
     ///
     /// 1. `override_url` (e.g. docker postgres or `EphemeralTestnetBuilder::postgres`)
     /// 2. `TEST_PUBKY_CONNECTION_STRING`
     /// 3. `from_config` — `[general].database_url`
-    /// 4. [`DEFAULT_TEST_SERVER`]
+    /// 4. the default test server
     ///
     /// The result is always [`EphemeralTest`](Self::EphemeralTest): tests get a fresh
     /// database on the chosen server, never the server's own database.
@@ -68,8 +75,21 @@ impl DatabaseMode {
         override_url: Option<ConnectionString>,
         from_config: Option<ConnectionString>,
     ) -> anyhow::Result<Self> {
-        let url =
-            ConnectionString::resolve_for_test(override_url, from_config)?.unwrap_or_else(|| {
+        Self::resolve_test_with_env(override_url, from_config, || {
+            std::env::var(TEST_CONNECTION_STRING_ENV)
+        })
+    }
+
+    /// [`resolve_test`](Self::resolve_test) with the environment injected, so the
+    /// [`DEFAULT_TEST_SERVER`] fallback is reachable from a test even when
+    /// `TEST_PUBKY_CONNECTION_STRING` is set — as it always is in CI.
+    fn resolve_test_with_env(
+        override_url: Option<ConnectionString>,
+        from_config: Option<ConnectionString>,
+        read_env: impl FnOnce() -> Result<String, std::env::VarError>,
+    ) -> anyhow::Result<Self> {
+        let url = ConnectionString::resolve_for_test_with_env(override_url, from_config, read_env)?
+            .unwrap_or_else(|| {
                 ConnectionString::new(DEFAULT_TEST_SERVER)
                     .expect("Default test connection string is valid")
             });
@@ -129,18 +149,28 @@ mod tests {
 
     #[test]
     fn resolve_test_uses_the_config_then_the_default_server() {
-        // With no override the env var is consulted, so only assert the lower tiers
-        // when the ambient environment leaves it unset.
-        if std::env::var(super::super::connection_string::TEST_CONNECTION_STRING_ENV).is_ok() {
-            return;
-        }
+        let unset = || Err(std::env::VarError::NotPresent);
 
         let from_config = ConnectionString::new("postgres://config:5432/db").unwrap();
-        let mode = DatabaseMode::resolve_test(None, Some(from_config.clone())).unwrap();
+        let mode =
+            DatabaseMode::resolve_test_with_env(None, Some(from_config.clone()), unset).unwrap();
         assert_eq!(mode.connection_string(), &from_config);
 
-        let mode = DatabaseMode::resolve_test(None, None).unwrap();
-        assert_eq!(mode.connection_string().as_str(), DEFAULT_TEST_SERVER);
+        let mode = DatabaseMode::resolve_test_with_env(None, None, unset).unwrap();
+        assert_eq!(
+            mode.connection_string().as_str(),
+            DEFAULT_TEST_SERVER,
+            "with nothing configured anywhere, tests get the default server"
+        );
         assert!(matches!(mode, DatabaseMode::EphemeralTest(_)));
+    }
+
+    /// The default server is the *last* resort: anything configured outranks it.
+    #[test]
+    fn the_default_server_never_shadows_a_configured_database() {
+        let env_url = "postgres://envhost:5432/envdb";
+        let mode =
+            DatabaseMode::resolve_test_with_env(None, None, || Ok(env_url.to_string())).unwrap();
+        assert_eq!(mode.connection_string().as_str(), env_url);
     }
 }
