@@ -106,7 +106,7 @@ Requires [Docker Engine](https://docs.docker.com/engine/install/).
 Build the homeserver image using the [Dockerfile](../Dockerfile):
 
 ```bash
-docker build --build-arg BUILD_TARGET=homeserver -t pubky-homeserver .
+docker build -t pubky-homeserver .
 ```
 
 Verify the image built correctly:
@@ -114,6 +114,8 @@ Verify the image built correctly:
 ```bash
 docker run --rm pubky-homeserver homeserver --version
 ```
+
+For debug builds and testnet images, see [Docker build options](./TESTING.md#docker-build-options).
 
 ## Initialise the Data Directory
 

@@ -97,6 +97,46 @@ TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/postgr
   cargo test -p e2e
 ```
 
+## Docker Build Options
+
+The root [Dockerfile](../Dockerfile) builds either a homeserver or a testnet image. Run the commands below from the repository root.
+
+| Build argument | Values | Default |
+| --- | --- | --- |
+| `BUILD_TARGET` | `homeserver`, `testnet` | `homeserver` |
+| `BUILD_PROFILE` | `release` (optimized and stripped), `debug` (faster development builds) | `release` |
+
+Build a debug homeserver image:
+
+```bash
+docker build --build-arg BUILD_TARGET=homeserver --build-arg BUILD_PROFILE=debug -t pubky-homeserver:debug .
+```
+
+Build a release testnet image:
+
+```bash
+docker build --build-arg BUILD_TARGET=testnet --build-arg BUILD_PROFILE=release -t pubky-testnet:release .
+```
+
+Both images install their binary as `homeserver`. Check that it runs without starting services or connecting to PostgreSQL:
+
+```bash
+docker run --rm --network none pubky-homeserver:debug homeserver --help
+docker run --rm --network none pubky-testnet:release homeserver --help
+```
+
+### Docker builds in CI
+
+All Docker jobs use the shared [build workflow](../.github/workflows/docker-build.yml) for both targets:
+
+| Workflow | Trigger | Profile | Platforms | Publishes images |
+| --- | --- | --- | --- | --- |
+| [PR Check](../.github/workflows/pr-check.yml) | Pull requests and pushes to `main` | `debug` | `linux/amd64` | No |
+| [Release Docker check](../.github/workflows/docker-check.yml) | Pushes to `main` | `release` | `linux/amd64`, `linux/arm64` | No |
+| [Docker publishing](../.github/workflows/docker.yml) | Tags matching `v*` | `release` | `linux/amd64`, `linux/arm64` | Yes |
+
+Build caches are scoped by profile and target.
+
 ## Common Commands
 
 Run the homeserver tests against external PostgreSQL:

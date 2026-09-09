@@ -327,11 +327,8 @@ jobs:
             -- --test-threads=1
 
   docker-build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [testnet, homeserver]
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build Docker image
-        run: docker build --build-arg BUILD_TARGET=${{ matrix.target }} .
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      build_profile: debug
+      platforms: linux/amd64
+      publish: false
