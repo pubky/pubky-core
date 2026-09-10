@@ -338,9 +338,9 @@ impl PubkyHttpClientBuilder {
     /// Set the maximum duration of each HTTP read operation.
     ///
     /// # Deprecated
-/// This setter has no effect on WASM: reqwest's browser `fetch` backend
-/// does not support configuring a timeout for each read operation.
-#[deprecated(note = "HTTP read timeout is not supported on WASM")]
+    /// This setter has no effect on WASM: reqwest's browser `fetch` backend
+    /// does not support configuring a timeout for each read operation.
+    #[deprecated(note = "HTTP read timeout is not supported on WASM")]
     pub fn read_timeout(&mut self, _timeout: Duration) -> &mut Self {
         self
     }
