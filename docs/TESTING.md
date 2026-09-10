@@ -127,15 +127,19 @@ docker run --rm --network none pubky-testnet:release homeserver --help
 
 ### Docker builds in CI
 
-All Docker jobs use the shared [build workflow](../.github/workflows/docker-build.yml) for both targets:
+All Docker jobs use the shared [build
+workflow](../.github/workflows/docker-build.yml) for both targets:
 
 | Workflow | Trigger | Profile | Platforms | Publishes images |
 | --- | --- | --- | --- | --- |
-| [PR Check](../.github/workflows/pr-check.yml) | Pull requests and pushes to `main` | `debug` | `linux/amd64` | No |
-| [Release Docker check](../.github/workflows/docker-check.yml) | Pushes to `main` | `release` | `linux/amd64`, `linux/arm64` | No |
+| [PR Check](../.github/workflows/pr-check.yml) | Pull requests and pushes to `main` | `debug` | `linux/amd64`, `linux/arm64` (native runners) | No |
+| [Release Docker check](../.github/workflows/docker-check.yml) | Pushes to `main` | `release` | `linux/amd64`, `linux/arm64` (native runners) | No |
 | [Docker publishing](../.github/workflows/docker.yml) | Tags matching `v*` | `release` | `linux/amd64`, `linux/arm64` | Yes |
 
-Build caches are scoped by profile and target.
+Build caches are scoped by profile and target. PR Docker checks and release
+Docker checks on `main` run AMD64 on `ubuntu-24.04` and ARM64 on
+`ubuntu-24.04-arm`, with caches additionally scoped by architecture. Publishing
+builds both architectures together on `ubuntu-latest`, using emulation for ARM64.
 
 ## Common Commands
 
