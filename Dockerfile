@@ -34,14 +34,20 @@ COPY Cargo.toml Cargo.lock ./
 COPY . .
 
 # Add build argument for binary selection (homeserver or testnet)
-ARG BUILD_TARGET=testnet
+ARG BUILD_TARGET=homeserver
 
-# Build the project in release mode for the MUSL target
-# Only apply environment setup script only when host is ARM so we don't override the native compiler on x86 hosts
-RUN cargo build --release --bin pubky-$BUILD_TARGET
+# Build in release mode by default; use debug for faster development builds.
+ARG BUILD_PROFILE=release
 
-# Strip the binary to reduce size
-RUN strip target/release/pubky-$BUILD_TARGET
+# Cargo calls the debug profile "dev", but writes its artifacts to target/debug.
+RUN case "$BUILD_PROFILE" in \
+      release) cargo build --release --bin "pubky-$BUILD_TARGET" && \
+               strip "target/release/pubky-$BUILD_TARGET" ;; \
+      debug) cargo build --bin "pubky-$BUILD_TARGET" ;; \
+      *) echo "Invalid BUILD_PROFILE: $BUILD_PROFILE (expected debug or release)" >&2; exit 1 ;; \
+    esac && \
+    mkdir -p /out && \
+    cp "target/$BUILD_PROFILE/pubky-$BUILD_TARGET" /out/homeserver
 
 # ========================
 # Runtime Stage
@@ -49,13 +55,12 @@ RUN strip target/release/pubky-$BUILD_TARGET
 FROM alpine:3.20
 
 ARG TARGETARCH
-ARG BUILD_TARGET=testnet
 
 # Install runtime dependencies (only ca-certificates)
 RUN apk add --no-cache ca-certificates
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/app/target/release/pubky-$BUILD_TARGET /usr/local/bin/homeserver
+COPY --from=builder /out/homeserver /usr/local/bin/homeserver
 
 # Set the working directory
 WORKDIR /usr/local/bin

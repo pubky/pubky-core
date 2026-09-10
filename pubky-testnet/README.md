@@ -2,6 +2,8 @@
 
 A local test network for developing Pubky homeserver or applications depending on it.
 
+To build a testnet Docker image, see [Docker build options](../docs/TESTING.md#docker-build-options).
+
 ## Quick start
 
 Start Postgres if you don't already have one running:
