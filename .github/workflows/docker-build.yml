@@ -3,6 +3,14 @@ name: Build Docker Images
 on:
   workflow_call:
     inputs:
+      runner:
+        description: GitHub runner label for the build
+        type: string
+        default: ubuntu-latest
+      cache_scope_suffix:
+        description: Optional suffix to isolate caches for separate architecture builds
+        type: string
+        default: ''
       build_profile:
         description: Docker build profile (debug or release)
         type: string
@@ -28,7 +36,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 150
     strategy:
       matrix:
@@ -59,8 +67,8 @@ jobs:
             type=ref,event=tag
           platforms: ${{ inputs.platforms }}
           image: ${{ matrix.image }}
-          cache_from: type=gha,scope=docker-${{ inputs.build_profile }}-${{ matrix.target }}
-          cache_to: type=gha,scope=docker-${{ inputs.build_profile }}-${{ matrix.target }},mode=max
+          cache_from: type=gha,scope=docker-${{ inputs.build_profile }}-${{ matrix.target }}${{ inputs.cache_scope_suffix }}
+          cache_to: type=gha,scope=docker-${{ inputs.build_profile }}-${{ matrix.target }}${{ inputs.cache_scope_suffix }},mode=max
           build_args: |
             BUILD_TARGET=${{ matrix.target }}
             BUILD_PROFILE=${{ inputs.build_profile }}
