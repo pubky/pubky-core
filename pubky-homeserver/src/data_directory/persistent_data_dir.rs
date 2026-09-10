@@ -271,6 +271,141 @@ mod tests {
         assert_eq!(content, "test");
     }
 
+    /// `init` is what a first run leaves behind: a config file and a keypair, both
+    /// stable across subsequent reads.
+    #[test]
+    fn init_creates_a_config_and_a_stable_keypair() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join("new-dir"));
+        data_dir.init().unwrap();
+
+        assert!(data_dir.get_config_file_path().exists());
+        assert!(data_dir.get_secret_file_path().exists());
+        assert_eq!(
+            data_dir.read_or_create_keypair().unwrap().public_key(),
+            data_dir.read_or_create_keypair().unwrap().public_key(),
+            "the keypair must not change between reads"
+        );
+    }
+
+    /// The config `init` writes is fully commented out, so it configures nothing and the
+    /// embedded defaults apply. `database_url` in particular must come back `None` —
+    /// that is what keeps `[general].database_url` meaningful as "the operator chose
+    /// this" — production's fallback lives in code, not in the seeded file.
+    #[test]
+    fn a_seeded_config_configures_no_database() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join("new-dir"));
+        data_dir.init().unwrap();
+
+        let config = data_dir.read_or_create_config_file().unwrap();
+        assert_eq!(config.general.database_url, None);
+    }
+
+    #[test]
+    fn seed_keypair_writes_the_given_key_when_none_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join(".pubky"));
+        data_dir.ensure_exists_and_is_writable().unwrap();
+
+        let seeded = pubky_common::crypto::Keypair::from_secret(&[7; 32]);
+        data_dir.seed_keypair_if_missing(&seeded).unwrap();
+
+        assert_eq!(
+            data_dir.read_or_create_keypair().unwrap().public_key(),
+            seeded.public_key()
+        );
+    }
+
+    /// The whole point of the "if missing" — a caller seeding a well-known identity must
+    /// never silently replace the identity a directory already has.
+    #[test]
+    fn seed_keypair_is_a_no_op_when_one_already_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join(".pubky"));
+        data_dir.ensure_exists_and_is_writable().unwrap();
+        let existing = data_dir.read_or_create_keypair().unwrap();
+
+        let other = pubky_common::crypto::Keypair::from_secret(&[7; 32]);
+        assert_ne!(existing.public_key(), other.public_key());
+        data_dir.seed_keypair_if_missing(&other).unwrap();
+
+        assert_eq!(
+            data_dir.read_or_create_keypair().unwrap().public_key(),
+            existing.public_key(),
+            "an existing keypair must not be overwritten"
+        );
+    }
+
+    #[test]
+    fn seed_config_copies_the_source_into_an_empty_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join("new-dir"));
+
+        let source = temp_dir.path().join("custom.toml");
+        let contents = ConfigToml::sample_string();
+        std::fs::write(&source, &contents).unwrap();
+
+        data_dir.seed_config(&source).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(data_dir.get_config_file_path()).unwrap(),
+            contents,
+            "the source should be copied verbatim"
+        );
+    }
+
+    /// Refused rather than overwritten: the existing config may have been edited by hand
+    /// since it was seeded.
+    #[test]
+    fn seed_config_refuses_to_replace_an_existing_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = PersistentDataDir::new(temp_dir.path().join(".pubky"));
+        data_dir.init().unwrap();
+        let before = std::fs::read_to_string(data_dir.get_config_file_path()).unwrap();
+
+        let source = temp_dir.path().join("other.toml");
+        std::fs::write(&source, "[general]\nsignup_mode = \"open\"\n").unwrap();
+
+        let err = data_dir
+            .seed_config(&source)
+            .expect_err("seeding over an existing config must be refused");
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(data_dir.get_config_file_path()).unwrap(),
+            before,
+            "the existing config must be left untouched"
+        );
+    }
+
+    /// `bootstrap` is what `AppContext::from_persistent_dir` calls: it must create the
+    /// directory and return the same path, config and keypair that reading them
+    /// individually would.
+    #[test]
+    fn bootstrap_creates_the_dir_and_returns_its_contents() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("new-dir");
+        let data_dir = PersistentDataDir::new(path.clone());
+
+        let (returned_path, config, keypair) = data_dir.bootstrap().unwrap();
+
+        assert_eq!(returned_path, path);
+        assert!(path.is_dir(), "bootstrap should create the directory");
+        assert_eq!(
+            config.general.signup_mode,
+            data_dir
+                .read_or_create_config_file()
+                .unwrap()
+                .general
+                .signup_mode
+        );
+        assert_eq!(
+            keypair.public_key(),
+            data_dir.read_or_create_keypair().unwrap().public_key(),
+            "bootstrap must not mint a second keypair"
+        );
+    }
+
     #[test]
     pub fn test_trim_secret_file_content() {
         let temp_dir = TempDir::new().unwrap();

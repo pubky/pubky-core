@@ -53,7 +53,10 @@ pub struct EphemeralTestnet {
 /// # Defaults
 /// - **Config**: [`ConfigToml::minimal_test_config()`] (admin/metrics disabled)
 /// - **Keypair**: Deterministic keypair from `[0; 32]` secret key
-/// - **Postgres**: Uses `TEST_PUBKY_CONNECTION_STRING` env var if set, otherwise in-memory
+/// - **Postgres**: `.postgres()` or docker postgres first, then `TEST_PUBKY_CONNECTION_STRING`,
+///   then `[general].database_url`, then the default test server
+///   (`postgres://localhost:5432/postgres`). A fresh database is created on whichever
+///   server wins and dropped on shutdown.
 /// - **HTTP Relay**: Disabled by default (use `.with_http_relay()` to enable)
 ///
 /// # Example

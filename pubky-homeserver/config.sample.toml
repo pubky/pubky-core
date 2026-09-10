@@ -1,8 +1,7 @@
 [general]
 # The URL of the Postgres database.
-# Required: there is no default. Leaving this unset stops the homeserver from starting,
-# rather than silently connecting to a database you did not choose.
 # Important: The database must be created manually.
+# Default: "postgres://localhost:5432/pubky_homeserver"
 database_url = "postgres://localhost:5432/pubky_homeserver"
 
 # The mode for the signup. Default: "token_required" Options:

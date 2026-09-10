@@ -111,18 +111,19 @@ impl AppContext {
     /// This is the **only** constructor that joins the public network: it starts from
     /// `pkarr::ClientBuilder::default()`, so unless `[pkdns]` says otherwise this context
     /// publishes its record to the public pkarr relays and resolves over the public DHT.
-    /// That is deliberate for production. Anything under test wants
-    /// [`new_ephemeral`](Self::new_ephemeral), or
-    /// [`isolated_pkarr_builder`](Self::isolated_pkarr_builder) with [`new`](Self::new).
+    /// That is deliberate for production. Anything under test wants `new_ephemeral`, or
+    /// `isolated_pkarr_builder` with [`new`](Self::new).
     ///
-    /// Requires `[general].database_url` to be set; there is no default, so a server
-    /// whose owner never chose a database fails here rather than connecting to one.
+    /// When `[general].database_url` is unset, falls back to
+    /// [`DEFAULT_DATABASE_URL`](crate::persistence::sql::DEFAULT_DATABASE_URL) — the
+    /// fallback lives in code rather than in `config.default.toml` so that the config's
+    /// `Option` keeps meaning "the operator chose this". See
+    /// [`DatabaseMode::direct_or_default`] for what that accepts.
     pub async fn from_persistent_dir(
         dir: crate::PersistentDataDir,
     ) -> Result<Self, AppContextBuildError> {
         let (path, config, keypair) = dir.bootstrap().map_err(AppContextBuildError::Bootstrap)?;
-        let db_mode = DatabaseMode::require_direct(config.general.database_url.clone())
-            .map_err(AppContextBuildError::DatabaseResolution)?;
+        let db_mode = DatabaseMode::direct_or_default(config.general.database_url.clone());
         Self::new(
             path,
             config,
@@ -299,6 +300,13 @@ impl AppContext {
     /// [`new`](Self::new) applies the `[pkdns]` settings to whatever builder it is given,
     /// so applying them here as well would only duplicate the work and its warnings.
     ///
+    /// Note that this makes the isolation a property of the *pair*, not of this builder:
+    /// the config is applied afterwards and can put the public relays back, because
+    /// `config.default.toml` ships them and `no_relays()` is only reached when the config
+    /// also names bootstrap nodes. `ConfigToml::default_test_config` clears
+    /// `dht_relay_nodes` for exactly this reason; a config assembled some other way must
+    /// take care of it too.
+    ///
     /// Use it as the base for anything that assembles a context itself —
     /// [`new_ephemeral_with_pkarr`](Self::new_ephemeral_with_pkarr) for a custom network,
     /// or [`new`](Self::new) directly, as the persistent testnet does when it needs a real
@@ -394,45 +402,6 @@ mod tests {
         assert!(
             !data_path.exists(),
             "dropping the last clone must remove the data dir"
-        );
-    }
-
-    /// The production constructor's failure path — which this branch newly made
-    /// reachable by removing `database_url` from the embedded defaults. A server whose
-    /// owner never chose a database must refuse to start rather than guess one.
-    ///
-    /// Also covers [`PersistentDataDir::bootstrap`], which runs first: the directory,
-    /// config and keypair must all exist by the time the database is considered.
-    ///
-    /// Independent of `TEST_PUBKY_CONNECTION_STRING` — the production path uses
-    /// `require_direct`, which never consults the environment.
-    #[tokio::test]
-    async fn from_persistent_dir_refuses_when_no_database_is_configured() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let dir = crate::PersistentDataDir::new(temp.path().join("pubky"));
-
-        // `AppContext` is deliberately not `Debug`, so discard the Ok value first.
-        let err = AppContext::from_persistent_dir(dir.clone())
-            .await
-            .map(|_| ())
-            .expect_err("a server with no configured database must not start");
-
-        assert!(
-            matches!(err, AppContextBuildError::DatabaseResolution(_)),
-            "expected DatabaseResolution, got {err:?}"
-        );
-        assert!(
-            err.to_string().contains("database_url"),
-            "the error must name the setting to fix: {err}"
-        );
-
-        assert!(
-            dir.get_config_file_path().exists(),
-            "bootstrap should have seeded config.toml before the database was considered"
-        );
-        assert!(
-            dir.get_secret_file_path().exists(),
-            "bootstrap should have created the keypair"
         );
     }
 
@@ -587,6 +556,47 @@ mod tests {
             );
         }
         builder.build().expect("isolated pkarr client should build");
+    }
+
+    /// The isolation that matters is the one on the *composition*, not on the builder
+    /// alone: [`new`](AppContext::new) applies `[pkdns]` on top of whatever builder it is
+    /// given, and `no_relays()` is only reached when the config names bootstrap nodes. So
+    /// what actually keeps an ephemeral context off the public relays is
+    /// `default_test_config` clearing `dht_relay_nodes` — an easy line to "tidy away",
+    /// since `config.default.toml` ships the public relays and nothing else asserts this.
+    ///
+    /// The second half is this test's own control: it proves `has_default_relays` really
+    /// does detect relays in pkarr's `Debug` output, so the negative assertion above (and
+    /// in [`isolated_builder_excludes_public_dht`]) cannot pass vacuously if that format
+    /// ever changes.
+    #[test]
+    fn the_test_config_keeps_the_isolated_builder_off_the_public_relays() {
+        let compose = |config: &ConfigToml| {
+            let mut builder = AppContext::isolated_pkarr_builder();
+            AppContext::apply_config_to_pkarr(&mut builder, config).unwrap();
+            format!("{builder:?}")
+        };
+
+        let debug = compose(&ConfigToml::default_test_config());
+        assert!(
+            !has_default_relays(&debug),
+            "an ephemeral context must not reach the public pkarr relays: {debug}"
+        );
+
+        // Control: put the packaged relays back and the very same composition lands on
+        // them, which is exactly why that line in `default_test_config` is load-bearing.
+        let mut config = ConfigToml::default_test_config();
+        config.pkdns.dht_relay_nodes = ConfigToml::default().pkdns.dht_relay_nodes;
+        assert!(
+            config.pkdns.dht_relay_nodes.is_some(),
+            "precondition: the packaged defaults still ship relays"
+        );
+        let debug = compose(&config);
+        assert!(
+            has_default_relays(&debug),
+            "the isolated builder does not defend itself — config relays are applied on \
+             top of it: {debug}"
+        );
     }
 
     /// `new` applies the config on top of whatever builder it is given, so a config that

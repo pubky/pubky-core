@@ -32,18 +32,18 @@ impl ConnectionString {
         self.0.as_str()
     }
 
-    /// The connection string with any password masked, for logs and error messages.
-    ///
+    /// Which database this points at, in a form that is safe to log:
+    /// `scheme://user@host:port/dbname`.
     /// [`Display`] and [`as_str`](Self::as_str) render the URL verbatim, credentials
     /// included — use this whenever the value may reach a log line or an error a user sees.
     pub fn redacted(&self) -> String {
-        let mut url = self.0.clone();
-        if url.password().is_some() {
-            // set_password only fails for urls that cannot have credentials, which a
-            // validated postgres url always can.
-            let _ = url.set_password(Some("****"));
-        }
-        url.to_string()
+        let user = match self.0.username() {
+            "" => String::new(),
+            name => format!("{name}@"),
+        };
+        let host = self.0.host_str().unwrap_or_default();
+        let port = self.0.port().map(|p| format!(":{p}")).unwrap_or_default();
+        format!("{}://{user}{host}{port}{}", self.0.scheme(), self.0.path())
     }
 
     /// **The** precedence rule for choosing a database in test and testnet builds.
@@ -98,15 +98,6 @@ impl ConnectionString {
         Ok(override_url.or(from_env).or(from_config))
     }
 
-    /// Read a connection string from the `TEST_PUBKY_CONNECTION_STRING` environment variable.
-    ///
-    /// Returns `Ok(None)` if the variable is unset.
-    /// Returns `Err` if the variable is set but contains an invalid URL.
-    #[cfg(any(test, feature = "testing"))]
-    pub fn from_test_env() -> anyhow::Result<Option<Self>> {
-        Self::parse_env_value(std::env::var(TEST_CONNECTION_STRING_ENV))
-    }
-
     /// Pure parsing logic, separated from env access so it can be tested without
     /// mutating the process environment (which would race with the many tests
     /// that read `TEST_PUBKY_CONNECTION_STRING` concurrently).
@@ -115,43 +106,19 @@ impl ConnectionString {
         let raw = match raw {
             Ok(val) => val,
             Err(std::env::VarError::NotPresent) => return Ok(None),
-            Err(e) => anyhow::bail!("Invalid {TEST_CONNECTION_STRING_ENV}: {e}"),
+            Err(std::env::VarError::NotUnicode(_)) => anyhow::bail!(
+                "Invalid {TEST_CONNECTION_STRING_ENV}: the value is not valid unicode"
+            ),
         };
-        let cs = Self::new(&raw).map_err(|e| {
-            anyhow::anyhow!(
-                "Invalid {TEST_CONNECTION_STRING_ENV} ({}): {e}",
-                Self::redact_unparsed(&raw)
-            )
-        })?;
+        // The value is never echoed. It is the one input here that can carry a live
+        // password, and a rejected one cannot be redacted structurally — `user:hunter2@x`
+        // parses as scheme `user` with the whole secret in the path. Naming the variable is
+        // enough to act on, since whoever set it can read it back, and `e` describes the
+        // shape of the problem ("relative URL without a base", "Only postgres database urls
+        // are supported") without reproducing the value.
+        let cs = Self::new(&raw)
+            .map_err(|e| anyhow::anyhow!("Invalid {TEST_CONNECTION_STRING_ENV}: {e}"))?;
         Ok(Some(cs))
-    }
-
-    /// Mask any credentials in a string that failed to become a [`ConnectionString`].
-    ///
-    /// The value still has to appear in the error — naming the offending input is the
-    /// whole point — but it reaches logs and terminals, and a rejected value can carry a
-    /// real password: `mysql://user:hunter2@host/db` is a perfectly good URL that fails
-    /// only the postgres-scheme check. [`redacted`](Self::redacted) cannot be used here
-    /// because there is no valid `ConnectionString` to call it on.
-    #[cfg(any(test, feature = "testing"))]
-    fn redact_unparsed(raw: &str) -> String {
-        // The host check matters: `user:hunter2@garbage` parses happily as scheme
-        // `user` with no authority, so `password()` is `None` and nothing would be
-        // masked. Only the structured form is safe to mask structurally.
-        if let Ok(mut url) = url::Url::parse(raw) {
-            if url.has_host() {
-                if url.password().is_some() {
-                    let _ = url.set_password(Some("****"));
-                }
-                return url.to_string();
-            }
-        }
-        // No authority to mask, but `user:pass@host` can still be in there.
-        // Drop everything up to the last `@` rather than echo it.
-        match raw.rsplit_once('@') {
-            Some((_, tail)) => format!("****@{tail}"),
-            None => raw.to_string(),
-        }
     }
 
     fn is_postgres(&self) -> bool {
@@ -365,36 +332,39 @@ mod tests {
             .expect_err("an unparseable url should be an error, not a silent fallback");
         let msg = err.to_string();
         assert!(
-            msg.contains(TEST_CONNECTION_STRING_ENV) && msg.contains("not-a-valid-url"),
-            "error should name the env var and the offending value, got: {msg}"
+            msg.contains(TEST_CONNECTION_STRING_ENV),
+            "error should name the env var, got: {msg}"
         );
     }
 
-    /// A rejected value can still carry a real password: this one is a valid URL that
-    /// fails only the postgres-scheme check, so the error must not echo it verbatim.
+    /// A rejected value is never echoed, whatever shape it has. It is the one input that
+    /// can carry a live password, and once rejected there is no structure left to redact:
+    /// `user:hunter2@x` parses as scheme `user` with the whole secret in the path. So the
+    /// error names the variable and describes the problem, and prints nothing of the value.
     #[test]
-    fn a_rejected_env_value_does_not_leak_its_password() {
-        let err = ConnectionString::parse_env_value(Ok(
-            "mysql://user:hunter2@db.example:3306/mydb".to_string(),
-        ))
-        .expect_err("a non-postgres url should be rejected");
-        let msg = err.to_string();
-        assert!(!msg.contains("hunter2"), "password leaked into: {msg}");
-        assert!(
-            msg.contains("db.example"),
-            "the host should still be named so the value is identifiable: {msg}"
-        );
-    }
-
-    /// Same guarantee when the value is not a URL at all and cannot be masked
-    /// structurally.
-    #[test]
-    fn a_rejected_non_url_env_value_does_not_leak_credentials() {
-        let err = ConnectionString::parse_env_value(Ok("user:hunter2@garbage".to_string()))
-            .expect_err("garbage should be rejected");
-        let msg = err.to_string();
-        assert!(!msg.contains("hunter2"), "password leaked into: {msg}");
-        assert!(msg.contains("garbage"), "{msg}");
+    fn a_rejected_env_value_is_never_echoed_into_the_error() {
+        for raw in [
+            // A valid URL that fails only the postgres-scheme check — still a live password.
+            "mysql://user:hunter2@db.example:3306/mydb",
+            // ...with the password in the query instead, where `?password=` is a supported
+            // postgres parameter and a blocklist would have to keep pace with libpq.
+            "mysql://db.example:3306/mydb?password=hunter2",
+            // Not a URL at all, so nothing can be masked structurally.
+            "user:hunter2@garbage",
+            "garbage?password=hunter2",
+            // A bare secret, pasted into the wrong variable: no `@`, no `?`, nothing to
+            // strip. This is the case that made echoing unsafe in the first place.
+            "hunter2",
+        ] {
+            let err = ConnectionString::parse_env_value(Ok(raw.to_string()))
+                .expect_err("should be rejected");
+            let msg = err.to_string();
+            assert!(!msg.contains("hunter2"), "value leaked into: {msg}");
+            assert!(
+                msg.contains(TEST_CONNECTION_STRING_ENV),
+                "the variable to fix should still be named: {msg}"
+            );
+        }
     }
 
     #[test]
@@ -466,6 +436,52 @@ mod tests {
     fn redacted_leaves_a_passwordless_url_alone() {
         let url = "postgres://localhost:5432/mydb";
         assert_eq!(cs(url).redacted(), url);
+    }
+
+    /// A password does not have to be in the userinfo — `?password=` is a supported
+    /// postgres connection parameter. The query string is not printed at all, so no
+    /// blocklist of secret parameter names has to be kept up to date.
+    #[test]
+    fn redacted_never_prints_the_query_string() {
+        for url in [
+            "postgres://user@db.example:5432/mydb?password=hunter2",
+            "postgres://db.example:5432/mydb?sslmode=require&sslpassword=hunter2",
+        ] {
+            let redacted = cs(url).redacted();
+            assert!(!redacted.contains("hunter2"), "password leaked: {redacted}");
+            assert!(!redacted.contains('?'), "query survived: {redacted}");
+            assert!(
+                redacted.contains("db.example") && redacted.contains("mydb"),
+                "the database should still be identifiable: {redacted}"
+            );
+        }
+    }
+
+    /// `VarError::NotUnicode` renders the raw `OsString`, so the error must describe the
+    /// problem without interpolating the value.
+    #[test]
+    fn a_non_unicode_env_value_is_not_echoed_into_the_error() {
+        let err = ConnectionString::parse_env_value(Err(std::env::VarError::NotUnicode(
+            "hunter2\u{fffd}".into(),
+        )))
+        .expect_err("non-unicode should be rejected");
+        let msg = err.to_string();
+        assert!(!msg.contains("hunter2"), "value leaked into: {msg}");
+        assert!(msg.contains(TEST_CONNECTION_STRING_ENV), "{msg}");
+    }
+
+    /// The unix-socket form has no host. It must still redact cleanly rather than fall
+    /// back to string munging, and the socket path in the query must not be printed.
+    #[test]
+    fn redacted_handles_a_hostless_url() {
+        let cs = ConnectionString::new("postgres:///mydb?host=/var/run/postgresql").unwrap();
+        let redacted = cs.redacted();
+
+        assert_eq!(redacted, "postgres:///mydb");
+        assert!(
+            !redacted.contains("/var/run"),
+            "the query is never printed: {redacted}"
+        );
     }
 
     #[test]

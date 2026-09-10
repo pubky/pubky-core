@@ -29,6 +29,24 @@ pub struct Testnet {
     temp_dirs: Vec<tempfile::TempDir>,
 }
 
+/// Point a homeserver config at this testnet's network and storage.
+///
+/// `dht_relay_nodes` is assigned unconditionally, including when the testnet has no
+/// relays. `AppContext::new` applies `[pkdns]` on top of the isolated pkarr builder, so a
+/// relay list left over from the caller's config would be applied there and put the
+/// homeserver on those relays — and `config.default.toml` ships the public ones, so any
+/// config built from `ConfigToml::default()` rather than `ConfigToml::default_test_config()`
+/// carries them.
+fn apply_testnet_overrides(
+    config: &mut ConfigToml,
+    bootstrap_nodes: Vec<DomainPort>,
+    relays: Vec<Url>,
+) {
+    config.pkdns.dht_bootstrap_nodes = Some(bootstrap_nodes);
+    config.pkdns.dht_relay_nodes = (!relays.is_empty()).then_some(relays);
+    config.storage.backend = StorageConfigToml::InMemory;
+}
+
 impl Testnet {
     fn new_inner(seeded: bool) -> Result<Self> {
         let dht = mainline::Testnet::builder(2).seeded(seeded).build()?;
@@ -108,11 +126,11 @@ impl Testnet {
         mut config: ConfigToml,
         keypair: Keypair,
     ) -> Result<&HomeserverApp> {
-        config.pkdns.dht_bootstrap_nodes = Some(self.dht_bootstrap_nodes());
-        if !self.dht_relay_urls().is_empty() {
-            config.pkdns.dht_relay_nodes = Some(self.dht_relay_urls().to_vec());
-        }
-        config.storage.backend = StorageConfigToml::InMemory;
+        apply_testnet_overrides(
+            &mut config,
+            self.dht_bootstrap_nodes(),
+            self.dht_relay_urls(),
+        );
 
         let context =
             AppContext::new_ephemeral(config, keypair, self.postgres_connection_string.clone())
@@ -360,5 +378,56 @@ mod test {
             packet.is_ok(),
             "Published packet is not available over the relay only."
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bootstrap() -> Vec<DomainPort> {
+        vec![DomainPort::from_str("127.0.0.1:6881").unwrap()]
+    }
+
+    /// The hole this closes: a caller-supplied config carries `dht_relay_nodes`, the
+    /// testnet has no relays of its own, and the value survives into `AppContext::new`,
+    /// which applies it on top of the isolated builder. `config.default.toml` ships the
+    /// public relays, so every config built from `ConfigToml::default()` hits this.
+    #[test]
+    fn a_relayless_testnet_clears_relays_the_caller_config_brought() {
+        let mut config = ConfigToml::default();
+        assert!(
+            config.pkdns.dht_relay_nodes.is_some(),
+            "precondition: the packaged defaults ship the public relays"
+        );
+
+        apply_testnet_overrides(&mut config, bootstrap(), vec![]);
+
+        assert_eq!(
+            config.pkdns.dht_relay_nodes, None,
+            "a testnet with no relays must not leave the caller's behind"
+        );
+        assert_eq!(config.pkdns.dht_bootstrap_nodes, Some(bootstrap()));
+    }
+
+    /// ...but a testnet that *does* run relays still points the homeserver at its own.
+    #[test]
+    fn a_testnet_with_relays_installs_its_own() {
+        let mut config = ConfigToml::default();
+        let relay = Url::parse("http://127.0.0.1:15411").unwrap();
+
+        apply_testnet_overrides(&mut config, bootstrap(), vec![relay.clone()]);
+
+        assert_eq!(config.pkdns.dht_relay_nodes, Some(vec![relay]));
+    }
+
+    #[test]
+    fn overrides_force_in_memory_storage() {
+        let mut config = ConfigToml::default();
+        apply_testnet_overrides(&mut config, bootstrap(), vec![]);
+        assert!(matches!(
+            config.storage.backend,
+            StorageConfigToml::InMemory
+        ));
     }
 }

@@ -323,7 +323,7 @@ The generated `config.toml` works out of the box for local use. Here are a few s
 
 | Setting | Purpose | Default |
 | --- | --- | --- |
-| `general.database_url` | PostgreSQL connection string. **Required** — the server will not start without it. | _none_ |
+| `general.database_url` | PostgreSQL connection string. | `postgres://localhost:5432/pubky_homeserver` |
 | `general.signup_mode` | `"open"` or `"token_required"`. | `"token_required"` |
 | `storage.type` | Storage backend: `file_system`, `google_bucket`, or `in_memory`. | `file_system` |
 | `admin.admin_password` | Password for the admin API. | `"admin"` |

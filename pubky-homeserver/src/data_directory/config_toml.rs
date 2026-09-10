@@ -221,6 +221,12 @@ impl ConfigToml {
         config.admin.listen_socket = SocketAddr::from(([127, 0, 0, 1], 0));
         config.pkdns.icann_domain =
             Some(Domain::from_str("localhost").expect("localhost is a valid domain"));
+        // Load-bearing for network isolation, not cosmetic. `config.default.toml` ships the
+        // public pkarr relays, and `AppContext::apply_config_to_pkarr` applies
+        // `dht_relay_nodes` on top of *whatever* builder it is handed — including the
+        // isolated one, whose `no_default_network()` has already run by then. Leaving this
+        // set would put every test that starts from this config on the public relays.
+        // Pinned by `the_test_config_keeps_the_isolated_builder_off_the_public_relays`.
         config.pkdns.dht_relay_nodes = None;
         config.storage.backend = StorageConfigToml::InMemory;
         config.logging = None;
@@ -334,10 +340,11 @@ mod tests {
         );
     }
 
-    /// The embedded defaults must leave `database_url` unset, so that a server whose
-    /// owner never chose a database fails loudly instead of silently connecting to one.
-    /// It is also what lets `[general].database_url` mean "someone picked this" wherever
-    /// it is read — see `ConnectionString::resolve_for_test`.
+    /// The embedded defaults must leave `database_url` unset. That is what lets
+    /// `[general].database_url` mean "someone picked this" wherever it is read — tier 3 of
+    /// `ConnectionString::resolve_for_test`, and the difference between an ephemeral test
+    /// falling through to the default test server or not. Production's own fallback lives
+    /// in code (`DatabaseMode::DEFAULT_DATABASE_URL`) precisely so this stays `None`.
     #[test]
     fn embedded_defaults_configure_no_database() {
         assert_eq!(ConfigToml::default().general.database_url, None);

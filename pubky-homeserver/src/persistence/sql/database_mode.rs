@@ -1,4 +1,6 @@
-use super::{ConnectionString, TEST_CONNECTION_STRING_ENV};
+use super::ConnectionString;
+#[cfg(any(test, feature = "testing"))]
+use super::TEST_CONNECTION_STRING_ENV;
 
 /// How the homeserver should connect to its database.
 ///
@@ -24,11 +26,45 @@ pub enum DatabaseMode {
     EphemeralTest(ConnectionString),
 }
 
+/// Where a production homeserver connects when its config names no database.
+///
+/// Deliberately *not* in `config.default.toml`: that file is merged underneath every
+/// config read from disk, so a value there would make `[general].database_url` come back
+/// `Some(...)` for every server and destroy the one thing the `Option` is good for —
+/// telling "the operator chose this" apart from "nobody chose". Tier 3 of
+/// [`ConnectionString::resolve_for_test`] reads exactly that distinction.
+///
+/// Keeping the fallback here instead means the config stays honest while a server whose
+/// owner never picked a database still starts, as it did before.
+///
+/// [`ConnectionString::resolve_for_test`]: super::ConnectionString::resolve_for_test
+pub const DEFAULT_DATABASE_URL: &str = "postgres://localhost:5432/pubky_homeserver";
+
 impl DatabaseMode {
+    /// `Direct` mode, falling back to [`DEFAULT_DATABASE_URL`] when the config names no
+    /// database. For **production** only.
+    ///
+    /// Note what this accepts: a server whose owner never chose a database connects to the
+    /// conventional local one and runs migrations against it. That is nearly always the
+    /// intent, and the usual mistake fails loudly anyway because the database has to be
+    /// created by hand — but on a host that already has a `pubky_homeserver` database
+    /// belonging to another instance, a second unconfigured server will attach to it.
+    ///
+    /// The persistent testnet deliberately does **not** use this. Its own database is
+    /// `pubky_testnet`, so inheriting this default would point a dev's testnet at the
+    /// production database name; it uses [`require_direct`](Self::require_direct) and
+    /// errors instead.
+    pub fn direct_or_default(url: Option<ConnectionString>) -> Self {
+        Self::Direct(url.unwrap_or_else(|| {
+            ConnectionString::new(DEFAULT_DATABASE_URL).expect("Default database url is valid")
+        }))
+    }
+
     /// Require an explicit database URL, returning `Direct` mode.
     ///
-    /// Returns an error when the URL is `None` — use this for production
-    /// and persistent-testnet paths where a database URL must be configured.
+    /// Returns an error when the URL is `None`. Used by the persistent testnet, which
+    /// must not guess a long-lived database — see
+    /// [`direct_or_default`](Self::direct_or_default) for why production may.
     pub fn require_direct(url: Option<ConnectionString>) -> anyhow::Result<Self> {
         url.map(Self::Direct).ok_or_else(|| {
             anyhow::anyhow!(
@@ -40,14 +76,18 @@ impl DatabaseMode {
     /// Returns the underlying connection string, regardless of mode.
     ///
     /// Resolving a mode is the only way to learn which database will actually be
-    /// used — the precedence rule in [`ConnectionString::resolve_for_test`] can pick
+    /// used — the test precedence rule (`ConnectionString::resolve_for_test`) can pick
     /// a URL that appears in neither the config nor the caller's override. Diagnostics
     /// that want to name the database being tried should read it back from here rather
     /// than re-deriving it.
-    #[cfg(any(test, feature = "testing"))]
+    ///
+    /// Not gated on `testing`: [`require_direct`](Self::require_direct) is available to
+    /// production callers, and a mode you can build but cannot read back is of no use to
+    /// the diagnostics this exists for.
     pub fn connection_string(&self) -> &ConnectionString {
         match self {
             Self::Direct(url) => url,
+            // Load-bearing: the variant itself only exists in test / testing builds.
             #[cfg(any(test, feature = "testing"))]
             Self::EphemeralTest(url) => url,
         }
@@ -110,6 +150,41 @@ mod tests {
             "require_direct should return Direct"
         );
         assert_eq!(mode.connection_string(), &url);
+    }
+
+    /// Production falls back rather than refusing, so a server whose owner never chose a
+    /// database still starts — the behaviour that shipped before `database_url` was
+    /// dropped from `config.default.toml`.
+    #[test]
+    fn direct_or_default_falls_back_when_no_url() {
+        let mode = DatabaseMode::direct_or_default(None);
+        assert!(matches!(mode, DatabaseMode::Direct(_)));
+        assert_eq!(mode.connection_string().as_str(), DEFAULT_DATABASE_URL);
+    }
+
+    #[test]
+    fn direct_or_default_prefers_a_configured_url() {
+        let url = ConnectionString::new("postgres://configured:5432/mydb").unwrap();
+        let mode = DatabaseMode::direct_or_default(Some(url.clone()));
+        assert_eq!(
+            mode.connection_string(),
+            &url,
+            "the default must never shadow a database the operator chose"
+        );
+    }
+
+    /// The production default must not be the persistent testnet's database. If these ever
+    /// converge, an unconfigured `pubky-testnet persist` run would migrate the production
+    /// database — which is why the testnet uses `require_direct` and not the fallback.
+    #[test]
+    fn the_production_default_is_not_the_test_server() {
+        assert_ne!(DEFAULT_DATABASE_URL, DEFAULT_TEST_SERVER);
+        assert_eq!(
+            ConnectionString::new(DEFAULT_DATABASE_URL)
+                .unwrap()
+                .database_name(),
+            "pubky_homeserver"
+        );
     }
 
     #[test]

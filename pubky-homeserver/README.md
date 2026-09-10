@@ -90,29 +90,6 @@ See [Install and Run Pubky Homeserver](../docs/INSTALL.md) for full setup instru
 pubky-homeserver --data-dir ~/.pubky
 ```
 
-## Upgrade notes
-
-### `database_url` must be set explicitly
-
-The embedded default config used to supply
-`database_url = "postgres://localhost:5432/pubky_homeserver"`, which was merged underneath
-every `config.toml`. A server whose owner never chose a database would therefore connect to
-that one and run migrations against it.
-
-That default is gone. If your `config.toml` leaves `database_url` commented out, the server
-now refuses to start:
-
-```
-No database_url configured. Set [general].database_url in config.toml.
-```
-
-Set it explicitly — see [INSTALL.md](../docs/INSTALL.md):
-
-```toml
-[general]
-database_url = "postgres://postgres:postgres@localhost:5432/pubky_homeserver"
-```
-
 ## Storage
 
 `/pub/` is public; `/priv/` requires an authenticated session and a covering
