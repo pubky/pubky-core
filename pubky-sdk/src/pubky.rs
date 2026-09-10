@@ -135,7 +135,7 @@ pub struct Pubky {
 }
 
 impl Pubky {
-    /// Construct with the default mainnet configuration and no HTTP timeouts.
+    /// Construct with the default mainnet configuration and no HTTP client timeouts.
     ///
     /// # Errors
     /// - Returns [`crate::errors::Error`] when the underlying [`PubkyHttpClient`] fails to
